@@ -1,6 +1,7 @@
 import React from 'react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
+import Features from './components/Features';
 import './App.css';
 
 function App() {
@@ -8,21 +9,16 @@ function App() {
     <div className="app">
       <Navbar />
       <Hero />
+      <Features />
 
-      {/* Coming Soon Section */}
+      {/* Footer Placeholder */}
       <div style={{
-        padding: '100px 0',
+        padding: '60px 0',
         textAlign: 'center',
         borderTop: '1px solid rgba(255,255,255,0.05)',
-        marginTop: '-1px',
-        background: 'var(--bg-dark-accent)'
+        background: 'var(--bg-dark)'
       }}>
-        <h2 style={{
-          fontSize: '2rem',
-          marginBottom: '16px',
-          fontWeight: '600'
-        }}> More to come </h2>
-        <p style={{ color: 'var(--text-gray)' }}>We are building the future of WAF intelligence.</p>
+        <p style={{ color: 'var(--text-gray)', fontSize: '0.9rem' }}>© 2025 ModIntel. All rights reserved.</p>
       </div>
     </div>
   );
