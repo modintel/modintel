@@ -12,7 +12,7 @@ const Navbar = () => {
                 <div className="nav-links">
                     <a href="#features" className="nav-link">Features</a>
                     <a href="#how-it-works" className="nav-link">How it Works</a>
-                    <a href="#pricing" className="nav-link">GitHub</a>
+                    <a href="https://github.com/natanim-kemal/modintel" className="nav-link">GitHub</a>
                     <a href="#docs" className="nav-link">Documentation</a>
                 </div>
 

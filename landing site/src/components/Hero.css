@@ -5,7 +5,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding-top: calc(var(--nav-height) + 60px);
+    padding-top: calc(var(--nav-height) + 135px);
     text-align: center;
     overflow: hidden;
 }

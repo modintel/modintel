@@ -1,5 +1,5 @@
 import React from 'react';
-import { FaShieldAlt, FaBolt, FaChartLine, FaCode, FaNetworkWired, FaLock } from 'react-icons/fa';
+import { FaShieldAlt, FaChartLine, FaCode, FaLock } from 'react-icons/fa';
 import './Features.css';
 
 const Features = () => {
@@ -18,22 +18,13 @@ const Features = () => {
                         <div className="card-icon"><FaShieldAlt /></div>
                         <h3>Adaptive Threat Detection</h3>
                         <p>
-                            Unlike static signature-based WAFs, ModIntel learns from traffic patterns in real-time. 
-                            Our ML models adapt to new attack vectors instantly, drastically reducing false positives 
+                            Unlike static signature-based WAFs, ModIntel learns from traffic patterns in real-time.
+                            Our ML models adapt to new attack vectors instantly, drastically reducing false positives
                             while catching sophisticated zero-day payloads.
                         </p>
                     </div>
 
-                    {/* Feature 2: Speed (Span 1) */}
-                    <div className="bento-card span-1">
-                        <div className="card-icon"><FaBolt /></div>
-                        <h3>&lt;5ms Latency</h3>
-                        <p>
-                            Optimized for speed. Our inspection engine runs in parallel, adding near-zero overhead to your request latency.
-                        </p>
-                    </div>
-
-                    {/* Feature 3: Analytics (Span 1) */}
+                    {/* Feature 2: Analytics (Moved here, Span 1) */}
                     <div className="bento-card span-1">
                         <div className="card-icon"><FaChartLine /></div>
                         <h3>Visual Analytics</h3>
@@ -42,23 +33,23 @@ const Features = () => {
                         </p>
                     </div>
 
-                    {/* Feature 4: Integration (Span 2) */}
-                    <div className="bento-card span-2">
-                         <div className="card-glow" style={{left:0, right:'auto', background: 'radial-gradient(circle, rgba(168, 85, 247, 0.2) 0%, transparent 70%)'}}></div>
-                        <div className="card-icon"><FaCode /></div>
-                        <h3>Seamless ModSecurity Drop-in</h3>
-                        <p>
-                            Already using ModSecurity? Perfect. ModIntel plugs directly into your existing CRS pipeline 
-                            as an auxiliary inspection connector. No need to rewrite your entire infrastructure.
-                        </p>
-                    </div>
-
-                    {/* Feature 5: Security (Span 1) */}
+                    {/* Feature 3: Privacy (Moved here, Span 1) */}
                     <div className="bento-card span-1">
                         <div className="card-icon"><FaLock /></div>
                         <h3>Privacy First</h3>
                         <p>
-                             Data stays on your premise. Models run locally without sending sensitive payloads to the cloud.
+                            Data stays on your premise. Models run locally without sending sensitive payloads to the cloud.
+                        </p>
+                    </div>
+
+                    {/* Feature 4: Integration (Span 2) */}
+                    <div className="bento-card span-2">
+                        <div className="card-glow" style={{ left: 0, right: 'auto', background: 'radial-gradient(circle, rgba(168, 85, 247, 0.2) 0%, transparent 70%)' }}></div>
+                        <div className="card-icon"><FaCode /></div>
+                        <h3>Seamless ModSecurity Drop-in</h3>
+                        <p>
+                            Already using ModSecurity? Perfect. ModIntel plugs directly into your existing CRS pipeline
+                            as an auxiliary inspection connector. No need to rewrite your entire infrastructure.
                         </p>
                     </div>
                 </div>
