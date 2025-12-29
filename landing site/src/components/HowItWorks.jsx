@@ -7,7 +7,7 @@ const HowItWorks = () => {
         {
             icon: <FaServer />,
             title: "Traffic Ingestion",
-            desc: "ModSecurity intercepts incoming web requests at the ingress layer. No changes to your DNS or infrastructure required."
+            desc: "ModSecurity intercepts incoming web requests at the ingress layer. No changes to your DNS required."
         },
         {
             icon: <FaBrain />,
