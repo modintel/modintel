@@ -119,5 +119,6 @@
         flex-direction: column;
         gap: 20px;
         text-align: center;
+        padding-bottom: 60px;
     }
 }
