@@ -2,9 +2,9 @@ pre-commit:
   parallel: true
   commands:
     no-comments-in-added:
-      run: powershell -ExecutionPolicy Bypass -File no-comments-in-added.ps1
+      run: powershell -ExecutionPolicy Bypass -File script/no-comments-in-added.ps1
 
 commit-msg:
   commands:
     conventional-commit:
-      run: powershell -ExecutionPolicy Bypass -File validate-commit-msg.ps1
+      run: powershell -ExecutionPolicy Bypass -File script/validate-commit-msg.ps1
