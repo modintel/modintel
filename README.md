@@ -30,6 +30,7 @@ modintel/
 ├── landing-site/              # Public marketing site (React/Vite)
 ├── dashboard/                 # Admin review dashboard for human triage
 ├── docs/                      # Extensive project documentation
+├── script/                    # Commit hooks and automation scripts
 ├── docker-compose.yml         # Dev/Prod orchestration
 ```
 
@@ -41,10 +42,6 @@ modintel/
 - **ML Infrastructure**: Python (Random Forest/XGBoost exported to ONNX)
 - **Database**: MongoDB
 - **Dashboard**: HTML/CSS/JS
-
-## License
-
-This project is licensed under the MIT License.
 
 ## Development Setup
 
@@ -66,3 +63,7 @@ npx lefthook install
 Hooks enforce:
 - **Commit message format**: `type(scope): message` (e.g., `feat: add new feature`)
 - **No comments in new code**: Added files must not contain comments
+
+## License
+
+This project is licensed under the MIT License.
