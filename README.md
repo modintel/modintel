@@ -45,3 +45,24 @@ modintel/
 ## License
 
 This project is licensed under the MIT License.
+
+## Development Setup
+
+### Prerequisites
+- Node.js & npm
+- Go
+- Python 3.x
+- Docker & Docker Compose
+
+### Commit Hooks
+This project uses [lefthook](https://github.com/evilmartians/lefthook) for commit validation.
+
+To install hooks:
+```bash
+npm install
+npx lefthook install
+```
+
+Hooks enforce:
+- **Commit message format**: `type(scope): message` (e.g., `feat: add new feature`)
+- **No comments in new code**: Added files must not contain comments
