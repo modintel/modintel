@@ -1,0 +1,124 @@
+.footer {
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 80px 0 40px;
+    background: var(--bg-dark-accent);
+    color: var(--text-gray);
+    font-size: 0.95rem;
+}
+
+.footer-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 40px;
+    margin-bottom: 60px;
+}
+
+.footer-brand h3 {
+    font-size: 1.5rem;
+    color: var(--text-white);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    font-weight: 700;
+}
+
+.footer-brand span {
+    color: var(--primary-orange);
+}
+
+.footer-brand p {
+    line-height: 1.6;
+    max-width: 300px;
+    margin-bottom: 24px;
+}
+
+.footer-col h4 {
+    color: var(--text-white);
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 24px;
+}
+
+.footer-links {
+    list-style: none;
+    padding: 0;
+}
+
+.footer-links li {
+    margin-bottom: 12px;
+}
+
+.footer-links a {
+    color: var(--text-gray);
+    transition: color 0.2s;
+}
+
+.footer-links a:hover {
+    color: var(--primary-orange);
+}
+
+.footer-bottom {
+    padding-top: 40px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.social-links {
+    display: flex;
+    gap: 20px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .footer-grid {
+        grid-template-columns: 1fr;
+        /* Brand stack on top */
+        gap: 40px;
+    }
+
+    /* Make the links section a sub-grid or flex wrap */
+    .footer-brand {
+        grid-column: 1 / -1;
+        text-align: center;
+        margin: 0 auto;
+    }
+
+    .footer-brand p {
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .footer-brand h3 {
+        justify-content: center;
+    }
+
+    /* Force the 3 link columns to sit side-by-side */
+    .footer-grid {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        text-align: left;
+    }
+
+    .footer-col {
+        flex: 1;
+        /* evenly distribute */
+        min-width: 120px;
+        /* prevent squishing */
+    }
+
+    .footer-brand {
+        flex-basis: 100%;
+        /* Full width for brand */
+        text-align: center;
+    }
+
+    .footer-bottom {
+        flex-direction: column;
+        gap: 20px;
+        text-align: center;
+        padding-bottom: 60px;
+    }
+}
