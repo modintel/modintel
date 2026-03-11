@@ -52,7 +52,6 @@ func GetLogs(c *gin.Context) {
 		return
 	}
 
-	// Transform for frontend
 	type AlertResponse struct {
 		Timestamp      string   `json:"timestamp"`
 		ClientIP       string   `json:"client_ip"`
