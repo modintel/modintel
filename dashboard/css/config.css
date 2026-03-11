@@ -1,0 +1,34 @@
+.panel-left {
+    padding: 2.5rem 2rem;
+}
+
+.panel-left h1 {
+    font-size: 1.7rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+}
+
+.panel-left p {
+    font-size: 0.85rem;
+    color: var(--fg-muted);
+    line-height: 1.6;
+}
+
+.config-item {
+    padding: 1.5rem 2rem;
+    border-bottom: 0.8px solid var(--border);
+}
+
+.config-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: var(--fg-subtle);
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.config-value {
+    font-family: monospace;
+    font-size: 1rem;
+    color: var(--fg);
+}
