@@ -22,18 +22,18 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: set up docker buildx
-        uses: docker/setup-buildx-action@c47758b77c9736f44a4cd33ddf49555bf61c92a6
+        uses: docker/setup-buildx-action@1051acaba6be4685e5d29fa185efab4e74f8ead9
 
       - name: log into registry ${{ env.REGISTRY }}
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@9780bd3d9e865d4476a7170815eb0f34ebe520d6
+        uses: docker/login-action@c94ce9f676451e021469e776997092976be46522
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: build and push log collector
-        uses: docker/build-push-action@471d1dc4e07e763b0a7993c6028c3f4e63f901b0
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
           context: ./services/log-collector
           push: ${{ github.event_name != 'pull_request' }}
@@ -42,7 +42,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: build and push inference engine
-        uses: docker/build-push-action@471d1dc4e07e763b0a7993c6028c3f4e63f901b0
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
           context: ./services/inference-engine
           push: ${{ github.event_name != 'pull_request' }}
@@ -51,7 +51,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: build and push review api
-        uses: docker/build-push-action@471d1dc4e07e763b0a7993c6028c3f4e63f901b0
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
           context: ./services/review-api
           push: ${{ github.event_name != 'pull_request' }}
