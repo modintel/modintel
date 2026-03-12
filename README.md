@@ -1,5 +1,5 @@
 <div align="center">
-  <h1><img src="docs/assets/logo.svg" width="23" height="21" /> MODINTEL</h1>
+  <h1><img src="docs/assets/logo.svg" width="23" height="21" /> Mointel</h1>
 
   <img src="https://img.shields.io/badge/Engine-Go-00ADD8?style=flat&logo=go&logoColor=white&labelColor=333" />
   <img src="https://img.shields.io/badge/Model-Python-3776AB?style=flat&logo=python&logoColor=white&labelColor=333" />

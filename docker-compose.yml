@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   proxy-waf:
     image: gbe0/coraza
@@ -15,6 +13,7 @@ services:
     ports:
       - "8080:8080"
     restart: always
+    user: root
 
   juice-shop:
     image: bkimminich/juice-shop:latest
@@ -28,7 +27,7 @@ services:
       - modintel_waf-logs:/var/log/coraza:ro
     environment:
       - LOG_FILE_PATH=/var/log/coraza/audit.json
-      - MONGO_URI=mongodb://host.docker.internal:27017
+      - MONGO_URI=mongodb://host.docker.internal:27017/modintel
     networks:
       - modintel-net
     ports:
@@ -53,5 +52,4 @@ networks:
 
 volumes:
   modintel_waf-logs:
-    external: true
     name: modintel_waf-logs
