@@ -1,11 +1,11 @@
 <div align="center">
-  <h1>ModIntel</h1>
+  <h1><img src="docs/assets/logo.svg" width="23" height="21" /> MODINTEL</h1>
 
-  <img src="https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white" />
-  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" />
-  <img src="https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white" />
-  <img src="https://img.shields.io/badge/Caddy-00A2D0?style=for-the-badge&logo=caddy&logoColor=white" />
-  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+  <img src="https://img.shields.io/badge/Engine-Go-00ADD8?style=flat&logo=go&logoColor=white&labelColor=333" />
+  <img src="https://img.shields.io/badge/Model-Python-3776AB?style=flat&logo=python&logoColor=white&labelColor=333" />
+  <img src="https://img.shields.io/badge/Database-MongoDB-47A248?style=flat&logo=mongodb&logoColor=white&labelColor=333" />
+  <img src="https://img.shields.io/badge/Proxy-Caddy-00A2D0?style=flat&logo=caddy&logoColor=white&labelColor=333" />
+  <img src="https://img.shields.io/badge/Infra-Docker-2496ED?style=flat&logo=docker&logoColor=white&labelColor=333" />
 
   <br/>
   <br/>
@@ -13,7 +13,7 @@
   <img src="docs/assets/dashboard.png" width="100%" />
 </div>
 
-<b>Modintel</b> is a hybrid Web Application Firewall (WAF) research system designed to reduce false positives in rule-based WAFs using Machine Learning. 
+<b>modintel</b> is a hybrid Web Application Firewall (WAF) research system designed to reduce false positives in rule-based WAFs using Machine Learning. 
 
 It functions as an intelligence layer that sits alongside the OWASP Core Rule Set (CRS) running on Coraza (The modern ModSecurity). 
 
