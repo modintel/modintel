@@ -56,11 +56,14 @@ func ParseCorazaLog(raw []byte) (*AlertDocument, error) {
 	}
 
 	var triggeredRules []string
+	triggeredRulesSet := make(map[string]bool)
 	anomalyScore := 0.0
 
 	if messages, ok := rawData["messages"].([]interface{}); ok {
 		for _, msgObj := range messages {
 			if msg, ok := msgObj.(map[string]interface{}); ok {
+				mText, hasMessage := msg["message"].(string)
+
 				if mData, ok := msg["data"].(map[string]interface{}); ok {
 					if idVal, ok := mData["id"]; ok {
 						ruleId := 0
@@ -71,12 +74,16 @@ func ParseCorazaLog(raw []byte) (*AlertDocument, error) {
 							ruleId = v
 						}
 
-						if ruleId >= 910000 && ruleId <= 949999 {
-							triggeredRules = append(triggeredRules, strconv.Itoa(ruleId))
+						ruleIdStr := strconv.Itoa(ruleId)
+						if _, exists := triggeredRulesSet[ruleIdStr]; !exists {
+							if ruleId == 949110 || (ruleId >= 990000 && ruleId <= 999999) {
+								triggeredRules = append(triggeredRules, ruleIdStr)
+								triggeredRulesSet[ruleIdStr] = true
+							}
 						}
 					}
 				}
-				if mText, ok := msg["message"].(string); ok {
+				if hasMessage {
 					if strings.Contains(mText, "Inbound Anomaly Score Exceeded") {
 						parts := strings.Split(mText, "Total Score: ")
 						if len(parts) > 1 {
