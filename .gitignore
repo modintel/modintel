@@ -9,6 +9,7 @@ __pycache__/
 *.log
 .env
 *txt
+!services/**/requirements.txt
 *.env
 raw_log.json
 .agents/
