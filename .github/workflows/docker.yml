@@ -1,5 +1,8 @@
 name: docker-build-publish
 
+permissions:
+  contents: read
+  
 on:
   push:
     branches: [ main ]
