@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <title>System Configuration</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/config.css">
+</head>
+
+<body>
+    <nav>
+        <div class="nav-brand">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff570a" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span style="color: #ff570a;">MODINTEL</span>
+        </div>
+        <div class="nav-links">
+            <a href="index.html">Events</a>
+            <a href="rules.html">Rules</a>
+            <a href="config.html" class="active">Config</a>
+        </div>
+        <div class="nav-actions"></div>
+    </nav>
+    <div class="main">
+        <div class="panel-left">
+            <h1>Environment</h1>
+            <p>System-level configuration and environment variables for the ModIntel stack.</p>
+        </div>
+        <div class="panel-right" style="overflow-y: auto;">
+            <div class="panel-header">
+            System Parameters</div>
+            <div class="config-item">
+                <div class="config-label">WAF Engine</div>
+                <div class="config-value">Coraza Proxy (Caddy-based)</div>
+            </div>
+            <div class="config-item">
+                <div class="config-label">Internal Endpoint</div>
+                <div class="config-value">juice-shop:3000</div>
+            </div>
+            <div class="config-item">
+                <div class="config-label">Log Collector</div>
+                <div class="config-value">Golang v1.22 / MongoDB</div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

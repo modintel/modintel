@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <title>Rule Inventory</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/rules.css">
+</head>
+
+<body>
+    <nav>
+        <div class="nav-brand">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff570a" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span style="color: #ff570a;">MODINTEL</span>
+        </div>
+        <div class="nav-links">
+            <a href="index.html">Events</a>
+            <a href="rules.html" class="active">Rules</a>
+            <a href="config.html">Config</a>
+        </div>
+        <div class="nav-actions"></div>
+    </nav>
+    <div class="main">
+        <div class="panel-left">
+            <h1>Rule Intelligence</h1>
+            <p>Active security signatures currently enforced by the ModIntel engine.</p>
+        </div>
+        <div class="panel-right" style="overflow-y: auto;">
+            <div class="panel-header">
+            Security Signatures</div>
+            <table class="rules-table">
+                <thead>
+                    <tr>
+                        <th style="width: 20%;">Rule ID</th>
+                        <th>Classification</th>
+                        <th style="width: 20%;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="rule-id">911xxx</td>
+                        <td>Method Enforcement</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">941xxx</td>
+                        <td>XSS Detection</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">942100</td>
+                        <td>SQL Injection</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">949110</td>
+                        <td>Anomaly Blocking</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+
+</html>

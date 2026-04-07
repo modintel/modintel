@@ -1,0 +1,25 @@
+{
+  "row_counts": {
+    "train": 2082171,
+    "validation": 446179,
+    "test": 446180
+  },
+  "label_distribution": {
+    "train": {
+      "benign": 1627168,
+      "attack": 455003
+    },
+    "validation": {
+      "benign": 348679,
+      "attack": 97500
+    },
+    "test": {
+      "benign": 348679,
+      "attack": 97501
+    }
+  },
+  "feature_completeness_pct": 100.0,
+  "parquet_sha256": "23331e2c8983f6e1cbc44864b875957cf7567847228129f1d6e434615b0f4811",
+  "created_at": "2026-04-05T15:54:12.420648+00:00",
+  "total_rows": 2974530
+}

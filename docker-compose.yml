@@ -1,0 +1,80 @@
+services:
+  proxy-waf:
+    image: gbe0/coraza
+    volumes:
+      - ./proxy-waf/Caddyfile:/etc/caddy/Caddyfile
+      - ./proxy-waf/coraza.conf:/opt/coraza/config.d/user.conf
+      - ./proxy-waf/custom_rules.conf:/opt/coraza/config.d/custom.conf
+      - modintel_waf-logs:/var/log/coraza
+    environment:
+      - CADDY_REVERSE_PROXY=juice-shop:3000
+    networks:
+      - modintel-net
+    ports:
+      - "8080:8080"
+    restart: always
+    user: root
+
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    networks:
+      - modintel-net
+    restart: always
+
+  log-collector:
+    build: ./services/log-collector
+    volumes:
+      - modintel_waf-logs:/var/log/coraza:ro
+    environment:
+      - LOG_FILE_PATH=/var/log/coraza/audit.json
+      - MONGO_URI=mongodb://host.docker.internal:27017/modintel
+      - INFERENCE_ENGINE_URL=http://inference-engine:8083
+    networks:
+      - modintel-net
+    ports:
+      - "8081:8081"
+    restart: always
+
+  dashboard:
+    image: halverneus/static-file-server:latest
+    volumes:
+      - ./dashboard:/web
+    ports:
+      - "3000:8080"
+    environment:
+      - PORT=8080
+    networks:
+      - modintel-net
+    restart: always
+
+  inference-engine:
+    build: ./services/inference-engine
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./models:/app/models:ro
+    environment:
+      - MODEL_VERSION=latest
+    mem_limit: 512m
+    restart: always
+    networks:
+      - modintel-net
+
+  mongodb:
+    image: mongo:7
+    volumes:
+      - modintel_mongo-data:/data/db
+    ports:
+      - "27017:27017"
+    networks:
+      - modintel-net
+    restart: always
+
+networks:
+  modintel-net:
+    name: modintel_net
+
+volumes:
+  modintel_waf-logs:
+    name: modintel_waf-logs
+  modintel_mongo-data:

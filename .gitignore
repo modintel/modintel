@@ -1,0 +1,32 @@
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+build/
+**/build/
+__pycache__/
+**/*.pyc
+*.log
+.env
+*txt
+!services/**/requirements.txt
+*.env
+raw_log.json
+.agents/
+.DS_Store
+venv/
+.venv/
+.pytest_cache/
+*.exe
+
+# Binaries
+services/log-collector/log-collector
+services/log-collector/log-collector.exe
+!services/log-collector/main.go
+!services/log-collector/go.mod
+!services/log-collector/go.sum
+
+# ML artifacts
+ml-pipeline/data/
+ml-pipeline/models/
+ml-pipeline/notebooks/.ipynb_checkpoints/
