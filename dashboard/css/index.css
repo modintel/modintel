@@ -216,3 +216,35 @@
     font-size: 0.72rem;
     color: var(--fg-subtle);
 }
+
+.ai-score {
+    font-weight: 600;
+    color: #ff570a;
+}
+
+.priority-p1 {
+    background: #dc2626;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.priority-p2 {
+    background: #f59e0b;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.priority-p3 {
+    background: #22c55e;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}

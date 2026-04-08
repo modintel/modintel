@@ -266,6 +266,18 @@ nav {
     color: var(--success);
 }
 
+.stat-value.priority-p1 {
+    color: #dc2626;
+}
+
+.stat-value.priority-p2 {
+    color: #f59e0b;
+}
+
+.stat-value.priority-p3 {
+    color: #22c55e;
+}
+
 .log-scroll {
     flex-grow: 1;
     overflow-y: auto;

@@ -62,20 +62,20 @@
                 </div>
                 <div class="stats-grid">
                     <div class="stat-cell">
-                        <div class="stat-label">Attacks Blocked</div>
+                        <div class="stat-label">Total Alerts</div>
                         <div class="stat-value danger" id="stat-total">0</div>
                     </div>
                     <div class="stat-cell">
-                        <div class="stat-label">System Status</div>
-                        <div class="stat-value success">On</div>
+                        <div class="stat-label">AI Enriched</div>
+                        <div class="stat-value success" id="stat-ai-count">0</div>
+                    </div>
+                    <div class="stat-cell">
+                        <div class="stat-label">Latest Priority</div>
+                        <div class="stat-value" id="stat-priority">—</div>
                     </div>
                     <div class="stat-cell">
                         <div class="stat-label">Last Rule ID</div>
                         <div class="stat-value" id="stat-rule">—</div>
-                    </div>
-                    <div class="stat-cell">
-                        <div class="stat-label">Target</div>
-                        <div class="stat-value" style="font-size: 0.8rem;">Juice Shop</div>
                     </div>
                 </div>
             </div>
@@ -208,11 +208,14 @@
                 <table>
                     <thead>
                         <tr>
-                            <th style="width: 15%;">Timestamp</th>
-                            <th style="width: 15%;">Client IP</th>
-                            <th style="width: 25%;">URI</th>
-                            <th style="width: 15%;">Score</th>
-                            <th style="width: 30%;">Triggered Rules</th>
+                            <th style="width: 6%;">Timestamp</th>
+                            <th style="width: 6%;">Client IP</th>
+                            <th style="width: 28%;">URI</th>
+                            <th style="width: 6%;">Score</th>
+                            <th style="width: 17%;">Triggered Rules</th>
+                            <th style="width: 7%;">AI Prob</th>
+                            <th style="width: 6%;">Conf</th>
+                            <th style="width: 8%;">Priority</th>
                         </tr>
                     </thead>
                     <tbody id="logs-body"></tbody>

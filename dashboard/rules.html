@@ -41,30 +41,203 @@
             <table class="rules-table">
                 <thead>
                     <tr>
-                        <th style="width: 20%;">Rule ID</th>
+                        <th style="width: 15%;">Rule ID</th>
                         <th>Classification</th>
-                        <th style="width: 20%;">Status</th>
+                        <th style="width: 50%;">Description</th>
+                        <th style="width: 10%;">Status</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td class="rule-id">911xxx</td>
-                        <td>Method Enforcement</td>
+                        <td class="rule-id">913100</td>
+                        <td>Scanner Detection</td>
+                        <td>Blocked potential scanner/automation tool</td>
                         <td style="color:var(--success);">Active</td>
                     </tr>
                     <tr>
-                        <td class="rule-id">941xxx</td>
-                        <td>XSS Detection</td>
+                        <td class="rule-id">930100</td>
+                        <td>Path Traversal</td>
+                        <td>OS Path Injection Attack</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">931100</td>
+                        <td>RFI Attack</td>
+                        <td>Possible Remote File Inclusion</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">932100</td>
+                        <td>RCE Attack</td>
+                        <td>Remote Command Execution</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">932105</td>
+                        <td>RCE Attack</td>
+                        <td>RCE via Unix Command Injection</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">932115</td>
+                        <td>RCE Attack</td>
+                        <td>RCE via Common Unix Commands</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">933100</td>
+                        <td>PHP Attack</td>
+                        <td>PHP Code Injection Attack</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">933160</td>
+                        <td>PHP Attack</td>
+                        <td>PHP File Inclusion Attempt</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">934110</td>
+                        <td>Generic Attack</td>
+                        <td>Node.js/Ruby Injection Attempt</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">934130</td>
+                        <td>Generic Attack</td>
+                        <td>NoSQL Injection Attempt</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">941100</td>
+                        <td>XSS Attack</td>
+                        <td>XSS Attack Detected via libinjection</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">941110</td>
+                        <td>XSS Attack</td>
+                        <td>XSS Filter Attack Category</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">941160</td>
+                        <td>XSS Attack</td>
+                        <td>NoScript XSS InjectionChecker: HTML Injection</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">941170</td>
+                        <td>XSS Attack</td>
+                        <td>NoScript XSS InjectionChecker: Attribute Injection</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">941210</td>
+                        <td>XSS Attack</td>
+                        <td>IE XSS Filters - Attack Detected</td>
                         <td style="color:var(--success);">Active</td>
                     </tr>
                     <tr>
                         <td class="rule-id">942100</td>
                         <td>SQL Injection</td>
+                        <td>SQL Injection Attack</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">942151</td>
+                        <td>SQL Injection</td>
+                        <td>SQL Injection - GROUP BY Injection</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">942160</td>
+                        <td>SQL Injection</td>
+                        <td>SQL Injection - Detected SLEEP()</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">942190</td>
+                        <td>SQL Injection</td>
+                        <td>SQL Injection - Detected BENCHMARK()</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">942270</td>
+                        <td>SQL Injection</td>
+                        <td>SQL Injection - Tautology Detected</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">942350</td>
+                        <td>SQL Injection</td>
+                        <td>SQL Injection - Time-Based Blind</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">942360</td>
+                        <td>SQL Injection</td>
+                        <td>SQL Injection - Stacked Queries</td>
                         <td style="color:var(--success);">Active</td>
                     </tr>
                     <tr>
                         <td class="rule-id">949110</td>
-                        <td>Anomaly Blocking</td>
+                        <td>Blocking</td>
+                        <td>Inbound Anomaly Score Exceeded</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">990001</td>
+                        <td>Protocol</td>
+                        <td>HTTP Protocol Compliance - Multiple Headers</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">990002</td>
+                        <td>Protocol</td>
+                        <td>HTTP Protocol Compliance - Host Header</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">990003</td>
+                        <td>Protocol</td>
+                        <td>HTTP Protocol Compliance - Content-Length</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">990004</td>
+                        <td>Protocol</td>
+                        <td>HTTP Protocol Compliance - Encoding</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">990006</td>
+                        <td>Protocol</td>
+                        <td>HTTP Protocol Compliance - Post Size</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">990008</td>
+                        <td>Protocol</td>
+                        <td>HTTP Protocol Compliance - Range Field</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">990009</td>
+                        <td>Protocol</td>
+                        <td>HTTP Protocol Compliance - TE Headers</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">990011</td>
+                        <td>Protocol</td>
+                        <td>HTTP Protocol Compliance - Empty Host Header</td>
+                        <td style="color:var(--success);">Active</td>
+                    </tr>
+                    <tr>
+                        <td class="rule-id">990012</td>
+                        <td>Protocol</td>
+                        <td>HTTP Protocol Compliance - Case of Method</td>
                         <td style="color:var(--success);">Active</td>
                     </tr>
                 </tbody>
