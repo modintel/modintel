@@ -53,19 +53,28 @@ func GetLogs(c *gin.Context) {
 	}
 
 	type AlertResponse struct {
-		Timestamp      string   `json:"timestamp"`
-		ClientIP       string   `json:"client_ip"`
-		URI            string   `json:"uri"`
-		AnomalyScore   float64  `json:"anomaly_score"`
-		TriggeredRules []string `json:"triggered_rules"`
+		Timestamp          string                 `json:"timestamp"`
+		ClientIP           string                 `json:"client_ip"`
+		URI                string                 `json:"uri"`
+		AnomalyScore       float64                `json:"anomaly_score"`
+		TriggeredRules     []string               `json:"triggered_rules"`
+		AIStatus           string                 `json:"ai_status"`
+		AIScore            *float64               `json:"ai_score"`
+		AIConfidence       *float64               `json:"ai_confidence"`
+		AIPriority         *string                `json:"ai_priority"`
+		AIExplanation      map[string]interface{} `json:"ai_explanation"`
+		AIModelVersion     *string                `json:"ai_model_version"`
+		AIEntropy          *float64               `json:"ai_entropy"`
+		AIConfidenceInterval *map[string]float64   `json:"ai_confidence_interval"`
 	}
 
 	alerts := make([]AlertResponse, 0, len(results))
 	for _, r := range results {
 		alert := AlertResponse{
-			Timestamp: r["timestamp"].(string),
-			ClientIP:  r["client_ip"].(string),
-			URI:       r["uri"].(string),
+			Timestamp:      r["timestamp"].(string),
+			ClientIP:       r["client_ip"].(string),
+			URI:            r["uri"].(string),
+			TriggeredRules: []string{},
 		}
 
 		if score, ok := r["anomaly_score"].(float64); ok {
@@ -77,6 +86,41 @@ func GetLogs(c *gin.Context) {
 				alert.TriggeredRules = append(alert.TriggeredRules, r.(string))
 			}
 		}
+
+		if status, ok := r["ai_status"].(string); ok {
+			alert.AIStatus = status
+		}
+		if score, ok := r["ai_score"].(float64); ok {
+			alert.AIScore = &score
+		}
+		if conf, ok := r["ai_confidence"].(float64); ok {
+			alert.AIConfidence = &conf
+		}
+		if priority, ok := r["ai_priority"].(string); ok {
+			alert.AIPriority = &priority
+		}
+		if expl, ok := r["ai_explanation"].(map[string]interface{}); ok {
+			alert.AIExplanation = expl
+		}
+		if modelVer, ok := r["ai_model_version"].(string); ok {
+			alert.AIModelVersion = &modelVer
+		}
+		if entropy, ok := r["ai_entropy"].(float64); ok {
+			alert.AIEntropy = &entropy
+		}
+		if ci, ok := r["ai_confidence_interval"].(map[string]interface{}); ok {
+			interval := make(map[string]float64)
+			if low, ok := ci["low"].(float64); ok {
+				interval["low"] = low
+			}
+			if high, ok := ci["high"].(float64); ok {
+				interval["high"] = high
+			}
+			if len(interval) > 0 {
+				alert.AIConfidenceInterval = &interval
+			}
+		}
+
 		alerts = append(alerts, alert)
 	}
 
@@ -99,16 +143,24 @@ func GetStats(c *gin.Context) {
 	var result bson.M
 	err = collection.FindOne(ctx, bson.M{}, opts).Decode(&result)
 	latestRule := "—"
+	latestPriority := "—"
 	if err == nil {
 		if rules, ok := result["triggered_rules"].(bson.A); ok && len(rules) > 0 {
 			if rule, ok := rules[0].(string); ok {
 				latestRule = rule
 			}
 		}
+		if priority, ok := result["ai_priority"].(string); ok && priority != "" {
+			latestPriority = priority
+		}
 	}
 
+	aiEnrichedCount, _ := collection.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
+
 	c.JSON(http.StatusOK, gin.H{
-		"total_alerts": total,
-		"latest_rule":  latestRule,
+		"total_alerts":      total,
+		"latest_rule":       latestRule,
+		"latest_priority":   latestPriority,
+		"ai_enriched_count": aiEnrichedCount,
 	})
 }
