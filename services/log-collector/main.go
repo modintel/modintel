@@ -25,15 +25,23 @@ func inferenceEngineURL() string {
 }
 
 func enrichWithAI(doc *parsers.AlertDocument) {
+	ruleSev := make(map[string]string)
+	ruleMsg := make(map[string]string)
+	for _, rd := range doc.RuleDetails {
+		ruleSev[rd.RuleID] = rd.Severity
+		ruleMsg[rd.RuleID] = rd.Message
+	}
+
 	payload := map[string]interface{}{
-		"triggered_rules": doc.TriggeredRules,
-		"anomaly_score":   doc.AnomalyScore,
-		"method":          doc.Method,
-		"uri":             doc.URI,
-		"body_length":     doc.BodyLength,
-		"header_count":    doc.HeaderCount,
-		"query_params":    doc.QueryParams,
-		"rule_details":    doc.RuleDetails,
+		"fired_rule_ids":    doc.TriggeredRules,
+		"rule_severities":   ruleSev,
+		"rule_messages":     ruleMsg,
+		"anomaly_score":     doc.AnomalyScore,
+		"inbound_threshold": 0.0,
+		"method":            doc.Method,
+		"uri":               doc.URI,
+		"headers":           doc.Headers,
+		"body":              doc.Body,
 	}
 
 	body, err := json.Marshal(payload)

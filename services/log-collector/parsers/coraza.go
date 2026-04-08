@@ -22,6 +22,8 @@ type AlertDocument struct {
 	ClientIP       string                 `bson:"client_ip" json:"client_ip"`
 	URI            string                 `bson:"uri" json:"uri"`
 	Method         string                 `bson:"method" json:"method"`
+	Body           string                 `bson:"body" json:"body"`
+	Headers        map[string]string      `bson:"headers" json:"headers"`
 	TriggeredRules []string               `bson:"triggered_rules" json:"triggered_rules"`
 	AnomalyScore   float64                `bson:"anomaly_score" json:"anomaly_score"`
 	Status         string                 `bson:"status" json:"status"`
@@ -56,6 +58,7 @@ func ParseCorazaLog(raw []byte) (*AlertDocument, error) {
 		Status:   "generated",
 		AIStatus: "unavailable",
 		RawLog:   rawData,
+		Headers:  make(map[string]string),
 	}
 
 	if transaction, ok := rawData["transaction"].(map[string]interface{}); ok {
@@ -75,10 +78,16 @@ func ParseCorazaLog(raw []byte) (*AlertDocument, error) {
 				doc.Method = method
 			}
 			if body, ok := req["body"].(string); ok {
+				doc.Body = body
 				doc.BodyLength = len(body)
 			}
 			if headers, ok := req["headers"].(map[string]interface{}); ok {
 				doc.HeaderCount = len(headers)
+				for k, v := range headers {
+					if sv, ok := v.(string); ok {
+						doc.Headers[k] = sv
+					}
+				}
 			}
 		}
 	} else {
