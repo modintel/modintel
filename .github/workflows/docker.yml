@@ -5,9 +5,9 @@ permissions:
   
 on:
   push:
-    branches: [ main ]
+    branches: [ modintel-base ]
   pull_request:
-    branches: [ main ]
+    branches: [ modintel-base ]
 
 env:
   REGISTRY: ghcr.io
