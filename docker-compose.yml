@@ -1,4 +1,20 @@
 services:
+  traffic-mirror:
+    build: ./services/traffic-mirror
+    ports:
+      - "8080:8080"
+    environment:
+      - CORAZA_URL=http://proxy-waf:80
+      - ML_URL=http://inference-engine:8083
+      - LOG_COLLECTOR_URL=http://log-collector:8081
+    networks:
+      - modintel-net
+    depends_on:
+      - proxy-waf
+      - inference-engine
+      - log-collector
+    restart: always
+
   proxy-waf:
     image: gbe0/coraza
     volumes:
@@ -10,8 +26,8 @@ services:
       - CADDY_REVERSE_PROXY=juice-shop:3000
     networks:
       - modintel-net
-    ports:
-      - "8080:8080"
+    expose:
+      - "80"
     restart: always
     user: root
 
