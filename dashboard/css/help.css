@@ -1,0 +1,30 @@
+.faq-section {
+    margin-bottom: 24px;
+}
+
+.faq-section h3 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--fg);
+    margin: 0 0 12px;
+}
+
+.faq-item {
+    margin-bottom: 12px;
+    padding: 12px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+.faq-question {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--fg);
+    margin-bottom: 4px;
+}
+
+.faq-answer {
+    font-size: 0.75rem;
+    color: var(--fg-muted);
+}
