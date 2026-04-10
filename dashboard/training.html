@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML Training</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <meta name="description" content="ML model training and evaluation for ModIntel">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/training.css">
+</head>
+
+<body>
+    <nav>
+        <div class="nav-brand">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff570a" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span style="color: #ff570a;">MODINTEL</span>
+        </div>
+        <div class="nav-links">
+            <a href="index.html">Events</a>
+            <a href="rules.html">Rules</a>
+            <a href="training.html" class="active">Training</a>
+            <a href="datasets.html">Datasets</a>
+            <a href="reports.html">Reports</a>
+            <a href="config.html">Config</a>
+            <a href="settings.html">Settings</a>
+        </div>
+        <div class="nav-actions"></div>
+    </nav>
+    <div class="main">
+        <div class="panel-left">
+            <h1>ML Training</h1>
+            <p>Train and evaluate ML models for hybrid WAF detection.</p>
+            
+            <div class="stats-grid">
+                <div class="stat-cell">
+                    <div class="stat-label">Active Model</div>
+                    <div class="stat-value" id="model-version">v3</div>
+                </div>
+                <div class="stat-cell">
+                    <div class="stat-label">Last Trained</div>
+                    <div class="stat-value" id="last-trained">—</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Train New Model</h3>
+                <p>Select datasets and train a new model version.</p>
+                
+                <div class="form-group">
+                    <label>Training Dataset</label>
+                    <select id="train-dataset">
+                        <option value="synthetic">Synthetic (Generated)</option>
+                        <option value="real">Real Traffic</option>
+                        <option value="combined" selected>Combined</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Model Type</label>
+                    <select id="model-type">
+                        <option value="random_forest" selected>Random Forest</option>
+                        <option value="xgboost">XGBoost</option>
+                        <option value="logistic">Logistic Regression</option>
+                        <option value="svm">SVM</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Validation Split</label>
+                    <input type="range" min="10" max="40" value="20" id="val-split">
+                    <span id="val-split-val">20%</span>
+                </div>
+
+                <button class="btn btn-primary" onclick="trainModel()">Start Training</button>
+            </div>
+
+            <div class="section">
+                <h3>Latest Evaluation</h3>
+                <div class="eval-metrics" id="eval-metrics">
+                    <div class="metric">
+                        <div class="metric-label">Precision</div>
+                        <div class="metric-value">96.2%</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Recall</div>
+                        <div class="metric-value">94.8%</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">FPR</div>
+                        <div class="metric-value" style="color: var(--success);">3.1%</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">F1 Score</div>
+                        <div class="metric-value">95.5%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="panel-right" style="overflow-y: auto;">
+            <div class="panel-right-header">
+                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Training History</div>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Version</th>
+                        <th>Model</th>
+                        <th>Dataset</th>
+                        <th>Precision</th>
+                        <th>Recall</th>
+                        <th>FPR</th>
+                        <th>Date</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="training-history">
+                    <tr>
+                        <td>v3</td>
+                        <td>Random Forest</td>
+                        <td>Combined</td>
+                        <td>96.2%</td>
+                        <td>94.8%</td>
+                        <td>3.1%</td>
+                        <td>2026-04-08</td>
+                        <td><span class="badge active">Active</span></td>
+                    </tr>
+                    <tr>
+                        <td>v2</td>
+                        <td>Random Forest</td>
+                        <td>Synthetic</td>
+                        <td>89.5%</td>
+                        <td>91.2%</td>
+                        <td>8.4%</td>
+                        <td>2026-04-05</td>
+                        <td><button class="btn btn-sm">Deploy</button></td>
+                    </tr>
+                    <tr>
+                        <td>v1</td>
+                        <td>Logistic Regression</td>
+                        <td>Synthetic</td>
+                        <td>82.1%</td>
+                        <td>85.6%</td>
+                        <td>12.3%</td>
+                        <td>2026-04-01</td>
+                        <td><button class="btn btn-sm">Deploy</button></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script src="js/training.js"></script>
+</body>
+
+</html>
