@@ -146,8 +146,14 @@ nav {
 }
 
 .btn-danger {
+    background: var(--danger-subtle);
     color: var(--danger);
-    border-color: rgba(220, 38, 38, 0.2);
+    border-color: rgba(220, 38, 38, 0.3);
+}
+
+.btn-danger:hover {
+    background: var(--danger);
+    color: #fff;
 }
 
 .main {
