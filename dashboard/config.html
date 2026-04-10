@@ -26,7 +26,11 @@
         <div class="nav-links">
             <a href="index.html">Events</a>
             <a href="rules.html">Rules</a>
+            <a href="training.html">Training</a>
+            <a href="datasets.html">Datasets</a>
+            <a href="reports.html">Reports</a>
             <a href="config.html" class="active">Config</a>
+            <a href="settings.html">Settings</a>
         </div>
         <div class="nav-actions"></div>
     </nav>
@@ -36,22 +40,70 @@
             <p>System-level configuration and environment variables for the ModIntel stack.</p>
         </div>
         <div class="panel-right" style="overflow-y: auto;">
-            <div class="panel-header">
-            System Parameters</div>
-            <div class="config-item">
-                <div class="config-label">WAF Engine</div>
-                <div class="config-value">Coraza Proxy (Caddy-based)</div>
+            <div class="panel-right-header">
+                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">System Parameters</div>
             </div>
-            <div class="config-item">
-                <div class="config-label">Internal Endpoint</div>
-                <div class="config-value">juice-shop:3000</div>
+
+            <div class="config-section">
+                <div class="config-section-title">Runtime Targets</div>
+                <div class="config-item">
+                    <div class="config-label">Review API Base URL</div>
+                    <div class="config-value-wrap">
+                        <input id="cfg-review-api" class="config-input" placeholder="http://localhost:8082" />
+                        <button class="btn btn-secondary" onclick="saveConfig()">Save</button>
+                    </div>
+                    <div class="config-note">Used by dashboard pages to query logs, stats, and control endpoints.</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Inference Engine URL</div>
+                    <div class="config-value" id="cfg-inference-url">—</div>
+                    <div class="config-note">Read from current deployment config when available.</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Protected Backend Target</div>
+                    <div class="config-value" id="cfg-upstream-target">—</div>
+                    <div class="config-note">This should be owned by user deployment choice, not hardcoded in dashboard.</div>
+                </div>
             </div>
-            <div class="config-item">
-                <div class="config-label">Log Collector</div>
-                <div class="config-value">Golang v1.22 / MongoDB</div>
+
+            <div class="config-section">
+                <div class="config-section-title">Live System Health</div>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <div class="config-label">Review API Status</div>
+                        <div class="config-value" id="stat-review-api">Checking...</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="config-label">Inference Engine Status</div>
+                        <div class="config-value" id="stat-inference">Checking...</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="config-label">Model Version</div>
+                        <div class="config-value" id="stat-model">—</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="config-label">Total Predictions</div>
+                        <div class="config-value" id="stat-predictions">—</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <div class="config-section-title">Available API Endpoints</div>
+                <div class="config-item">
+                    <div class="config-label">Operational Endpoints</div>
+                    <ul class="config-list" id="config-endpoints">
+                        <li><code>GET /api/stats</code> — alert and enrichment counters</li>
+                        <li><code>GET /api/logs</code> — latest enriched alerts</li>
+                        <li><code>DELETE /api/logs</code> — clear stored alerts</li>
+                        <li><code>GET /health</code> (inference) — model/runtime health</li>
+                        <li><code>GET /model-info</code> (inference) — model metadata</li>
+                    </ul>
+                </div>
             </div>
         </div>
     </div>
+    <script src="js/config.js"></script>
 </body>
 
 </html>
