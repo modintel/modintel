@@ -1,19 +1,3 @@
-.panel-left {
-    padding: 2.5rem 2rem;
-}
-
-.panel-left h1 {
-    font-size: 1.7rem;
-    font-weight: 700;
-    margin-bottom: 1rem;
-}
-
-.panel-left p {
-    font-size: 0.85rem;
-    color: var(--fg-muted);
-    line-height: 1.6;
-}
-
 .rules-table {
     width: 100%;
     border-collapse: collapse;
@@ -28,4 +12,86 @@ td {
 .rule-id {
     font-family: monospace;
     font-weight: 600;
+}
+
+.highlight-row {
+    animation: highlightFade 4s ease-out;
+}
+
+.rule-row {
+    cursor: pointer;
+}
+
+.rule-id-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.rule-toggle {
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    color: var(--fg-muted);
+    background: #fff;
+    transition: transform 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    user-select: none;
+}
+
+.rule-row.expanded .rule-toggle {
+    transform: rotate(90deg);
+    color: #ff570a;
+    border-color: #ff570a;
+}
+
+.rule-details-row {
+    display: none;
+}
+
+.rule-details-row.open {
+    display: table-row;
+}
+
+.rule-details-cell {
+    background: #fafafa;
+    border-bottom: 0.8px solid var(--border);
+    padding: 0;
+}
+
+.rule-details {
+    padding: 0.9rem 1rem 1rem 2.5rem;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    gap: 0.75rem 1.2rem;
+}
+
+.rule-detail-item b {
+    display: block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fg-subtle);
+    margin-bottom: 0.2rem;
+}
+
+.rule-detail-item span {
+    font-size: 0.8rem;
+    color: var(--fg);
+    line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+    .rule-details {
+        grid-template-columns: 1fr;
+    }
+}
+
+@keyframes highlightFade {
+    0% { background-color: rgba(255, 87, 10, 0.2); }
+    100% { background-color: transparent; }
 }
