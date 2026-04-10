@@ -2,9 +2,9 @@ name: security-analysis
 
 on:
   push:
-    branches: [ main ]
+    branches: [ modintel-base ]
   pull_request:
-    branches: [ main ]
+    branches: [ modintel-base ]
 
 jobs:
   analyze:
