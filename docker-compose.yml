@@ -67,16 +67,6 @@ services:
       - modintel-net
     restart: always
 
-  mongodb:
-    image: mongo:7
-    volumes:
-      - modintel_mongo-data:/data/db
-    ports:
-      - "27017:27017"
-    networks:
-      - modintel-net
-    restart: always
-
 networks:
   modintel-net:
     name: modintel_net
@@ -84,4 +74,3 @@ networks:
 volumes:
   modintel_waf-logs:
     name: modintel_waf-logs
-  modintel_mongo-data:
