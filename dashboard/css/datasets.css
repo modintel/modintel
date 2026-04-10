@@ -1,0 +1,141 @@
+.section {
+    margin-bottom: 24px;
+    padding: 16px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+.section h3 {
+    margin: 0 0 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--fg);
+}
+
+.section p {
+    margin: 0 0 16px;
+    font-size: 0.8125rem;
+    color: var(--fg-muted);
+}
+
+.form-group {
+    margin-bottom: 12px;
+}
+
+.form-group label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--fg-muted);
+    margin-bottom: 4px;
+}
+
+.form-group select,
+.form-group input {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--fg);
+}
+
+.source-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.source-item {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+.source-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    margin-right: 12px;
+}
+
+.source-icon.sqli {
+    background: rgba(220, 38, 38, 0.1);
+    color: #dc2626;
+}
+
+.source-icon.xss {
+    background: rgba(251, 191, 36, 0.1);
+    color: #d97706;
+}
+
+.source-icon.cmdi {
+    background: rgba(168, 85, 247, 0.1);
+    color: #a855f7;
+}
+
+.source-icon.normal {
+    background: rgba(22, 163, 74, 0.1);
+    color: #16a34a;
+}
+
+.source-info {
+    flex: 1;
+}
+
+.source-name {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--fg);
+}
+
+.source-meta {
+    font-size: 0.6875rem;
+    color: var(--fg-muted);
+}
+
+.source-actions {
+    margin-left: 12px;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+}
+
+.data-table th {
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+}
+
+.data-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--fg);
+}
+
+.data-table tr:hover td {
+    background: var(--bg-panel);
+}
+
+.btn-sm {
+    padding: 4px 8px;
+    font-size: 0.6875rem;
+    border-radius: 3px;
+}
