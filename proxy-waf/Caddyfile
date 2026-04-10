@@ -32,6 +32,9 @@
 		include /opt/coraza/overrides/*.conf
 	}
 
+	# Mirror traffic to ML inference service for false negative detection
+	mirror http://inference-engine:8083
+
 	# Proxy traffic to the relevant container(s)
 	reverse_proxy juice-shop:3000 {
 		trusted_proxies private_ranges
