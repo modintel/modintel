@@ -294,14 +294,14 @@ def _top5_shap(feature_vector: np.ndarray, feature_names: List[str], schema: Dic
         import shap  # type: ignore
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(feature_vector)
-        # For binary classifiers shap_values may be a list [neg_class, pos_class]
         if isinstance(shap_values, list):
-            sv = shap_values[1][0]
+            sv = np.array(shap_values[1][0])
         else:
-            sv = shap_values[0]
+            sv = np.array(shap_values[0])
+        if sv.ndim > 1:
+            sv = sv[0]
     except Exception:
-        # Fallback: use raw feature values as proxy importance
-        sv = feature_vector[0]
+        sv = np.array(feature_vector[0])
 
     # Pair names with shap values and sort by absolute magnitude
     pairs = list(zip(feature_names, sv))
@@ -312,12 +312,13 @@ def _top5_shap(feature_vector: np.ndarray, feature_names: List[str], schema: Dic
     for name, val in top5:
         feat_meta = features_dict.get(name, {})
         group = feat_meta.get("group", "unknown")
-        direction = "positive" if val >= 0 else "negative"
+        val_scalar = float(val) if np.ndim(val) > 0 else val
+        direction = "positive" if val_scalar >= 0 else "negative"
         contributions.append(
             ShapContribution(
                 name=name,
                 group=group,
-                shap_value=round(float(val), 6),
+                shap_value=round(float(val_scalar), 6),
                 direction=direction,
             )
         )
