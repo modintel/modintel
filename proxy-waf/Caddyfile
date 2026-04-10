@@ -1,42 +1,50 @@
-# Default Caddyfile for use with Coraza WAF
-# See https://github.com/corazawaf/coraza-caddy for Caddy + Coraza specific information.
-
-# Ensure Coraza WAF runs first - this must be included for Coraza to be working
 {
 	order coraza_waf first
 }
 
-# Create the HTTP listener
-:80 {
-	# Load Coraza configuration
+:8080 {
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		Permissions-Policy geolocation=(), microphone=(), camera=()
+	}
+
 	coraza_waf {
-		# Main configuration file
 		include /opt/coraza/config/coraza.conf
-
-		# User defined configuration files
-		include /opt/coraza/config.d/*.conf
-
-		# OWASP Core Rule Set (CRS) Setup
+		include /opt/coraza/config.d/user.conf
 		include /opt/coraza/config/crs-setup.conf
-
-		# OWASP Core Rule Set (CRS)
 		include /opt/coraza/owasp-crs/*.conf
-
-		# Other baked in rule sets or configurations
+		include /opt/coraza/config.d/custom.conf
 		include /opt/coraza/rules/*.conf
-
-		# User defined rule sets
 		include /opt/coraza/rules.d/*.conf
-
-		# Any overrides specified in env vars
 		include /opt/coraza/overrides/*.conf
 	}
 
-	# Mirror traffic to ML inference service for false negative detection
-	mirror http://inference-engine:8083
-
-	# Proxy traffic to the relevant container(s)
 	reverse_proxy juice-shop:3000 {
 		trusted_proxies private_ranges
 	}
+}
+
+:3000 {
+	root * /srv/dashboard
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy geolocation=(), microphone=(), camera=()
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+	}
+
+	handle /api/* {
+		reverse_proxy review-api:8082
+	}
+
+	handle_path /inference/* {
+		reverse_proxy inference-engine:8083
+	}
+
+	file_server
 }
