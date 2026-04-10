@@ -51,11 +51,11 @@ async function updateLogs() {
                 <td style="color:var(--fg-muted);">${new Date(ts).toLocaleTimeString()}</td>
                 <td>${alert.client_ip}</td>
                 <td style="font-family:monospace;font-size:0.75rem;">${alert.uri}</td>
-                <td class="anomaly-badge">${alert.anomaly_score}</td>
-                <td>${rules}</td>
-                <td>${aiScore}</td>
-                <td>${aiConf}</td>
-                <td>${aiPriority}</td>
+                <td class="anomaly-badge" style="text-align: center;">${alert.anomaly_score}</td>
+                <td style="text-align: center;">${rules}</td>
+                <td style="text-align: center;">${aiScore}</td>
+                <td style="text-align: center;">${aiConf}</td>
+                <td style="text-align: center;">${aiPriority}</td>
             `;
             tbody.appendChild(row);
         });
