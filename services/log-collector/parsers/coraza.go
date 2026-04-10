@@ -128,11 +128,9 @@ func ParseCorazaLog(raw []byte) (*AlertDocument, error) {
 
 						ruleIdStr := strconv.Itoa(ruleId)
 						if _, exists := triggeredRulesSet[ruleIdStr]; !exists {
-							if (ruleId >= 910000 && ruleId <= 949999) || (ruleId >= 990000 && ruleId <= 999999) {
-								if hasMessage && mText != "" {
-									triggeredRules = append(triggeredRules, ruleIdStr)
-									triggeredRulesSet[ruleIdStr] = true
-								}
+							if hasMessage && mText != "" {
+								triggeredRules = append(triggeredRules, ruleIdStr)
+								triggeredRulesSet[ruleIdStr] = true
 							}
 						}
 
