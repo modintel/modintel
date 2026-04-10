@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/settings.css">
+</head>
+
+<body>
+    <nav>
+        <div class="nav-brand">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff570a" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span style="color: #ff570a;">MODINTEL</span>
+        </div>
+        <div class="nav-links">
+            <a href="index.html">Events</a>
+            <a href="rules.html">Rules</a>
+            <a href="training.html">Training</a>
+            <a href="datasets.html">Datasets</a>
+            <a href="reports.html">Reports</a>
+            <a href="config.html">Config</a>
+            <a href="settings.html" class="active">Settings</a>
+        </div>
+        <div class="nav-actions"></div>
+    </nav>
+    <div class="main">
+        <div class="panel-left">
+            <h1>Settings</h1>
+            <p>Configure system preferences and user settings.</p>
+            
+            <div class="section">
+                <h3>User Profile</h3>
+                <div class="form-group">
+                    <label>Display Name</label>
+                    <input type="text" id="display-name" value="Security Analyst">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="email" value="analyst@modintel.local">
+                </div>
+                <button class="btn btn-primary" onclick="saveProfile()">Save Changes</button>
+            </div>
+
+            <div class="section">
+                <h3>Notifications</h3>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Email Alerts</div>
+                        <div class="setting-desc">Receive email for high-priority alerts</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="email-alerts">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Daily Summary</div>
+                        <div class="setting-desc">Receive daily attack summary report</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="daily-summary" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>System</h3>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Auto-refresh</div>
+                        <div class="setting-desc">Automatically refresh dashboard data</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="auto-refresh" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">AI Enrichment</div>
+                        <div class="setting-desc">Enable ML inference on new alerts</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="ai-enrichment" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div class="panel-right" style="overflow-y: auto;">
+            <div class="panel-right-header">
+                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Account</div>
+            </div>
+            <div class="account-section">
+                <div class="account-avatar">SA</div>
+                <div class="account-info">
+                    <div class="account-name">Security Analyst</div>
+                    <div class="account-role">analyst@modintel.local</div>
+                </div>
+            </div>
+            <div class="panel-right-header" style="margin-top: 16px;">
+                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Danger Zone</div>
+            </div>
+            <div class="danger-actions">
+                <button class="btn btn-danger">Delete All Alerts</button>
+                <button class="btn btn-danger">Reset ML Model</button>
+            </div>
+        </div>
+    </div>
+    <script src="js/settings.js"></script>
+</body>
+
+</html>
