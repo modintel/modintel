@@ -1,17 +1,23 @@
 services:
   proxy-waf:
-    image: gbe0/coraza
+    image: ghcr.io/coreruleset/coraza-crs:caddy-alpine
     volumes:
-      - ./proxy-waf/Caddyfile:/etc/caddy/Caddyfile
+      - ./proxy-waf/Caddyfile:/config/caddy/Caddyfile
       - ./proxy-waf/coraza.conf:/opt/coraza/config.d/user.conf
       - ./proxy-waf/custom_rules.conf:/opt/coraza/config.d/custom.conf
+      - ./dashboard:/srv/dashboard:ro
       - modintel_waf-logs:/var/log/coraza
     environment:
-      - CADDY_REVERSE_PROXY=juice-shop:3000
+      - BACKEND=juice-shop:3000
+      - CORAZA_AUDIT_LOG=/var/log/coraza/audit.json
+      - PARANOIA=4
+      - BLOCKING_PARANOIA=4
+      - ANOMALY_INBOUND=3
     networks:
       - modintel-net
     ports:
-      - "8080:80"
+      - "8080:8080"
+      - "3000:3000"
     restart: always
     user: root
 
@@ -35,18 +41,6 @@ services:
       - "8081:8081"
     restart: always
 
-  dashboard:
-    image: halverneus/static-file-server:latest
-    volumes:
-      - ./dashboard:/web
-    ports:
-      - "3000:8080"
-    environment:
-      - PORT=8080
-    networks:
-      - modintel-net
-    restart: always
-
   inference-engine:
     build: ./services/inference-engine
     ports:
@@ -54,11 +48,24 @@ services:
     volumes:
       - ./models:/app/models:ro
     environment:
-      - MODEL_VERSION=latest
+      - MODEL_VERSION=v3
     mem_limit: 512m
     restart: always
     networks:
       - modintel-net
+
+  review-api:
+    build: ./services/review-api
+    ports:
+      - "8082:8082"
+    environment:
+      - MONGO_URI=mongodb://host.docker.internal:27017/modintel
+      - WAF_ENGINE=Coraza (Caddy edge)
+      - BACKEND_TARGET=juice-shop:3000
+      - INFERENCE_ENGINE_URL=http://inference-engine:8083
+    networks:
+      - modintel-net
+    restart: always
 
   mongodb:
     image: mongo:7
