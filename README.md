@@ -8,14 +8,16 @@
   <img src="https://img.shields.io/badge/Infra-Docker-2496ED?style=flat&logo=docker&logoColor=white&labelColor=333" />
 
   <br/>
+
+<b>Modintel</b> is a hybrid Web Application Firewall (WAF) research system designed to reduce false positives in rule-based WAFs using Machine Learning. 
+
+It functions as an intelligence layer that sits alongside the OWASP Core Rule Set (CRS) running on Coraza (The modern ModSecurity). 
+
   <br/>
 
   <img src="docs/assets/dashboard.png" width="100%" />
+
 </div>
-
-<b>modintel</b> is a hybrid Web Application Firewall (WAF) research system designed to reduce false positives in rule-based WAFs using Machine Learning. 
-
-It functions as an intelligence layer that sits alongside the OWASP Core Rule Set (CRS) running on Coraza (The modern ModSecurity). 
 
 ## Architectural Philosophy
 
