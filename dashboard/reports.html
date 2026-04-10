@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attack Reports</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <meta name="description" content="Attack analysis and reporting for ModIntel">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/reports.css">
+</head>
+
+<body>
+    <nav>
+        <div class="nav-brand">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff570a" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span style="color: #ff570a;">MODINTEL</span>
+        </div>
+        <div class="nav-links">
+            <a href="index.html">Events</a>
+            <a href="rules.html">Rules</a>
+            <a href="training.html">Training</a>
+            <a href="datasets.html">Datasets</a>
+            <a href="reports.html" class="active">Reports</a>
+            <a href="config.html">Config</a>
+            <a href="settings.html">Settings</a>
+        </div>
+        <div class="nav-actions"></div>
+    </nav>
+    <div class="main">
+        <div class="panel-left">
+            <h1>Attack Reports</h1>
+            <p>Analyze attack patterns and generate reports.</p>
+            
+                <div class="stats-grid">
+                    <div class="stat-cell">
+                        <div class="stat-label">Total Attacks</div>
+                        <div class="stat-value" id="total-attacks">0</div>
+                    </div>
+                    <div class="stat-cell">
+                        <div class="stat-label">Blocked</div>
+                        <div class="stat-value" id="blocked-attacks">0%</div>
+                    </div>
+                </div>
+
+            <div class="section">
+                <h3>Generate Report</h3>
+                <p>Create PDF or CSV reports of attack data.</p>
+                
+                <div class="form-group">
+                    <label>Report Type</label>
+                    <select id="report-type">
+                        <option value="summary">Summary</option>
+                        <option value="detailed">Detailed Analysis</option>
+                        <option value="rule-trigger">Rule Trigger Report</option>
+                        <option value="ml-performance">ML Performance</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Date Range</label>
+                    <select id="date-range">
+                        <option value="today">Today</option>
+                        <option value="24h" selected>Last 24 Hours</option>
+                        <option value="7d">Last 7 Days</option>
+                        <option value="30d">Last 30 Days</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-primary" onclick="generateReport()">Download CSV</button>
+            </div>
+
+            <div class="section">
+                <h3>Top Attack Vectors</h3>
+                <div class="attack-vector-list" id="attack-vectors"></div>
+            </div>
+        </div>
+        <div class="panel-right" style="overflow-y: auto;">
+            <div class="panel-right-header">
+                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Recent Attacks</div>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>IP</th>
+                        <th>Type</th>
+                        <th>URI</th>
+                        <th>Rule</th>
+                        <th>AI Score</th>
+                    </tr>
+                </thead>
+                <tbody id="attacks-list"></tbody>
+            </table>
+        </div>
+    </div>
+    <script src="js/reports.js"></script>
+</body>
+
+</html>
