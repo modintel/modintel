@@ -1,4 +1,5 @@
-const API_BASE = 'http://localhost:8082/api';
+const API_BASE = '/api';
+let currentGraphRange = 'day';
 
 async function updateStats() {
     try {
@@ -8,7 +9,7 @@ async function updateStats() {
         document.getElementById('stat-total').textContent = data.total_alerts || 0;
         document.getElementById('stat-ai-count').textContent = data.ai_enriched_count || 0;
         document.getElementById('stat-rule').textContent = data.latest_rule || '—';
-        
+
         const priorityEl = document.getElementById('stat-priority');
         if (data.latest_priority && data.latest_priority !== '—') {
             priorityEl.textContent = data.latest_priority;
@@ -30,23 +31,23 @@ async function updateLogs() {
         }
         const tbody = document.getElementById('logs-body');
         tbody.innerHTML = '';
-        data.alerts.forEach((alert, i) => {
+        const maxRows = 500;
+        data.alerts.slice(0, maxRows).forEach((alert, i) => {
             const row = document.createElement('tr');
-            row.style.animation = `slideIn 0.2s ease ${i * 0.05}s both`;
             const ts = alert.timestamp ? alert.timestamp.replace(/\//g, '-').replace(' ', 'T') + 'Z' : '-';
-            const rules = alert.triggered_rules ? alert.triggered_rules.map(r => `<span class="rule-code">${r}</span>`).join(' ') : '-';
-            
+            const rules = alert.triggered_rules ? alert.triggered_rules.map(r => `<a href="rules.html?rule=${r}" class="rule-code">${r}</a>`).join(' ') : '-';
+
             const aiScoreVal = alert.ai_score;
-            const aiScore = aiScoreVal !== null && aiScoreVal !== undefined 
-                ? `<span class="ai-score">${(aiScoreVal * 100).toFixed(1)}%</span>` 
+            const aiScore = aiScoreVal !== null && aiScoreVal !== undefined
+                ? `<span class="ai-score">${(aiScoreVal * 100).toFixed(1)}%</span>`
                 : '-';
-            const aiPriority = alert.ai_priority 
-                ? `<span class="priority-${alert.ai_priority.toLowerCase()}">${alert.ai_priority}</span>` 
+            const aiPriority = alert.ai_priority
+                ? `<span class="priority-${alert.ai_priority.toLowerCase()}">${alert.ai_priority}</span>`
                 : '-';
             const aiConf = alert.ai_confidence !== null && alert.ai_confidence !== undefined
                 ? `${alert.ai_confidence.toFixed(0)}%`
                 : '-';
-            
+
             row.innerHTML = `
                 <td style="color:var(--fg-muted);">${new Date(ts).toLocaleTimeString()}</td>
                 <td>${alert.client_ip}</td>
@@ -59,24 +60,125 @@ async function updateLogs() {
             `;
             tbody.appendChild(row);
         });
-    } catch (e) { 
-        console.error('Error in updateLogs:', e); 
+    } catch (e) {
+        console.error('Error in updateLogs:', e);
     }
 }
 
 setInterval(() => { updateStats(); updateLogs(); }, 2000);
-updateStats(); updateLogs();
+updateStats();
+updateLogs();
 
-function toggleSidebar() {
-    const panelDefault = document.getElementById('panel-default');
-    const sidebarContent = document.getElementById('sidebar-content');
-    const isOpen = sidebarContent.classList.contains('visible');
-
-    if (isOpen) {
-        sidebarContent.classList.remove('visible');
-        panelDefault.classList.remove('hidden');
-    } else {
-        sidebarContent.classList.add('visible');
-        panelDefault.classList.add('hidden');
+async function clearLogs() {
+    try {
+        const res = await fetch(`${API_BASE}/logs`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        updateStats();
+        updateLogs();
+    } catch (e) {
+        console.error('Error clearing logs:', e);
     }
 }
+
+function showClearModal() {
+    document.getElementById('clear-modal').classList.add('open');
+}
+
+function hideClearModal() {
+    document.getElementById('clear-modal').classList.remove('open');
+}
+
+function confirmClearLogs() {
+    hideClearModal();
+    clearLogs();
+}
+
+function handleSync() {
+    const btn = document.getElementById('sync-btn');
+    const icon = document.getElementById('sync-icon');
+    btn.classList.add('syncing');
+    updateStats();
+    updateLogs();
+    updateGraph(currentGraphRange);
+    setTimeout(() => {
+        btn.classList.remove('syncing');
+    }, 1000);
+}
+
+function generateGraphPoints(data) {
+    const max = Math.max(...data, 1);
+    const width = 300;
+    const height = 100;
+    const padding = 5;
+    const step = (width - padding * 2) / (data.length - 1);
+
+    const points = data.map((val, i) => {
+        const x = padding + i * step;
+        const y = height - padding - (val / max) * (height - padding * 2);
+        return `${x},${y}`;
+    }).join(' ');
+
+    const areaPoints = `${padding},${height - padding} ` + points + ` ${width - padding},${height - padding} Z`;
+
+    return { points, areaPoints };
+}
+
+function updateGraphVisual(range, data) {
+    const { points, areaPoints } = generateGraphPoints(data);
+
+    document.getElementById('chart-line').setAttribute('points', points);
+    document.getElementById('chart-area').setAttribute('d', 'M' + areaPoints);
+
+    document.querySelectorAll('.graph-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.range === range);
+    });
+}
+
+function renderGraphLabels(range, labels) {
+    const labelsEl = document.getElementById('graph-labels');
+    if (!labelsEl) return;
+
+    labelsEl.innerHTML = '';
+    if (!Array.isArray(labels) || labels.length === 0) {
+        labelsEl.innerHTML = '<span>-</span><span>-</span><span>-</span>';
+        return;
+    }
+
+    let indices;
+    if (range === 'day') {
+        indices = [0, 24, 48, 72, labels.length - 1];
+    } else if (range === 'week') {
+        indices = [0, 21, 42, 63, labels.length - 1];
+    } else {
+        indices = [0, 30, 60, 90, labels.length - 1];
+    }
+
+    const unique = [...new Set(indices.filter(i => i >= 0 && i < labels.length))];
+    unique.forEach(i => {
+        const span = document.createElement('span');
+        span.textContent = labels[i];
+        labelsEl.appendChild(span);
+    });
+}
+
+async function updateGraph(range) {
+    currentGraphRange = range;
+    try {
+        const res = await fetch(`${API_BASE}/trend?range=${range}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const values = Array.isArray(data.values) && data.values.length > 0 ? data.values : new Array(96).fill(0);
+        updateGraphVisual(range, values);
+        renderGraphLabels(range, data.labels);
+    } catch (e) {
+        console.error('Error fetching trend data:', e);
+        updateGraphVisual(range, new Array(96).fill(0));
+        renderGraphLabels(range, []);
+    }
+}
+
+document.querySelectorAll('.graph-btn').forEach(btn => {
+    btn.addEventListener('click', () => updateGraph(btn.dataset.range));
+});
+
+updateGraph('day');
