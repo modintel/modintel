@@ -14,7 +14,7 @@
 		include /opt/coraza/config/coraza.conf
 		include /opt/coraza/config.d/user.conf
 		include /opt/coraza/config/crs-setup.conf
-		include /opt/coraza/owasp-crs/*.conf
+		include /opt/coraza/owasp-crs/rules/*.conf
 		include /opt/coraza/config.d/custom.conf
 		include /opt/coraza/rules/*.conf
 		include /opt/coraza/rules.d/*.conf
