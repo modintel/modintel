@@ -23,15 +23,15 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      
+        uses: actions/checkout@v4
+
       - name: init
-        uses: github/codeql-action/init@820e3160e279568db735cee8ed8f8e77a6da7818
+        uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.language == 'go' && 'autobuild' || 'none' }}
 
       - name: analyze
-        uses: github/codeql-action/analyze@820e3160e279568db735cee8ed8f8e77a6da7818
+        uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{matrix.language}}"
