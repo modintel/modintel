@@ -1,5 +1,34 @@
 const API_BASE = '/api';
 let currentGraphRange = 'day';
+const MAX_VISIBLE_RULES = 5;
+
+function formatRules(rules) {
+    if (!rules || rules.length === 0) return '-';
+
+    const visibleRules = rules.slice(0, MAX_VISIBLE_RULES);
+    const hiddenCount = rules.length - MAX_VISIBLE_RULES;
+
+    let html = visibleRules.map(r => `<a href="rules.html?rule=${r}" class="rule-code">${r}</a>`).join(' ');
+
+    if (hiddenCount > 0) {
+        html += ` <span class="rules-more" data-hidden="${rules.slice(MAX_VISIBLE_RULES).join(',')}">+${hiddenCount} more</span>`;
+    }
+
+    return html;
+}
+
+function expandRules(element) {
+    const hiddenRules = element.dataset.hidden.split(',');
+    const links = hiddenRules.map(r => `<a href="rules.html?rule=${r}" class="rule-code">${r}</a>`).join(' ');
+    const parent = element.parentElement;
+    parent.innerHTML = parent.innerHTML.replace(element.outerHTML, links);
+}
+
+document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('rules-more')) {
+        expandRules(e.target);
+    }
+});
 
 async function updateStats() {
     try {
@@ -35,7 +64,7 @@ async function updateLogs() {
         data.alerts.slice(0, maxRows).forEach((alert, i) => {
             const row = document.createElement('tr');
             const ts = alert.timestamp ? alert.timestamp.replace(/\//g, '-').replace(' ', 'T') + 'Z' : '-';
-            const rules = alert.triggered_rules ? alert.triggered_rules.map(r => `<a href="rules.html?rule=${r}" class="rule-code">${r}</a>`).join(' ') : '-';
+            const rules = formatRules(alert.triggered_rules);
 
             const aiScoreVal = alert.ai_score;
             const aiScore = aiScoreVal !== null && aiScoreVal !== undefined
