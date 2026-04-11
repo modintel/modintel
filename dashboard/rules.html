@@ -38,6 +38,38 @@
         <div class="panel-left">
             <h1>Rule Intelligence</h1>
             <p>Active security signatures currently enforced by the ModIntel engine.</p>
+            
+            <div class="rule-editor">
+                <h3>Write Custom Rule</h3>
+                <div class="form-group">
+                    <label>Rule ID</label>
+                    <input type="text" id="rule-id" placeholder="990100">
+                </div>
+                <div class="form-group">
+                    <label>Category</label>
+                    <select id="rule-category">
+                        <option value="SQLi">SQL Injection</option>
+                        <option value="XSS">XSS Attack</option>
+                        <option value="RCE">RCE Attack</option>
+                        <option value="LFI">Path Traversal</option>
+                        <option value="RFI">RFI Attack</option>
+                        <option value="Protocol">Protocol</option>
+                        <option value="Custom">Custom</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" id="rule-desc" placeholder="Brief description of the rule">
+                </div>
+                <div class="form-group">
+                    <label>Rule Syntax</label>
+                    <textarea id="rule-syntax" rows="4" placeholder="SecRule ARGS &quot;@rx pattern&quot; &quot;id:990100,phase:2,pass,log,msg:'Rule description'&quot;"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-primary" onclick="saveRule()">Add Rule</button>
+                    <button class="btn btn-secondary" onclick="clearRuleForm()">Clear</button>
+                </div>
+            </div>
         </div>
         <div class="panel-right" style="overflow: hidden;">
             <div class="panel-right-header">
@@ -257,6 +289,7 @@
             </div>
         </div>
     </div>
+    <script src="js/modal.js"></script>
     <script>
         const ruleNotes = {
             "913100": {
@@ -534,6 +567,39 @@
                     row.classList.remove('highlight-row');
                 }, 4000);
             }
+        }
+
+        function clearRuleForm() {
+            document.getElementById('rule-id').value = '';
+            document.getElementById('rule-category').value = 'SQLi';
+            document.getElementById('rule-desc').value = '';
+            document.getElementById('rule-syntax').value = '';
+        }
+
+        function saveRule() {
+            const ruleId = document.getElementById('rule-id').value.trim();
+            const category = document.getElementById('rule-category').value;
+            const desc = document.getElementById('rule-desc').value.trim();
+            const syntax = document.getElementById('rule-syntax').value.trim();
+
+            if (!ruleId || !desc || !syntax) {
+                showModal('Missing Fields', 'Please fill in Rule ID, Description, and Rule Syntax.', 'error');
+                return;
+            }
+
+            const customRules = JSON.parse(localStorage.getItem('customRules') || '[]');
+            const newRule = {
+                id: ruleId,
+                category: category,
+                description: desc,
+                syntax: syntax,
+                createdAt: new Date().toISOString()
+            };
+            customRules.push(newRule);
+            localStorage.setItem('customRules', JSON.stringify(customRules));
+
+            showModal('Rule Saved', 'Rule ' + ruleId + ' saved. Apply changes to enable it in the WAF.');
+            clearRuleForm();
         }
     </script>
 </body>
