@@ -95,3 +95,66 @@ td {
     0% { background-color: rgba(255, 87, 10, 0.2); }
     100% { background-color: transparent; }
 }
+
+.rule-editor {
+    margin-top: 1.5rem;
+    padding: 1.25rem;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.rule-editor h3 {
+    margin: 0 0 1rem 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--fg);
+}
+
+.rule-editor .form-group {
+    margin-bottom: 0.875rem;
+}
+
+.rule-editor label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fg-subtle);
+    margin-bottom: 0.35rem;
+}
+
+.rule-editor input,
+.rule-editor select,
+.rule-editor textarea {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.82rem;
+    font-family: inherit;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--fg);
+    transition: border-color 0.2s ease;
+}
+
+.rule-editor input:focus,
+.rule-editor select:focus,
+.rule-editor textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.rule-editor textarea {
+    font-family: monospace;
+    font-size: 0.75rem;
+    resize: vertical;
+    min-height: 80px;
+}
+
+.rule-editor .form-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
