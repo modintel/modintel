@@ -62,23 +62,42 @@ Enable users to enable/disable individual WAF rules from the dashboard with pers
 # WebSocket Real-Time Alerts - Implementation Plan
 
 ## Overview
-Migrate from HTTP polling (2s interval) to WebSocket for sub-second latency on new alerts.
+Migrate from HTTP polling (2s interval) to WebSocket for sub-second latency on new AI-enriched alerts. The WebSocket bridges MongoDB (enriched logs) to the Dashboard via Review-API.
 
 ## Requirements
 - **Latency**: Sub-second alert delivery to dashboard
 - **Reliability**: Auto-reconnect on disconnect
-- **Architecture**: HTTP notify from log-collector → review-api → WebSocket broadcast
+- **Architecture**: MongoDB ←→ Review-API ←→ Dashboard (WebSocket)
+
+## Current Flow
+```
+WAF → audit.json → log-collector (tails + AI enrichment) → MongoDB
+                                                            ↓
+Dashboard ← (HTTP poll 2s) ← Review-API ← (query) ← MongoDB
+```
+
+## Target Flow
+```
+WAF → audit.json → log-collector (tails + AI enrichment) → MongoDB
+                                                            ↓
+                                                    Review-API (watches)
+                                                            ↓
+Dashboard ← (WebSocket real-time) ← Review-API ← (broadcast)
+```
 
 ## Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌──────────┐┌───────────────┐
-│  Dashboard  │◄───►│ Review-API  │◄─── notify ───│ Log-Collector │
-│  (index.js) │     │   (Go)      │     │        │
-└─────────────┘WebSocket          └──────────┘     └───────────────┘
-                                        │
-                                        ▼
-                                   MongoDB
+┌─────────────┐                ┌─────────────┐                ┌──────────┐
+│  Dashboard  │◄───WebSocket───►│ Review-API  │◄───watch─────►│ MongoDB  │
+│  (index.js) │                │   (Go)      │                │(enriched)│
+└─────────────┘                └─────────────┘                └──────────┘
+                                      │
+                                      ▲
+                                      │ notify (fallback)
+                               ┌───────────────┐
+                               │ Log-Collector │
+                               └───────────────┘
 ```
 
 ## Branch
@@ -87,48 +106,73 @@ Migrate from HTTP polling (2s interval) to WebSocket for sub-second latency on n
 
 ## Implementation Steps
 
-### 1. Backend - Review-API
+### 1. Backend - Review-API (WebSocket Server)
 - Add `gorilla/websocket` dependency
 - Create WebSocket hub (`ws_hub.go`)
   - `Register(client)`
   - `Unregister(client)`
   - `Broadcast(message)`
-- Add endpoint `GET /api/ws` - WebSocket upgrade
-- Add endpoint `POST /api/notify` - called by log-collector
+- Add endpoint `GET /api/ws` - WebSocket upgrade for dashboard connections
+- Add endpoint `POST /api/notify` - fallback for log-collector notifications
 
-### 2. Backend - Log-Collector
+### 2. Backend - MongoDB Watcher
+- **Option A** (preferred): MongoDB Change Stream - requires replica set
+- **Option B** (fallback): Polling with timestamp-based queries
+- **Option C** (hybrid): Log-collector POST notification + polling backup
+- Watch `modintel.alerts` collection for new enriched documents
+- Broadcast new alerts to all connected WebSocket clients
+
+### 3. Backend - Log-Collector (Notification Fallback)
 - After `collection.InsertOne()`, call `POST http://review-api:8082/api/notify`
 - Payload: `{"alert_id": "...", "timestamp": "..."}`
-- Non-blocking, fire-and-forget
+- Non-blocking, fire-and-forget (ensures delivery even if watcher fails)
 
-### 3. Frontend - Dashboard
+### 4. Frontend - Dashboard
 - Replace `setInterval` polling with WebSocket connection
 - Connect to `ws://host/api/ws`
-- On message: fetch latest alerts or render directly
+- On message: render new alert directly to table (prepend)
 - Handle reconnection with exponential backoff
-- Show connection status indicator
+- Show connection status indicator (connected/reconnecting/disconnected)
+- Fallback to HTTP polling if WebSocket fails after 3 retries
 
-### 4. Fallback
-- If WebSocket fails, fall back to HTTP polling
-- Connection status indicator in dashboard
+### 5. Message Format
+```json
+{
+  "type": "new_alert",
+  "data": {
+    "id": "...",
+    "timestamp": "...",
+    "client_ip": "...",
+    "uri": "...",
+    "anomaly_score": 5,
+    "triggered_rules": ["942100"],
+    "ai_score": 0.87,
+    "ai_confidence": 0.92,
+    "ai_priority": "critical"
+  }
+}
+```
 
 ## Files Changed
 | File | Changes |
 |------|---------|
 | `services/review-api/go.mod` | Add `gorilla/websocket` |
 | `services/review-api/ws_hub.go` | New file - WebSocket hub |
+| `services/review-api/watcher.go` | New file - MongoDB watcher |
 | `services/review-api/main.go` | Initialize WebSocket hub |
 | `services/review-api/api/handler.go` | Add `/ws` and `/notify` endpoints |
 | `services/log-collector/main.go` | Add notify call after insert |
 | `dashboard/js/index.js` | Replace polling with WebSocket |
+| `dashboard/css/index.css` | Add connection status indicator styles |
 
 ## Dependencies
 - `github.com/gorilla/websocket` (Go)
 - Native WebSocket API (JS - no library needed)
 
 ## Testing Plan
-1. Open dashboard → verify WebSocket connects
-2. Trigger WAF alert → verify appears in <500ms
-3. Disconnect network → verify reconnection
-4. Multiple tabs open → verify all receive alerts
-5. Kill review-api → verify dashboard shows "disconnected"
+1. Open dashboard → verify WebSocket connects (status: green)
+2. Trigger WAF attack → verify alert appears in table <500ms
+3. Check MongoDB → verify document has `ai_status: "enriched"`
+4. Kill review-api → verify dashboard shows "disconnected" (status: red)
+5. Restart review-api → verify dashboard reconnects automatically
+6. Multiple browser tabs → verify all receive same alert simultaneously
