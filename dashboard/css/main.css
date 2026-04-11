@@ -415,3 +415,60 @@ td {
     background: var(--bg);
     color: var(--fg);
 }
+
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+}
+
+.modal.open {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+}
+
+.modal-content {
+    position: relative;
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 1.5rem;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+}
+
+.modal-content h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.modal-content p {
+    margin: 0 0 1.25rem;
+    font-size: 0.875rem;
+    color: var(--fg-muted);
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+.modal-title-error {
+    color: var(--danger);
+}
