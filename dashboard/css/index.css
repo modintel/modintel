@@ -401,3 +401,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+.rules-more {
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin-left: 4px;
+}
+
+.rules-more:hover {
+    text-decoration: underline;
+}
