@@ -89,11 +89,11 @@ async function updateLogs() {
             `;
             tbody.appendChild(row);
         });
+        if (streamSearchQuery) applyStreamSearch();
     } catch (e) {
         console.error('Error in updateLogs:', e);
     }
 }
-
 setInterval(() => { updateStats(); updateLogs(); }, 2000);
 updateStats();
 updateLogs();
@@ -120,6 +120,21 @@ function hideClearModal() {
 function confirmClearLogs() {
     hideClearModal();
     clearLogs();
+}
+
+let streamSearchQuery = '';
+
+function handleStreamSearch(query) {
+    streamSearchQuery = query.toLowerCase().trim();
+    applyStreamSearch();
+}
+
+function applyStreamSearch() {
+    const rows = document.querySelectorAll('#logs-body tr');
+    rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(streamSearchQuery) ? '' : 'none';
+    });
 }
 
 function handleSync() {
