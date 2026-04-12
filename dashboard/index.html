@@ -117,19 +117,20 @@
                 <div
                     style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
                     Real-time Detection Stream</div>
+                <input type="text" id="stream-search" placeholder="Search logs..." oninput="handleStreamSearch(this.value)" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; border: 0.8px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg-subtle); outline: none; width: 260px;">
             </div>
             <div class="log-scroll">
                 <table>
                     <thead>
                         <tr>
-                            <th style="width: 6%;">Timestamp</th>
-                            <th style="width: 6%;">Client IP</th>
-                            <th style="width: 28%;">URI</th>
-                            <th style="width: 6%; text-align: center;">Score</th>
-                            <th style="width: 17%; text-align: center;">Triggered Rules</th>
-                            <th style="width: 7%; text-align: center;">AI Prob</th>
-                            <th style="width: 6%; text-align: center;">Conf</th>
-                            <th style="width: 8%; text-align: center;">Priority</th>
+                            <th style="width: 6%;" data-tooltip="Time the request was logged (UTC)">Timestamp</th>
+                            <th style="width: 6%;" data-tooltip="Source IP address of the client">Client IP</th>
+                            <th style="width: 28%; text-align: center;" data-tooltip="Requested path and query string">URI</th>
+                            <th style="width: 6%; text-align: center;" data-tooltip="WAF anomaly score — cumulative threat level from all triggered rules">Score</th>
+                            <th style="width: 17%; text-align: center;" data-tooltip="OWASP CRS rule IDs that matched this request (multiple can fire per attack)">Triggered Rules</th>
+                            <th style="width: 7%; text-align: center;" data-tooltip="ML model attack probability score (0–100%)">AI Prob</th>
+                            <th style="width: 6%; text-align: center;" data-tooltip="ML model confidence in its prediction (0–100%)">Conf</th>
+                            <th style="width: 8%; text-align: center;" data-tooltip="ML-recommended priority: P1=Critical, P2=Warning, P3=Low">Priority</th>
                         </tr>
                     </thead>
                     <tbody id="logs-body"></tbody>
