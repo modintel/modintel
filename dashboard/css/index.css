@@ -243,29 +243,17 @@
 }
 
 .priority-p1 {
-    background: #dc2626;
-    color: white;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.7rem;
+    color: #dc2626;
     font-weight: 600;
 }
 
 .priority-p2 {
-    background: #f59e0b;
-    color: white;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.7rem;
+    color: #f59e0b;
     font-weight: 600;
 }
 
 .priority-p3 {
-    background: #22c55e;
-    color: white;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.7rem;
+    color: #22c55e;
     font-weight: 600;
 }
 
@@ -412,4 +400,51 @@
 
 .rules-more:hover {
     text-decoration: underline;
+}
+
+[data-tooltip] {
+    position: relative;
+    cursor: default;
+    overflow: visible;
+}
+
+[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: calc(100% + 3px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-panel);
+    border: 0.8px solid var(--border);
+    color: var(--fg-muted);
+    font-size: 0.68rem;
+    font-weight: 400;
+    line-height: 1.5;
+    white-space: nowrap;
+    padding: 6px 10px;
+    border-radius: 4px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 9999;
+    letter-spacing: 0;
+    text-transform: none;
+    font-style: normal;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+[data-tooltip]:hover::after {
+    opacity: 1;
+}
+
+thead th:last-child[data-tooltip]::after {
+    left: 10px;
+    transform: none;
+    white-space: normal;
+    max-width: 320px;
+}
+
+thead th:first-child[data-tooltip]::after {
+    left: 10px;
+    transform: none;
 }
