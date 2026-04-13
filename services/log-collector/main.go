@@ -3,11 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -15,6 +19,8 @@ import (
 	"modintel.local/log-collector/api"
 	"modintel.local/log-collector/db"
 	"modintel.local/log-collector/parsers"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func inferenceEngineURL() string {
@@ -24,7 +30,24 @@ func inferenceEngineURL() string {
 	return "http://localhost:8083"
 }
 
-func enrichWithAI(doc *parsers.AlertDocument) {
+func uniqueAlertKey(doc *parsers.AlertDocument) string {
+	rules := make([]string, len(doc.TriggeredRules))
+	copy(rules, doc.TriggeredRules)
+	sort.Strings(rules)
+	h := sha256.New()
+	h.Write([]byte(doc.URI + "|" + doc.Timestamp + "|" + strings.Join(rules, ",")))
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+func isAlreadyEnriched(doc *parsers.AlertDocument) bool {
+	return doc.AIStatus == "enriched" && doc.AIScore != nil
+}
+
+func enrichWithAI(doc *parsers.AlertDocument) bool {
+	if isAlreadyEnriched(doc) {
+		return true
+	}
+
 	ruleSev := make(map[string]string)
 	ruleMsg := make(map[string]string)
 	for _, rd := range doc.RuleDetails {
@@ -48,68 +71,82 @@ func enrichWithAI(doc *parsers.AlertDocument) {
 	if err != nil {
 		log.Printf("AI enrichment: failed to marshal request: %v", err)
 		doc.AIStatus = "unavailable"
-		return
+		return false
 	}
 
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Post(inferenceEngineURL()+"/predict", "application/json", bytes.NewBuffer(body))
-	if err != nil {
-		log.Printf("AI enrichment: request failed: %v", err)
-		doc.AIStatus = "unavailable"
-		return
-	}
-	defer resp.Body.Close()
+	maxRetries := 6
+	backoff := 1 * time.Second
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("AI enrichment: non-2xx status %d", resp.StatusCode)
-		doc.AIStatus = "unavailable"
-		return
-	}
-
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("AI enrichment: failed to read response body: %v", err)
-		doc.AIStatus = "unavailable"
-		return
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(respBytes, &result); err != nil {
-		log.Printf("AI enrichment: failed to decode response: %v", err)
-		doc.AIStatus = "unavailable"
-		return
-	}
-
-	doc.AIStatus = "enriched"
-
-	if v, ok := result["attack_probability"].(float64); ok {
-		doc.AIScore = &v
-	}
-	if v, ok := result["confidence_score"].(float64); ok {
-		doc.AIConfidence = &v
-	}
-	if v, ok := result["recommended_priority"].(string); ok {
-		doc.AIPriority = &v
-	}
-	if v, ok := result["explanation"].(map[string]interface{}); ok {
-		doc.AIExplanation = v
-	}
-	if v, ok := result["model_version"].(string); ok {
-		doc.AIModelVersion = &v
-	}
-	if v, ok := result["entropy"].(float64); ok {
-		doc.AIEntropy = &v
-	}
-	if ci, ok := result["confidence_interval"].(map[string]interface{}); ok {
-		interval := make(map[string]float64)
-		if low, ok := ci["low"].(float64); ok {
-			interval["low"] = low
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			log.Printf("AI enrichment: retry %d/%d after %v", attempt+1, maxRetries, backoff)
+			time.Sleep(backoff)
+			backoff *= 2
 		}
-		if high, ok := ci["high"].(float64); ok {
-			interval["high"] = high
+
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Post(inferenceEngineURL()+"/predict", "application/json", bytes.NewBuffer(body))
+		if err != nil {
+			log.Printf("AI enrichment: request failed (attempt %d): %v", attempt+1, err)
+			continue
 		}
-		doc.AIConfidenceInterval = interval
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			log.Printf("AI enrichment: non-2xx status %d (attempt %d)", resp.StatusCode, attempt+1)
+			resp.Body.Close()
+			continue
+		}
+
+		respBytes, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			log.Printf("AI enrichment: failed to read response body: %v", err)
+			continue
+		}
+
+		var result map[string]interface{}
+		if err := json.Unmarshal(respBytes, &result); err != nil {
+			log.Printf("AI enrichment: failed to decode response: %v", err)
+			continue
+		}
+
+		doc.AIStatus = "enriched"
+
+		if v, ok := result["attack_probability"].(float64); ok {
+			doc.AIScore = &v
+		}
+		if v, ok := result["confidence_score"].(float64); ok {
+			doc.AIConfidence = &v
+		}
+		if v, ok := result["recommended_priority"].(string); ok {
+			doc.AIPriority = &v
+		}
+		if v, ok := result["explanation"].(map[string]interface{}); ok {
+			doc.AIExplanation = v
+		}
+		if v, ok := result["model_version"].(string); ok {
+			doc.AIModelVersion = &v
+		}
+		if v, ok := result["entropy"].(float64); ok {
+			doc.AIEntropy = &v
+		}
+		if ci, ok := result["confidence_interval"].(map[string]interface{}); ok {
+			interval := make(map[string]float64)
+			if low, ok := ci["low"].(float64); ok {
+				interval["low"] = low
+			}
+			if high, ok := ci["high"].(float64); ok {
+				interval["high"] = high
+			}
+			doc.AIConfidenceInterval = interval
+		}
+
+		return true
 	}
+
+	log.Printf("AI enrichment: all retries exhausted, marking as unavailable")
+	doc.AIStatus = "unavailable"
+	return false
 }
 
 func main() {
@@ -133,6 +170,12 @@ func main() {
 			continue
 		}
 		break
+	}
+
+	if err := os.Truncate(logFile, 0); err != nil {
+		log.Printf("Warning: failed to truncate audit log: %v", err)
+	} else {
+		log.Printf("Audit log truncated — will process only new entries from this point")
 	}
 
 	t, err := tail.TailFile(logFile, tail.Config{
@@ -164,15 +207,41 @@ func main() {
 			continue
 		}
 
-		enrichWithAI(doc)
+		alertKey := uniqueAlertKey(doc)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_, err = collection.InsertOne(ctx, doc)
+		var existing bson.M
+		err = collection.FindOne(ctx, bson.M{"alert_key": alertKey}).Decode(&existing)
+		cancel()
+
+		if err == nil && existing["ai_status"] == "enriched" {
+			log.Printf("Skipping already-enriched alert (key=%s, uri=%s)", alertKey, doc.URI)
+			continue
+		}
+
+		if err == nil {
+			log.Printf("Alert exists but not enriched (key=%s), re-enriching...", alertKey)
+		}
+
+		enriched := enrichWithAI(doc)
+
+		docJSON, _ := json.Marshal(doc)
+		var docMap map[string]interface{}
+		json.Unmarshal(docJSON, &docMap)
+		docMap["alert_key"] = alertKey
+
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		_, err = collection.UpdateOne(
+			ctx,
+			bson.M{"alert_key": alertKey},
+			bson.M{"$set": docMap},
+			options.Update().SetUpsert(true),
+		)
 		cancel()
 
 		if err != nil {
-			log.Printf("Failed to insert alert to MongoDB: %v", err)
-		} else {
+			log.Printf("Failed to upsert alert to MongoDB: %v", err)
+		} else if enriched {
 			log.Printf("Successfully ingested WAF log: %s", doc.URI)
 		}
 	}
