@@ -8,7 +8,7 @@ on:
 
 jobs:
   go-test:
-    name: Go Tests
+    name: go-tests
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -39,7 +39,7 @@ jobs:
           go test -v -race ./...
 
   python-test:
-    name: Python Tests
+    name: python-tests
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -71,7 +71,7 @@ jobs:
           pytest -v tests/
 
   build-verify:
-    name: Build Verification
+    name: build-verification
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
