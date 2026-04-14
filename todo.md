@@ -1,178 +1,381 @@
-# Rule Toggle Feature - Implementation Plan
+# ModIntel Scalability Implementation Plan
 
 ## Overview
-Enable users to enable/disable individual WAF rules from the dashboard with persistent settings and WAF restart on changes.
 
-## Requirements
-- **Scope**: Individual rules (e.g., 942100, not categories)
-- **Persistence**: Disabled rules persist across restarts
-- **Application**: Changes require WAF restart
-
-## Architecture
-
-```
-┌─────────────┐     ┌─────────────┐     ┌──────────┐     ┌─────────┐
-│  Dashboard  │────▶│ Review-API  │────▶│ MongoDB  │────▶│ Coraza  │
-│  (rules.html)     │   (Go)      │     │          │     │   WAF   │
-└─────────────┘     └─────────────┘     └──────────┘     └─────────┘
-```
-
-## Implementation Steps
-
-### 1. Database (MongoDB)
-- Create `rule_configs` collection with all 31 current rules
-- Schema:
-  ```json
-  {
-    "rule_id": "942100",
-    "enabled": true,
-    "category": "SQL Injection",
-    "description": "SQL Injection Attack",
-    "created_at": "2026-04-08T...",
-    "updated_at": "2026-04-08T..."
-  }
-  ```
-
-### 2. Backend (Review-API)
-**New Endpoints:**
-- `GET /api/rules` - List all rules with enabled status
-- `PUT /api/rules/:rule_id` - Toggle rule on/off
-- `POST /api/rules/apply` - Apply changes (triggers WAF restart)
-
-### 3. Frontend (Dashboard)
-- Add toggle switch for each rule
-- Show visual status (green = enabled, gray = disabled)
-- Add "Apply Changes" button that triggers WAF restart
-- Add loading state during restart
-
-### 4. WAF Integration
-- Generate `custom_rules.conf` from enabled rules in MongoDB
-- Disabled rules = `SecRuleRemoveById <rule_id>`
-- Restart Coraza container after config update
-
-## Testing Plan
-1. Load rules page - verify all 31 rules display
-2. Toggle rule off → verify MongoDB updates
-3. Click Apply → verify WAF restarts
-4. Send attack for disabled rule → verify passes through
-5. Re-enable rule → verify blocks again
+This document outlines implementation plans for 5 backend scalability practices applied to the ModIntel WAF research system. Each section covers the technique, rationale, architecture, implementation steps, affected files, and testing.
 
 ---
 
-# WebSocket Real-Time Alerts - Implementation Plan
+## 1. Pagination
 
-## Overview
-Migrate from HTTP polling (2s interval) to WebSocket for sub-second latency on new AI-enriched alerts. The WebSocket bridges MongoDB (enriched logs) to the Dashboard via Review-API.
+### What
+Breaking large dataset responses into smaller chunks (pages) with offset or cursor-based navigation. Clients request `?page=1&limit=20` instead of receiving all 50,000 records.
 
-## Requirements
-- **Latency**: Sub-second alert delivery to dashboard
-- **Reliability**: Auto-reconnect on disconnect
-- **Architecture**: MongoDB ←→ Review-API ←→ Dashboard (WebSocket)
+### Why for ModIntel
+- **Review Dashboard**: Displays attack logs/alerts - users need to browse history without loading thousands of records
+- **Log Viewer**: Coraza audit logs can grow exponentially; pagination prevents memory exhaustion
+- **Rule Lists**: CRS has ~300 rules; paginating makes the UI snappy
+- **API Consumers**: Downstream systems consuming the review-api benefit from predictable response sizes
 
-## Current Flow
-```
-WAF → audit.json → log-collector (tails + AI enrichment) → MongoDB
-                                                            ↓
-Dashboard ← (HTTP poll 2s) ← Review-API ← (query) ← MongoDB
-```
+### Current State
+No pagination exists; endpoints likely return full arrays.
 
-## Target Flow
-```
-WAF → audit.json → log-collector (tails + AI enrichment) → MongoDB
-                                                            ↓
-                                                    Review-API (watches)
-                                                            ↓
-Dashboard ← (WebSocket real-time) ← Review-API ← (broadcast)
-```
+### Implementation Steps
 
-## Architecture
+#### 1.1 Define Pagination Utilities
+Create `api/pagination.go` in review-api:
 
 ```
-┌─────────────┐                ┌─────────────┐                ┌──────────┐
-│  Dashboard  │◄───WebSocket───►│ Review-API  │◄───watch─────►│ MongoDB  │
-│  (index.js) │                │   (Go)      │                │(enriched)│
-└─────────────┘                └─────────────┘                └──────────┘
-                                      │
-                                      ▲
-                                      │ notify (fallback)
-                               ┌───────────────┐
-                               │ Log-Collector │
-                               └───────────────┘
+page_offset = (page - 1) * limit
+collection.Find(ctx, filter).Skip(page_offset).Limit(limit)
 ```
 
-## Branch
-- Branch from: `modintel-base`
-- Branch name: `feat/websocket-realtime`
-
-## Implementation Steps
-
-### 1. Backend - Review-API (WebSocket Server)
-- Add `gorilla/websocket` dependency
-- Create WebSocket hub (`ws_hub.go`)
-  - `Register(client)`
-  - `Unregister(client)`
-  - `Broadcast(message)`
-- Add endpoint `GET /api/ws` - WebSocket upgrade for dashboard connections
-- Add endpoint `POST /api/notify` - fallback for log-collector notifications
-
-### 2. Backend - MongoDB Watcher
-- **Option A** (preferred): MongoDB Change Stream - requires replica set
-- **Option B** (fallback): Polling with timestamp-based queries
-- **Option C** (hybrid): Log-collector POST notification + polling backup
-- Watch `modintel.alerts` collection for new enriched documents
-- Broadcast new alerts to all connected WebSocket clients
-
-### 3. Backend - Log-Collector (Notification Fallback)
-- After `collection.InsertOne()`, call `POST http://review-api:8082/api/notify`
-- Payload: `{"alert_id": "...", "timestamp": "..."}`
-- Non-blocking, fire-and-forget (ensures delivery even if watcher fails)
-
-### 4. Frontend - Dashboard
-- Replace `setInterval` polling with WebSocket connection
-- Connect to `ws://host/api/ws`
-- On message: render new alert directly to table (prepend)
-- Handle reconnection with exponential backoff
-- Show connection status indicator (connected/reconnecting/disconnected)
-- Fallback to HTTP polling if WebSocket fails after 3 retries
-
-### 5. Message Format
+Response envelope:
 ```json
 {
-  "type": "new_alert",
-  "data": {
-    "id": "...",
-    "timestamp": "...",
-    "client_ip": "...",
-    "uri": "...",
-    "anomaly_score": 5,
-    "triggered_rules": ["942100"],
-    "ai_score": 0.87,
-    "ai_confidence": 0.92,
-    "ai_priority": "critical"
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 1547,
+    "total_pages": 78,
+    "has_next": true,
+    "has_prev": false
   }
 }
 ```
 
-## Files Changed
+#### 1.2 Update Endpoints
+Paginate these existing endpoints:
+- `GET /api/alerts` → `GET /api/alerts?page=1&limit=20`
+- `GET /api/logs` → `GET /api/logs?page=1&limit=50`
+- `GET /api/rules` → `GET /api/rules?page=1&limit=50`
+
+#### 1.3 Frontend Updates
+- Update dashboard tables to render pagination controls
+- Add "Previous" / "Next" buttons with page numbers
+- Store current page in URL query params for shareability
+
+### Affected Files
 | File | Changes |
 |------|---------|
-| `services/review-api/go.mod` | Add `gorilla/websocket` |
-| `services/review-api/ws_hub.go` | New file - WebSocket hub |
-| `services/review-api/watcher.go` | New file - MongoDB watcher |
-| `services/review-api/main.go` | Initialize WebSocket hub |
-| `services/review-api/api/handler.go` | Add `/ws` and `/notify` endpoints |
-| `services/log-collector/main.go` | Add notify call after insert |
-| `dashboard/js/index.js` | Replace polling with WebSocket |
-| `dashboard/css/index.css` | Add connection status indicator styles |
+| `services/review-api/api/pagination.go` | New file - pagination helpers |
+| `services/review-api/api/handlers.go` | Add page/limit params to queries |
+| `services/review-api/main.go` | Register pagination middleware |
+| `dashboard/js/*.js` | Add pagination UI components |
 
-## Dependencies
-- `github.com/gorilla/websocket` (Go)
-- Native WebSocket API (JS - no library needed)
+### Testing
+1. Request `/api/alerts?page=1&limit=5` → verify 5 items returned
+2. Request `/api/alerts?page=2&limit=5` → verify different 5 items
+3. Request `/api/alerts?limit=1000` → verify capped at reasonable max (e.g., 100)
+4. Verify `total` matches actual collection count
+5. Dashboard pagination controls work correctly
 
-## Testing Plan
-1. Open dashboard → verify WebSocket connects (status: green)
-2. Trigger WAF attack → verify alert appears in table <500ms
-3. Check MongoDB → verify document has `ai_status: "enriched"`
-4. Kill review-api → verify dashboard shows "disconnected" (status: red)
-5. Restart review-api → verify dashboard reconnects automatically
-6. Multiple browser tabs → verify all receive same alert simultaneously
+---
+
+## 2. Async Logging
+
+### What
+Buffering log entries in memory and flushing to disk/database in batches rather than writing synchronously on every request. Reduces I/O blocking and improves response latency.
+
+### Why for ModIntel
+- **Review-API Access Logs**: Every API request currently writes to MongoDB synchronously
+- **Log-Collector**: Already tails Coraza logs; batching writes prevents write amplification
+- **Performance Gain**: 200ms+ improvement per request by eliminating synchronous writes
+- **MongoDB Load**: Batching reduces connection overhead and write operations
+
+### Current State
+- Review-api writes to MongoDB on every request synchronously
+- Log-collector writes enriched logs immediately after parsing
+
+### Implementation Steps
+
+#### 2.1 Review-API: Buffered Logger
+Create `api/async_logger.go` in review-api:
+
+```
+type AsyncLogger struct {
+    buffer    chan LogEntry
+    batchSize int
+    flushInterval time.Duration
+    client    *mongo.Client
+}
+
+- Channel buffered writes (non-blocking)
+- Goroutine batch-collector runs every N seconds or when buffer reaches M items
+- Graceful shutdown flushes remaining buffer
+```
+
+#### 2.2 Log-Collector: Batch Inserts
+Update MongoDB write logic in log-collector:
+
+```
+- Accumulate parsed logs in slice
+- Flush to MongoDB when slice reaches 100 items OR 5 seconds elapsed
+- Use unordered bulk writes for performance
+```
+
+#### 2.3 Configuration
+Add to `.env`:
+```
+ASYNC_LOG_BUFFER_SIZE=1000
+ASYNC_LOG_FLUSH_INTERVAL=5s
+```
+
+### Affected Files
+| File | Changes |
+|------|---------|
+| `services/review-api/api/async_logger.go` | New file - async logging logic |
+| `services/review-api/api/handlers.go` | Replace direct MongoDB writes |
+| `services/review-api/main.go` | Initialize AsyncLogger on startup |
+| `services/log-collector/main.go` | Add batch insert logic |
+| `.env` | Add async config variables |
+
+### Testing
+1. Send 100 API requests rapidly
+2. Monitor MongoDB write operations (should be batched, not 100 individual writes)
+3. Simulate crash → verify no more than flush_interval data loss
+4. Verify graceful shutdown flushes all buffered logs
+5. Monitor memory usage stays bounded with buffer size limit
+
+---
+
+## 3. Redis Caching
+
+### What
+Storing frequently accessed data in Redis (in-memory cache) instead of querying MongoDB or recomputing on every request. Cache invalidation happens on TTL expiration or explicit updates.
+
+### Why for ModIntel
+- **ML Inference Results**: Same request patterns (same URI, parameters) may recur; caching ML scores avoids redundant inference
+- **WAF Rule Metadata**: Rule descriptions, categories rarely change; cache for instant lookups
+- **Dashboard Aggregations**: Attack statistics, top blocked IPs computed periodically and cached
+- **Session Data**: Dashboard user sessions can be Redis-backed for horizontal scaling
+
+### Current State
+Every request hits MongoDB directly; ML inference runs on every request.
+
+### Implementation Steps
+
+#### 3.1 Add Redis Dependency
+```
+go get github.com/redis/go-redis/v9
+```
+
+#### 3.2 Define Cache Keys
+```
+ml:inference:{hash(features)} → ML score (TTL: 5min)
+rules:all → Rule list JSON (TTL: 1hr)
+stats:daily:{date} → Daily attack statistics (TTL: 10min)
+session:{token} → User session data (TTL: 30min)
+```
+
+#### 3.3 Implement Cache Service
+Create `services/cache/redis.go`:
+```
+type RedisCache struct {
+    client *redis.Client
+}
+
+func (c *RedisCache) Get(key string) ([]byte, error)
+func (c *RedisCache) Set(key string, value []byte, ttl time.Duration) error
+func (c *RedisCache) Delete(key string) error
+func (c *RedisCache) DeletePattern(pattern string) error
+```
+
+#### 3.4 Update Inference Endpoint
+```
+1. Hash incoming features
+2. Check Redis for cached score
+3. If HIT: return cached score immediately
+4. If MISS: run ML inference, cache result, return
+```
+
+#### 3.5 Update Dashboard Stats
+```
+1. Check Redis for cached stats
+2. If HIT: return immediately
+3. If MISS: query MongoDB, compute, cache, return
+```
+
+### Affected Files
+| File | Changes |
+|------|---------|
+| `services/review-api/go.mod` | Add `go-redis/v9` |
+| `services/review-api/services/cache/redis.go` | New file - Redis client wrapper |
+| `services/review-api/services/cache/inference.go` | New file - ML cache logic |
+| `services/review-api/api/handlers.go` | Add caching to relevant handlers |
+| `services/review-api/main.go` | Initialize Redis connection |
+| `docker-compose.yml` | Add Redis service |
+| `.env` | Add Redis URL |
+
+### Testing
+1. Send identical inference request twice → second should be faster (cache hit)
+2. Verify Redis contains key after first request
+3. Wait for TTL expiry → verify cache miss on third request
+4. Clear Redis → verify graceful degradation (still works, just slower)
+5. Check Redis memory usage stays bounded
+
+---
+
+## 4. Payload Compression
+
+### What
+Compressing HTTP response bodies using gzip or brotli before sending to clients. Reduces bandwidth usage by 70-90% for JSON payloads.
+
+### Why for ModIntel
+- **Large JSON Responses**: Alert lists, ML feature vectors can be megabytes
+- **Mobile Dashboard**: Users on mobile or slow connections benefit from compressed payloads
+- **Network Efficiency**: Less data transfer = lower latency
+- **Already Partial**: Caddy (reverse proxy) handles compression at the edge, but review-api itself should also compress for direct API consumers
+
+### Current State
+Caddy compresses responses, but direct API calls to review-api bypass Caddy and receive uncompressed JSON.
+
+### Implementation Steps
+
+#### 4.1 Review-API: Add Compression Middleware
+Create `api/compression.go`:
+```
+- Use standard library compress/gzip
+- Check Accept-Encoding header
+- Wrap response writer to compress on write
+- Minimum response size threshold (don't compress tiny responses)
+- Compression level: default (slower but smaller) or fast
+```
+
+#### 4.2 Update Middleware Chain
+Add compression after request logging, before response:
+```
+Recovery → Logger → Compressor → CORS → Handlers
+```
+
+#### 4.3 Configuration
+```
+COMPRESSION_ENABLED=true
+COMPRESSION_LEVEL=5
+COMPRESSION_MIN_SIZE=1024
+```
+
+#### 4.4 Alternative: Shared Compression
+Since Caddy is in the stack, ensure review-api responses go through Caddy for compression when deployed. Add middleware only for direct API access scenarios.
+
+### Affected Files
+| File | Changes |
+|------|---------|
+| `services/review-api/api/compression.go` | New file - gzip middleware |
+| `services/review-api/main.go` | Register compression middleware |
+| `.env` | Add compression config |
+| `docker-compose.yml` | Ensure Caddy routes through review-api |
+
+### Testing
+1. Request with `Accept-Encoding: gzip` → verify `Content-Encoding: gzip` in response
+2. Compare raw vs compressed response sizes (should be 70-90% smaller)
+3. Verify decompression works correctly on client side
+4. Request without gzip header → verify no compression applied
+5. Small responses (<1KB) → verify compression skipped
+
+---
+
+## 5. Connection Pooling
+
+### What
+Maintaining a pool of pre-established database connections that are reused across requests instead of creating/destroying a connection per request. Limits max connections, reduces latency.
+
+### Why for ModIntel
+- **MongoDB Connections**: Both review-api and log-collector connect to MongoDB; connection overhead is significant under load
+- **Traffic Spikes**: WAF attacks generate bursts of logs; connection pooling handles spikes without connection exhaustion
+- **Random Failures**: Without pooling, random "connection refused" errors occur when DB limits are hit
+- **Resource Efficiency**: Fewer TCP handshakes, less memory fragmentation
+
+### Current State
+- Review-api uses `mongo.Connect()` - likely creates pool but may not configure limits
+- Log-collector creates new connections on reconnection
+
+### Implementation Steps
+
+#### 5.1 Review-API: Configure MongoDB Pool
+Update `main.go`:
+```go
+clientOpts := options.Client().
+    ApplyURI(mongoURI).
+    SetMaxPoolSize(100).
+    SetMinPoolSize(10).
+    SetMaxConnIdleTime(30 * time.Second)
+
+client, err := mongo.Connect(ctx, clientOpts)
+```
+
+#### 5.2 Log-Collector: Configure MongoDB Pool
+Same pool settings in log-collector `main.go`.
+
+#### 5.3 Review-API: Configure Redis Pool (if caching implemented)
+```go
+redisOpts := &redis.Options{
+    Addr:     redisAddr,
+    PoolSize: 100,
+    MinIdleConns: 10,
+}
+```
+
+#### 5.4 Connection Health Checks
+```go
+// Ping to verify connection health
+err = client.Ping(ctx, nil)
+```
+
+#### 5.5 Graceful Shutdown
+```go
+defer func() {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    client.Disconnect(ctx)
+}()
+```
+
+### Affected Files
+| File | Changes |
+|------|---------|
+| `services/review-api/main.go` | Configure MongoDB pool options |
+| `services/review-api/db/mongo.go` | Add pool configuration |
+| `services/log-collector/main.go` | Configure MongoDB pool options |
+| `services/log-collector/db/mongo.go` | Add pool configuration |
+
+### Testing
+1. Monitor MongoDB connections during load test (should stay within pool limits)
+2. Concurrent requests: verify connections are reused
+3. Simulate 1000 concurrent requests: verify no "connection limit exceeded" errors
+4. Long idle period: verify min pool connections maintained
+5. Shutdown: verify all connections closed gracefully
+
+---
+
+## Implementation Order
+
+| Priority | Task | Rationale |
+|----------|------|-----------|
+| 1 | Connection Pooling | Foundation - improves everything, low risk |
+| 2 | Pagination | High user impact, straightforward implementation |
+| 3 | Redis Caching | Significant performance gain for ML and stats |
+| 4 | Async Logging | Backend optimization, improves write throughput |
+| 5 | Payload Compression | Lower priority due to Caddy already handling edge cases |
+
+---
+
+## Branch Strategy
+
+- Branch from: `modintel-base`
+- Feature branch: `feat/scalability-practices`
+
+Implement in order above. Each practice should be a separate commit with tests passing before moving to next.
+
+---
+
+## Success Metrics
+
+| Practice | Metric | Target |
+|----------|--------|--------|
+| Pagination | Dashboard load time with 10K alerts | < 500ms |
+| Async Logging | Review-api p99 latency | < 50ms |
+| Redis Caching | Cache hit rate | > 80% |
+| Compression | Response size reduction | > 70% |
+| Connection Pooling | Connection errors under load | 0 |
