@@ -8,7 +8,7 @@ on:
 
 jobs:
   go-lint:
-    name: Go Lint
+    name: go-lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,14 +23,14 @@ jobs:
           go install \
             github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
-      - name: Lint log-collector
+      - name: lint log-collector
         run: cd services/log-collector && golangci-lint run ./...
 
-      - name: Lint review-api
+      - name: lint review-api
         run: cd services/review-api && golangci-lint run ./...
 
   python-lint:
-    name: Python Lint
+    name: python-lint
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -49,16 +49,16 @@ jobs:
       - name: Install ruff
         run: pip install ruff
 
-      - name: Lint inference-engine
+      - name: lint inference-engine
         if: matrix.path == 'services/inference-engine'
         run: cd services/inference-engine && ruff check .
 
-      - name: Lint ml-pipeline
+      - name: lint ml-pipeline
         if: matrix.path == 'ml-pipeline'
         run: cd ml-pipeline && ruff check .
 
   yaml-lint:
-    name: YAML Lint
+    name: yaml-lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,11 +71,11 @@ jobs:
       - name: Install yamllint
         run: pip install yamllint
 
-      - name: Lint YAML files
+      - name: lint YAML files
         run: yamllint --no-warnings .github/workflows/ docker-compose.yml
 
   go-fmt:
-    name: Go Format Check
+    name: go-format-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,7 +92,7 @@ jobs:
         run: cd services/review-api && gofmt -l .
 
   python-fmt:
-    name: Python Format Check
+    name: python-format-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
