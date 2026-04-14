@@ -89,8 +89,8 @@ func GetTrend(c *gin.Context) {
 	rangeType := c.DefaultQuery("range", "day")
 	now := time.Now().UTC()
 
-	bucketCount := 96
-	bucketSize := 15 * time.Minute
+	var bucketCount int
+	var bucketSize time.Duration
 	var start time.Time
 
 	switch rangeType {
