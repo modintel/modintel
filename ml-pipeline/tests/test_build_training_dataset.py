@@ -7,7 +7,6 @@ import os
 import sys
 
 import pandas as pd
-import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -17,8 +16,6 @@ from build_training_dataset import (
     gate_label_conflicts,
     run_quality_gates,
     stratified_split,
-    REQUIRED_FIELDS,
-    MISSING_FIELDS_THRESHOLD,
 )
 
 
@@ -26,31 +23,35 @@ from build_training_dataset import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_df(n: int = 20, families: list = None) -> pd.DataFrame:
     """Build a minimal valid DataFrame with n rows."""
     if families is None:
         families = ["sqli"] * n
     rows = []
     for i in range(n):
-        rows.append({
-            "request_id": f"req-{i:04d}",
-            "method": "GET",
-            "uri": f"/test?id={i}",
-            "headers": "{}",
-            "body": "",
-            "label": "attack" if i % 2 == 0 else "benign",
-            "attack_family": families[i % len(families)],
-            "coraza_fired_rule_ids": [942100],
-            "coraza_rule_severities": ["CRITICAL"],
-            "coraza_rule_messages": ["SQLi"],
-            "coraza_anomaly_score": 5,
-        })
+        rows.append(
+            {
+                "request_id": f"req-{i:04d}",
+                "method": "GET",
+                "uri": f"/test?id={i}",
+                "headers": "{}",
+                "body": "",
+                "label": "attack" if i % 2 == 0 else "benign",
+                "attack_family": families[i % len(families)],
+                "coraza_fired_rule_ids": [942100],
+                "coraza_rule_severities": ["CRITICAL"],
+                "coraza_rule_messages": ["SQLi"],
+                "coraza_anomaly_score": 5,
+            }
+        )
     return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------------------------
 # gate_missing_fields
 # ---------------------------------------------------------------------------
+
 
 class TestGateMissingFields:
     def test_passes_when_no_missing_fields(self):
@@ -82,6 +83,7 @@ class TestGateMissingFields:
 # gate_duplicate_ids
 # ---------------------------------------------------------------------------
 
+
 class TestGateDuplicateIds:
     def test_passes_with_unique_ids(self):
         df = _make_df(10)
@@ -105,6 +107,7 @@ class TestGateDuplicateIds:
 # gate_label_conflicts
 # ---------------------------------------------------------------------------
 
+
 class TestGateLabelConflicts:
     def test_passes_with_no_conflicts(self):
         df = _make_df(10)
@@ -114,7 +117,9 @@ class TestGateLabelConflicts:
         df = _make_df(10)
         # Add a conflicting row: same request_id, different label
         conflict_row = df.iloc[0].copy()
-        conflict_row["label"] = "benign" if df.iloc[0]["label"] == "attack" else "attack"
+        conflict_row["label"] = (
+            "benign" if df.iloc[0]["label"] == "attack" else "attack"
+        )
         df = pd.concat([df, pd.DataFrame([conflict_row])], ignore_index=True)
         result = gate_label_conflicts(df)
         assert result is not None
@@ -124,6 +129,7 @@ class TestGateLabelConflicts:
 # ---------------------------------------------------------------------------
 # run_quality_gates — abort conditions (Requirement 3.5)
 # ---------------------------------------------------------------------------
+
 
 class TestRunQualityGates:
     def test_returns_empty_list_for_clean_data(self):
@@ -163,6 +169,7 @@ class TestRunQualityGates:
 # stratified_split — split ratios and stratification (Requirement 3.2)
 # ---------------------------------------------------------------------------
 
+
 class TestStratifiedSplit:
     def test_all_rows_assigned_a_split(self):
         df = _make_df(60, families=["sqli", "xss", "lfi"] * 20)
@@ -185,7 +192,9 @@ class TestStratifiedSplit:
         df = _make_df(90, families=families * 30)
         result = stratified_split(df)
         for split in ["train", "validation", "test"]:
-            split_families = set(result[result["split"] == split]["attack_family"].unique())
+            split_families = set(
+                result[result["split"] == split]["attack_family"].unique()
+            )
             for fam in families:
                 assert fam in split_families, f"{fam} missing from {split} split"
 
