@@ -1,0 +1,16 @@
+{
+  "ignorePatterns": [
+    {
+      "pattern": "^http://localhost"
+    },
+    {
+      "pattern": "^https://example\\.com"
+    }
+  ],
+  "replacementVariables": {
+    "GITHUB_REPOSITORY": "$GITHUB_REPOSITORY"
+  },
+  "timeout": "20s",
+  "retryOnWaitTime": "10s",
+  "retryCount": 3
+}
