@@ -3,14 +3,10 @@ Unit tests for curate_traffic_sources.py
 Covers: malformed-row skipping and warning logging (Requirements 1.4)
 """
 
-import io
 import logging
 import os
 import sys
-import tempfile
 
-import pandas as pd
-import pytest
 
 # Make ml-pipeline importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -26,6 +22,7 @@ from curate_traffic_sources import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_csv(tmp_path, filename, content: str) -> str:
     p = os.path.join(tmp_path, filename)
     with open(p, "w", encoding="utf-8") as f:
@@ -36,6 +33,7 @@ def _write_csv(tmp_path, filename, content: str) -> str:
 # ---------------------------------------------------------------------------
 # parse_sentence_label_csv — malformed row skipping
 # ---------------------------------------------------------------------------
+
 
 class TestParseSentenceLabelCsv:
     def test_valid_attack_row_yields_record(self, tmp_path):
@@ -80,7 +78,9 @@ class TestParseSentenceLabelCsv:
         assert "unexpected Label value" in caplog.text
 
     def test_mixed_rows_skips_only_bad(self, tmp_path, caplog):
-        csv_content = "Sentence,Label\ngood payload,1\n,1\nbad label,xyz\nanother good,0\n"
+        csv_content = (
+            "Sentence,Label\ngood payload,1\n,1\nbad label,xyz\nanother good,0\n"
+        )
         path = _write_csv(tmp_path, "test.csv", csv_content)
         with caplog.at_level(logging.WARNING):
             results = list(parse_sentence_label_csv(str(path), "test.csv", "sqli"))
@@ -96,17 +96,28 @@ class TestParseSentenceLabelCsv:
         assert "myfile.csv" in caplog.text
 
     def test_all_required_fields_present_in_record(self, tmp_path):
-        path = _write_csv(tmp_path, "test.csv", "Sentence,Label\n<script>alert(1)</script>,1\n")
+        path = _write_csv(
+            tmp_path, "test.csv", "Sentence,Label\n<script>alert(1)</script>,1\n"
+        )
         results = list(parse_sentence_label_csv(str(path), "test.csv", "xss"))
         record, skipped = results[0]
         assert not skipped
-        for field in ("request_id", "method", "uri", "headers", "body", "label", "attack_family"):
+        for field in (
+            "request_id",
+            "method",
+            "uri",
+            "headers",
+            "body",
+            "label",
+            "attack_family",
+        ):
             assert field in record
 
 
 # ---------------------------------------------------------------------------
 # parse_csic_csv — malformed row skipping
 # ---------------------------------------------------------------------------
+
 
 class TestParseCsicCsv:
     def test_valid_attack_row(self, tmp_path):
@@ -156,6 +167,7 @@ class TestParseCsicCsv:
 # generate_synthetic_benign
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateSyntheticBenign:
     def test_generates_at_least_requested_count(self):
         records = generate_synthetic_benign(100)
@@ -169,5 +181,13 @@ class TestGenerateSyntheticBenign:
     def test_all_required_fields_present(self):
         records = generate_synthetic_benign(10)
         for r in records:
-            for field in ("request_id", "method", "uri", "headers", "body", "label", "attack_family"):
+            for field in (
+                "request_id",
+                "method",
+                "uri",
+                "headers",
+                "body",
+                "label",
+                "attack_family",
+            ):
                 assert field in r
