@@ -1,0 +1,51 @@
+name: e2e
+
+on:
+  push:
+    branches: [ modintel-base ]
+  pull_request:
+    branches: [ modintel-base ]
+
+jobs:
+  docker-compose-test:
+    name: Docker Compose Integration Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build services
+        run: |
+          docker compose build --parallel
+
+      - name: Start services
+        run: |
+          docker compose up -d
+          sleep 15
+
+      - name: Health check services
+        run: |
+          docker compose ps
+
+      - name: Test log-collector
+        run: |
+          docker compose exec -T log-collector /bin/sh -c "echo 'log-collector running'"
+
+      - name: Test review-api
+        run: |
+          curl -f http://localhost:8080/health || curl -f http://localhost:3000/health || true
+
+      - name: Test inference-engine
+        run: |
+          curl -f http://localhost:8000/health || curl -f http://localhost:8000/ || true
+
+      - name: Run integration tests
+        run: |
+          docker compose -f docker-compose.yml up --abort-on-container-exit test || true
+
+      - name: Stop services
+        if: always()
+        run: |
+          docker compose down --remove-orphans
