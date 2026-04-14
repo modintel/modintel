@@ -8,7 +8,7 @@ on:
 
 jobs:
   docker-compose-test:
-    name: Docker Compose Integration Test
+    name: docker-compose-integration-test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
