@@ -1,0 +1,99 @@
+name: test
+
+on:
+  push:
+    branches: [ modintel-base ]
+  pull_request:
+    branches: [ modintel-base ]
+
+jobs:
+  go-test:
+    name: Go Tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [log-collector, review-api]
+        go-version: ['1.22', '1.23', '1.26']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Test log-collector
+        if: matrix.service == 'log-collector'
+        run: |
+          cd services/log-collector
+          go mod download
+          go test -v -race ./...
+
+      - name: Test review-api
+        if: matrix.service == 'review-api'
+        run: |
+          cd services/review-api
+          go mod download
+          go test -v -race ./...
+
+  python-test:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+        path: [services/inference-engine, ml-pipeline]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Test inference-engine
+        if: matrix.path == 'services/inference-engine'
+        run: |
+          cd services/inference-engine
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+          pytest -v
+
+      - name: Test ml-pipeline
+        if: matrix.path == 'ml-pipeline'
+        run: |
+          cd ml-pipeline
+          pip install pytest pyyaml pandas numpy scikit-learn joblib
+          pytest -v tests/
+
+  build-verify:
+    name: Build Verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Build log-collector
+        run: cd services/log-collector && go build -o /tmp/log-collector .
+
+      - name: Build review-api
+        run: cd services/review-api && go build -o /tmp/review-api .
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build inference-engine
+        run: |
+          cd services/inference-engine
+          pip install -r requirements.txt
+          python -m py_compile main.py feature_extractor.py
