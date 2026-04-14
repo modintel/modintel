@@ -2,9 +2,9 @@ name: e2e
 
 on:
   push:
-    branches: [ modintel-base ]
+    branches: [modintel-base]
   pull_request:
-    branches: [ modintel-base ]
+    branches: [modintel-base]
 
 jobs:
   docker-compose-test:
@@ -31,19 +31,23 @@ jobs:
 
       - name: Test log-collector
         run: |
-          docker compose exec -T log-collector /bin/sh -c "echo 'log-collector running'"
+          docker compose exec -T log-collector \
+            /bin/sh -c "echo 'log-collector running'"
 
       - name: Test review-api
         run: |
-          curl -f http://localhost:8080/health || curl -f http://localhost:3000/health || true
+          curl -f http://localhost:8080/health || \
+            curl -f http://localhost:3000/health || true
 
       - name: Test inference-engine
         run: |
-          curl -f http://localhost:8000/health || curl -f http://localhost:8000/ || true
+          curl -f http://localhost:8000/health || \
+            curl -f http://localhost:8000/ || true
 
       - name: Run integration tests
         run: |
-          docker compose -f docker-compose.yml up --abort-on-container-exit test || true
+          docker compose -f docker-compose.yml \
+            up --abort-on-container-exit test || true
 
       - name: Stop services
         if: always()
