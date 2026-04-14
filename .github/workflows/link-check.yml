@@ -2,9 +2,9 @@ name: link-check
 
 on:
   push:
-    branches: [ modintel-base ]
+    branches: [modintel-base]
   pull_request:
-    branches: [ modintel-base ]
+    branches: [modintel-base]
 
 jobs:
   markdown-links:
@@ -22,13 +22,21 @@ jobs:
         run: pip install markdown-link-check
 
       - name: Check README links
-        run: markdown-link-check --config .github/workflows/linkcheck-config.json README.md || true
+        run: |
+          markdown-link-check \
+            --config .github/workflows/linkcheck-config.json \
+            README.md || true
 
       - name: Check docs links
-        run: markdown-link-check --config .github/workflows/linkcheck-config.json docs/ || true
+        run: |
+          markdown-link-check \
+            --config .github/workflows/linkcheck-config.json \
+            docs/ || true
 
       - name: Check landing site links
         run: |
           for file in landing-site/**/*.md; do
-            markdown-link-check --config .github/workflows/linkcheck-config.json "$file" || true
+            markdown-link-check \
+              --config .github/workflows/linkcheck-config.json \
+              "$file" || true
           done
