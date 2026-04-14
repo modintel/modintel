@@ -304,7 +304,11 @@ func GetStats(c *gin.Context) {
 		}
 	}
 
-	aiEnrichedCount, _ := collection.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
+	aiEnrichedCount, err := collection.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
+	if err != nil {
+		log.Println("Error counting AI enriched documents:", err)
+		aiEnrichedCount = 0
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"total_alerts":      total,
