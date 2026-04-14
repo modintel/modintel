@@ -50,14 +50,13 @@ SEVERITY_WEIGHTS: Dict[str, int] = {
 SPECIAL_CHARS = set("%'\"<>{}")
 
 # Patterns for encoding artifacts
-_ENCODING_PATTERN = re.compile(
-    r"%[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}|\\x[0-9A-Fa-f]{2}"
-)
+_ENCODING_PATTERN = re.compile(r"%[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}|\\x[0-9A-Fa-f]{2}")
 
 
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
+
 
 def _shannon_entropy(text: str) -> float:
     """Compute Shannon entropy of a string."""
@@ -196,6 +195,7 @@ def _is_rce_rule(rule_id: str, message: str) -> bool:
 # WAFFeatureExtractor
 # ---------------------------------------------------------------------------
 
+
 class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
     """
     Scikit-learn compatible transformer that converts Coraza-enriched request
@@ -237,9 +237,7 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
         self.feature_names_ = self._build_feature_names()
         return self
 
-    def transform(
-        self, X: Union[Dict, List[Dict], pd.DataFrame]
-    ) -> np.ndarray:
+    def transform(self, X: Union[Dict, List[Dict], pd.DataFrame]) -> np.ndarray:
         """
         Transform samples into a numeric feature matrix.
 
@@ -252,7 +250,9 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
         np.ndarray of shape (n_samples, n_features)
         """
         if self.rule_ids_ is None:
-            raise RuntimeError("WAFFeatureExtractor must be fitted before calling transform().")
+            raise RuntimeError(
+                "WAFFeatureExtractor must be fitted before calling transform()."
+            )
 
         # Handle single dict
         if isinstance(X, dict):
@@ -314,10 +314,14 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
         serving_keys = set(serving_features.keys())
 
         for key in sorted(training_keys - serving_keys):
-            discrepancies.append(f"Feature '{key}' present in training schema but missing from serving schema.")
+            discrepancies.append(
+                f"Feature '{key}' present in training schema but missing from serving schema."
+            )
 
         for key in sorted(serving_keys - training_keys):
-            discrepancies.append(f"Feature '{key}' present in serving schema but missing from training schema.")
+            discrepancies.append(
+                f"Feature '{key}' present in serving schema but missing from training schema."
+            )
 
         for key in sorted(training_keys & serving_keys):
             t_feat = training_features[key]
@@ -416,7 +420,9 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
 
         raw_rule_ids = record.get("fired_rule_ids", [])
         try:
-            fired_rule_ids = [str(r) for r in raw_rule_ids] if raw_rule_ids is not None else []
+            fired_rule_ids = (
+                [str(r) for r in raw_rule_ids] if raw_rule_ids is not None else []
+            )
         except TypeError:
             fired_rule_ids = []
 
@@ -426,7 +432,9 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
         if isinstance(raw_sev, dict):
             rule_severities: Dict[str, str] = raw_sev
         elif isinstance(raw_sev, (list, tuple)) and raw_sev is not None:
-            rule_severities = {str(rid): str(sev) for rid, sev in zip(fired_rule_ids, raw_sev)}
+            rule_severities = {
+                str(rid): str(sev) for rid, sev in zip(fired_rule_ids, raw_sev)
+            }
         else:
             rule_severities = {}
 
@@ -434,7 +442,9 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
         if isinstance(raw_msg, dict):
             rule_messages: Dict[str, str] = raw_msg
         elif isinstance(raw_msg, (list, tuple)) and raw_msg is not None:
-            rule_messages = {str(rid): str(msg) for rid, msg in zip(fired_rule_ids, raw_msg)}
+            rule_messages = {
+                str(rid): str(msg) for rid, msg in zip(fired_rule_ids, raw_msg)
+            }
         else:
             rule_messages = {}
 
