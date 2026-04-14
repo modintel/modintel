@@ -7,6 +7,7 @@ Run after editing the schema content (set integrity_hash to "" before running):
 The hash is computed over all fields except `integrity_hash` itself, using
 canonical JSON (sorted keys, no extra whitespace).
 """
+
 import hashlib
 import json
 from pathlib import Path
