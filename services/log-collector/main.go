@@ -225,9 +225,16 @@ func main() {
 
 		enriched := enrichWithAI(doc)
 
-		docJSON, _ := json.Marshal(doc)
+		docJSON, err := json.Marshal(doc)
+		if err != nil {
+			log.Printf("Failed to marshal doc: %v", err)
+			return
+		}
 		var docMap map[string]interface{}
-		json.Unmarshal(docJSON, &docMap)
+		if err := json.Unmarshal(docJSON, &docMap); err != nil {
+			log.Printf("Failed to unmarshal doc: %v", err)
+			return
+		}
 		docMap["alert_key"] = alertKey
 
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
