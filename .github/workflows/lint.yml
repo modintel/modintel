@@ -1,0 +1,110 @@
+name: lint
+
+on:
+  push:
+    branches: [ modintel-base ]
+  pull_request:
+    branches: [ modintel-base ]
+
+jobs:
+  go-lint:
+    name: Go Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - name: Lint log-collector
+        run: cd services/log-collector && golangci-lint run ./...
+
+      - name: Lint review-api
+        run: cd services/review-api && golangci-lint run ./...
+
+  python-lint:
+    name: Python Lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12']
+        path: [services/inference-engine, ml-pipeline]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Lint inference-engine
+        if: matrix.path == 'services/inference-engine'
+        run: cd services/inference-engine && ruff check .
+
+      - name: Lint ml-pipeline
+        if: matrix.path == 'ml-pipeline'
+        run: cd ml-pipeline && ruff check .
+
+  yaml-lint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Lint YAML files
+        run: yamllint --no-warnings .github/workflows/ docker-compose.yml
+
+  go-fmt:
+    name: Go Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Check log-collector formatting
+        run: cd services/log-collector && gofmt -l .
+
+      - name: Check review-api formatting
+        run: cd services/review-api && gofmt -l .
+
+  python-fmt:
+    name: Python Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Check inference-engine formatting
+        run: cd services/inference-engine && ruff format --check .
+
+      - name: Check ml-pipeline formatting
+        run: cd ml-pipeline && ruff format --check .
