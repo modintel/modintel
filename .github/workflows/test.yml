@@ -2,9 +2,9 @@ name: test
 
 on:
   push:
-    branches: [ modintel-base ]
+    branches: [modintel-base]
   pull_request:
-    branches: [ modintel-base ]
+    branches: [modintel-base]
 
 jobs:
   go-test:
