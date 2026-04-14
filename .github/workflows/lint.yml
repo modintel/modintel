@@ -2,9 +2,9 @@ name: lint
 
 on:
   push:
-    branches: [ modintel-base ]
+    branches: [modintel-base]
   pull_request:
-    branches: [ modintel-base ]
+    branches: [modintel-base]
 
 jobs:
   go-lint:
@@ -19,7 +19,9 @@ jobs:
           go-version: '1.26'
 
       - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+        run: |
+          go install \
+            github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
       - name: Lint log-collector
         run: cd services/log-collector && golangci-lint run ./...
