@@ -20,22 +20,35 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict
 
 import joblib
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.calibration import calibration_curve
 from sklearn.metrics import (
-    accuracy_score, auc, average_precision_score, brier_score_loss,
-    confusion_matrix, f1_score, precision_recall_curve, precision_score,
-    recall_score, roc_auc_score, roc_curve,
+    accuracy_score,
+    auc,
+    average_precision_score,
+    brier_score_loss,
+    confusion_matrix,
+    f1_score,
+    precision_recall_curve,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+    roc_curve,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
 log = logging.getLogger(__name__)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -47,6 +60,7 @@ CANDIDATE_NAMES = ["xgboost", "lightgbm", "random_forest", "logistic_regression"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _fig_to_b64(fig: plt.Figure) -> str:
     buf = io.BytesIO()
@@ -61,7 +75,9 @@ def _img_tag(b64: str, alt: str = "") -> str:
     return f'<img src="data:image/png;base64,{b64}" alt="{alt}" style="max-width:100%;height:auto;" />'
 
 
-def compute_ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = ECE_BINS) -> float:
+def compute_ece(
+    y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = ECE_BINS
+) -> float:
     bins = np.linspace(0.0, 1.0, n_bins + 1)
     ece = 0.0
     n = len(y_true)
@@ -90,21 +106,33 @@ def evaluate_model(calibrator, X_test, y_test, df_test) -> Dict[str, Any]:
     y_pred = calibrator.predict(X_test)
     y_prob = calibrator.predict_proba(X_test)[:, 1]
     fpr, fnr = compute_fpr_fnr(y_test, y_pred)
-    families = df_test.get("attack_family", pd.Series(["unknown"] * len(df_test))).values
+    families = df_test.get(
+        "attack_family", pd.Series(["unknown"] * len(df_test))
+    ).values
     per_family = {}
     for fam in sorted(np.unique(families)):
         mask = families == fam
         f, fn_ = compute_fpr_fnr(y_test[mask], y_pred[mask])
-        per_family[str(fam)] = {"fpr": round(f, 4), "fnr": round(fn_, 4), "count": int(mask.sum())}
+        per_family[str(fam)] = {
+            "fpr": round(f, 4),
+            "fnr": round(fn_, 4),
+            "count": int(mask.sum()),
+        }
     return {
-        "y_pred": y_pred, "y_prob": y_prob,
+        "y_pred": y_pred,
+        "y_prob": y_prob,
         "accuracy": float(accuracy_score(y_test, y_pred)),
         "precision": float(precision_score(y_test, y_pred, zero_division=0)),
         "recall": float(recall_score(y_test, y_pred, zero_division=0)),
         "f1": float(f1_score(y_test, y_pred, zero_division=0)),
-        "auroc": float(roc_auc_score(y_test, y_prob)) if len(np.unique(y_test)) > 1 else 0.0,
-        "pr_auc": float(average_precision_score(y_test, y_prob)) if len(np.unique(y_test)) > 1 else 0.0,
-        "fpr": fpr, "fnr": fnr,
+        "auroc": float(roc_auc_score(y_test, y_prob))
+        if len(np.unique(y_test)) > 1
+        else 0.0,
+        "pr_auc": float(average_precision_score(y_test, y_prob))
+        if len(np.unique(y_test)) > 1
+        else 0.0,
+        "fpr": fpr,
+        "fnr": fnr,
         "ece": compute_ece(y_test, y_prob),
         "brier_score": float(brier_score_loss(y_test, y_prob)),
         "per_family": per_family,
@@ -115,19 +143,26 @@ def evaluate_model(calibrator, X_test, y_test, df_test) -> Dict[str, Any]:
 # Multi-model plots
 # ---------------------------------------------------------------------------
 
+
 def plot_roc_comparison(results: Dict[str, Dict]) -> str:
     fig, ax = plt.subplots(figsize=(7, 6))
     for i, (name, r) in enumerate(results.items()):
         fpr_vals, tpr_vals, _ = roc_curve(r["_y_test"], r["y_prob"])
         roc_auc = auc(fpr_vals, tpr_vals)
-        ax.plot(fpr_vals, tpr_vals, color=COLORS[i % len(COLORS)], lw=2,
-                label=f"{name} (AUC={roc_auc:.4f})")
+        ax.plot(
+            fpr_vals,
+            tpr_vals,
+            color=COLORS[i % len(COLORS)],
+            lw=2,
+            label=f"{name} (AUC={roc_auc:.4f})",
+        )
     ax.plot([0, 1], [0, 1], "k--", lw=1)
     ax.set_xlabel("False Positive Rate")
     ax.set_ylabel("True Positive Rate")
     ax.set_title("ROC Curves — All Models")
     ax.legend(loc="lower right", fontsize=9)
-    ax.set_xlim(0, 1); ax.set_ylim(0, 1.02)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
     fig.tight_layout()
     return _fig_to_b64(fig)
 
@@ -137,13 +172,19 @@ def plot_pr_comparison(results: Dict[str, Dict]) -> str:
     for i, (name, r) in enumerate(results.items()):
         prec, rec, _ = precision_recall_curve(r["_y_test"], r["y_prob"])
         pr_auc = auc(rec, prec)
-        ax.plot(rec, prec, color=COLORS[i % len(COLORS)], lw=2,
-                label=f"{name} (AUC={pr_auc:.4f})")
+        ax.plot(
+            rec,
+            prec,
+            color=COLORS[i % len(COLORS)],
+            lw=2,
+            label=f"{name} (AUC={pr_auc:.4f})",
+        )
     ax.set_xlabel("Recall")
     ax.set_ylabel("Precision")
     ax.set_title("Precision-Recall Curves — All Models")
     ax.legend(loc="lower left", fontsize=9)
-    ax.set_xlim(0, 1); ax.set_ylim(0, 1.05)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.05)
     fig.tight_layout()
     return _fig_to_b64(fig)
 
@@ -153,15 +194,25 @@ def plot_reliability_comparison(results: Dict[str, Dict]) -> str:
     ax.plot([0, 1], [0, 1], "k--", lw=1, label="Perfect")
     for i, (name, r) in enumerate(results.items()):
         try:
-            frac_pos, mean_pred = calibration_curve(r["_y_test"], r["y_prob"], n_bins=ECE_BINS, strategy="uniform")
-            ax.plot(mean_pred, frac_pos, "s-", color=COLORS[i % len(COLORS)], lw=2, label=name)
+            frac_pos, mean_pred = calibration_curve(
+                r["_y_test"], r["y_prob"], n_bins=ECE_BINS, strategy="uniform"
+            )
+            ax.plot(
+                mean_pred,
+                frac_pos,
+                "s-",
+                color=COLORS[i % len(COLORS)],
+                lw=2,
+                label=name,
+            )
         except Exception:
             pass
     ax.set_xlabel("Mean predicted probability")
     ax.set_ylabel("Fraction of positives")
     ax.set_title("Reliability Curves — All Models")
     ax.legend(fontsize=9)
-    ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
     fig.tight_layout()
     return _fig_to_b64(fig)
 
@@ -174,7 +225,14 @@ def plot_metrics_bar(results: Dict[str, Dict]) -> str:
     fig, ax = plt.subplots(figsize=(10, 5))
     for i, name in enumerate(names):
         vals = [results[name][m] for m in metrics]
-        ax.bar(x + i * width, vals, width, label=name, color=COLORS[i % len(COLORS)], alpha=0.85)
+        ax.bar(
+            x + i * width,
+            vals,
+            width,
+            label=name,
+            color=COLORS[i % len(COLORS)],
+            alpha=0.85,
+        )
     ax.set_xticks(x + width * (len(names) - 1) / 2)
     ax.set_xticklabels(metrics)
     ax.set_ylim(0, 1.1)
@@ -190,22 +248,33 @@ def plot_confusion_matrix(y_true, y_pred, name: str) -> str:
     fig, ax = plt.subplots(figsize=(4, 3.5))
     im = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
     fig.colorbar(im, ax=ax)
-    ax.set_xticks([0, 1]); ax.set_yticks([0, 1])
+    ax.set_xticks([0, 1])
+    ax.set_yticks([0, 1])
     ax.set_xticklabels(["Benign", "Attack"])
     ax.set_yticklabels(["Benign", "Attack"])
     thresh = cm.max() / 2.0
     for i in range(2):
         for j in range(2):
-            ax.text(j, i, format(cm[i, j], "d"), ha="center", va="center",
-                    color="white" if cm[i, j] > thresh else "black", fontsize=9)
-    ax.set_ylabel("True"); ax.set_xlabel("Predicted")
+            ax.text(
+                j,
+                i,
+                format(cm[i, j], "d"),
+                ha="center",
+                va="center",
+                color="white" if cm[i, j] > thresh else "black",
+                fontsize=9,
+            )
+    ax.set_ylabel("True")
+    ax.set_xlabel("Predicted")
     ax.set_title(f"Confusion Matrix\n{name}")
     fig.tight_layout()
     return _fig_to_b64(fig)
 
 
 def plot_confidence_distribution(results: Dict[str, Dict]) -> str:
-    fig, axes = plt.subplots(1, len(results), figsize=(4 * len(results), 4), sharey=False)
+    fig, axes = plt.subplots(
+        1, len(results), figsize=(4 * len(results), 4), sharey=False
+    )
     if len(results) == 1:
         axes = [axes]
     for ax, (name, r) in zip(axes, results.items()):
@@ -223,8 +292,15 @@ def plot_per_family_heatmap(results: Dict[str, Dict], metric: str = "fnr") -> st
     names = list(results.keys())
     first = list(results.values())[0]
     families = sorted(first["per_family"].keys())
-    data = np.array([[results[n]["per_family"].get(f, {}).get(metric, 0.0) for f in families] for n in names])
-    fig, ax = plt.subplots(figsize=(max(8, len(families) * 1.2), max(3, len(names) * 0.8)))
+    data = np.array(
+        [
+            [results[n]["per_family"].get(f, {}).get(metric, 0.0) for f in families]
+            for n in names
+        ]
+    )
+    fig, ax = plt.subplots(
+        figsize=(max(8, len(families) * 1.2), max(3, len(names) * 0.8))
+    )
     im = ax.imshow(data, aspect="auto", cmap="RdYlGn_r", vmin=0, vmax=1)
     fig.colorbar(im, ax=ax)
     ax.set_xticks(range(len(families)))
@@ -233,8 +309,15 @@ def plot_per_family_heatmap(results: Dict[str, Dict], metric: str = "fnr") -> st
     ax.set_yticklabels(names, fontsize=9)
     for i in range(len(names)):
         for j in range(len(families)):
-            ax.text(j, i, f"{data[i, j]:.2f}", ha="center", va="center", fontsize=7,
-                    color="white" if data[i, j] > 0.6 else "black")
+            ax.text(
+                j,
+                i,
+                f"{data[i, j]:.2f}",
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="white" if data[i, j] > 0.6 else "black",
+            )
     ax.set_title(f"Per-Family {metric.upper()} Heatmap — All Models")
     fig.tight_layout()
     return _fig_to_b64(fig)
@@ -244,10 +327,20 @@ def plot_per_family_heatmap(results: Dict[str, Dict], metric: str = "fnr") -> st
 # HTML generation
 # ---------------------------------------------------------------------------
 
-def generate_html(version: int, metadata: Dict, results: Dict[str, Dict],
-                  img_roc, img_pr, img_reliability, img_metrics_bar,
-                  img_conf_dist, img_fpr_heatmap, img_fnr_heatmap,
-                  cm_images: Dict[str, str]) -> str:
+
+def generate_html(
+    version: int,
+    metadata: Dict,
+    results: Dict[str, Dict],
+    img_roc,
+    img_pr,
+    img_reliability,
+    img_metrics_bar,
+    img_conf_dist,
+    img_fpr_heatmap,
+    img_fnr_heatmap,
+    cm_images: Dict[str, str],
+) -> str:
 
     best_name = metadata.get("model_name", "unknown")
     trained_at = metadata.get("trained_at", "unknown")
@@ -269,19 +362,42 @@ def generate_html(version: int, metadata: Dict, results: Dict[str, Dict],
     """
 
     # Summary comparison table
-    metric_keys = ["accuracy", "precision", "recall", "f1", "auroc", "pr_auc", "fpr", "fnr", "ece", "brier_score"]
-    header = "<tr><th>Metric</th>" + "".join(
-        f'<th>{n} {"<span class=badge best>best</span>" if n == best_name else ""}</th>'
-        for n in results.keys()
-    ) + "</tr>"
+    metric_keys = [
+        "accuracy",
+        "precision",
+        "recall",
+        "f1",
+        "auroc",
+        "pr_auc",
+        "fpr",
+        "fnr",
+        "ece",
+        "brier_score",
+    ]
+    header = (
+        "<tr><th>Metric</th>"
+        + "".join(
+            f"<th>{n} {'<span class=badge best>best</span>' if n == best_name else ''}</th>"
+            for n in results.keys()
+        )
+        + "</tr>"
+    )
     rows = ""
     for m in metric_keys:
         vals = {n: results[n][m] for n in results}
-        best_val = min(vals.values()) if m in ("fpr", "fnr", "ece", "brier_score") else max(vals.values())
+        best_val = (
+            min(vals.values())
+            if m in ("fpr", "fnr", "ece", "brier_score")
+            else max(vals.values())
+        )
         row = f"<tr><td>{m}</td>"
         for n in results:
             v = vals[n]
-            style = " style='background:#d5f5e3;font-weight:bold'" if abs(v - best_val) < 1e-9 else ""
+            style = (
+                " style='background:#d5f5e3;font-weight:bold'"
+                if abs(v - best_val) < 1e-9
+                else ""
+            )
             row += f"<td{style}>{v:.4f}</td>"
         rows += row + "</tr>"
     comparison_table = f"<table>{header}{rows}</table>"
@@ -357,9 +473,12 @@ def generate_html(version: int, metadata: Dict, results: Dict[str, Dict],
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("model_dir", help="Path to model version directory, e.g. ../models/v2")
+    parser.add_argument(
+        "model_dir", help="Path to model version directory, e.g. ../models/v2"
+    )
     args = parser.parse_args()
 
     model_dir = os.path.abspath(args.model_dir)
@@ -368,7 +487,9 @@ def main():
         sys.exit(1)
 
     dir_name = os.path.basename(model_dir)
-    version = int(dir_name[1:]) if dir_name.startswith("v") and dir_name[1:].isdigit() else 0
+    version = (
+        int(dir_name[1:]) if dir_name.startswith("v") and dir_name[1:].isdigit() else 0
+    )
 
     # Load metadata and feature extractor
     with open(os.path.join(model_dir, "model_metadata.json")) as f:
@@ -376,7 +497,9 @@ def main():
     feature_extractor = joblib.load(os.path.join(model_dir, "feature_extractor.joblib"))
 
     # Load test split
-    parquet_path = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "data", "processed", "waf_dataset_v1.parquet"))
+    parquet_path = os.path.abspath(
+        os.path.join(SCRIPT_DIR, "..", "data", "processed", "waf_dataset_v1.parquet")
+    )
     if not os.path.exists(parquet_path):
         log.error("Dataset not found: %s", parquet_path)
         sys.exit(1)
@@ -430,11 +553,25 @@ def main():
     img_conf_dist = plot_confidence_distribution(results)
     img_fpr_heatmap = plot_per_family_heatmap(results, "fpr")
     img_fnr_heatmap = plot_per_family_heatmap(results, "fnr")
-    cm_images = {name: plot_confusion_matrix(y_test, r["y_pred"], name) for name, r in results.items()}
+    cm_images = {
+        name: plot_confusion_matrix(y_test, r["y_pred"], name)
+        for name, r in results.items()
+    }
 
     # Generate report
-    html = generate_html(version, metadata, results, img_roc, img_pr, img_reliability,
-                         img_metrics_bar, img_conf_dist, img_fpr_heatmap, img_fnr_heatmap, cm_images)
+    html = generate_html(
+        version,
+        metadata,
+        results,
+        img_roc,
+        img_pr,
+        img_reliability,
+        img_metrics_bar,
+        img_conf_dist,
+        img_fpr_heatmap,
+        img_fnr_heatmap,
+        cm_images,
+    )
 
     reports_dir = os.path.join(SCRIPT_DIR, "reports")
     os.makedirs(reports_dir, exist_ok=True)
