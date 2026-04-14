@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -16,7 +17,9 @@ func Serve() {
 	http.HandleFunc("/api/logs", handleLogs)
 	http.HandleFunc("/api/stats", handleStats)
 
-	http.ListenAndServe(":8081", nil)
+	if err := http.ListenAndServe(":8081", nil); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func handleLogs(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +44,9 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(bson.M{"alerts": alerts})
+	if err := json.NewEncoder(w).Encode(bson.M{"alerts": alerts}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
@@ -63,9 +68,11 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 		lastRule = last.TriggeredRules[len(last.TriggeredRules)-1]
 	}
 
-	json.NewEncoder(w).Encode(bson.M{
+	if err := json.NewEncoder(w).Encode(bson.M{
 		"total_alerts": total,
 		"latest_rule":  lastRule,
 		"status":       "protected",
-	})
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
