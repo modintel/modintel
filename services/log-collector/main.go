@@ -16,11 +16,11 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/nxadm/tail"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"modintel.local/log-collector/api"
 	"modintel.local/log-collector/db"
 	"modintel.local/log-collector/parsers"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func inferenceEngineURL() string {
