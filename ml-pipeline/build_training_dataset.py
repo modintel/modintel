@@ -28,7 +28,9 @@ from typing import Optional
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-INPUT_FILE = os.path.join(SCRIPT_DIR, "..", "data", "coraza_enriched", "replay_results.jsonl")
+INPUT_FILE = os.path.join(
+    SCRIPT_DIR, "..", "data", "coraza_enriched", "replay_results.jsonl"
+)
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "data", "processed")
 PARQUET_FILE = os.path.join(OUTPUT_DIR, "waf_dataset_v1.parquet")
 METADATA_FILE = os.path.join(OUTPUT_DIR, "dataset_metadata.json")
@@ -65,6 +67,7 @@ log = logging.getLogger(__name__)
 # Data loading
 # ---------------------------------------------------------------------------
 
+
 def load_jsonl(path: str) -> list[dict]:
     """Load a JSONL file and return a list of dicts."""
     records = []
@@ -83,6 +86,7 @@ def load_jsonl(path: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Quality gates
 # ---------------------------------------------------------------------------
+
 
 def gate_missing_fields(df: pd.DataFrame) -> Optional[str]:
     """
@@ -146,6 +150,7 @@ def run_quality_gates(df: pd.DataFrame) -> list[str]:
 # ---------------------------------------------------------------------------
 # Stratified splitting
 # ---------------------------------------------------------------------------
+
 
 def stratified_split(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -233,6 +238,7 @@ def stratified_split(df: pd.DataFrame) -> pd.DataFrame:
 # Metadata helpers
 # ---------------------------------------------------------------------------
 
+
 def sha256_file(path: str) -> str:
     """Return the SHA-256 hex digest of a file."""
     h = hashlib.sha256()
@@ -252,9 +258,7 @@ def build_metadata(df: pd.DataFrame, parquet_path: str) -> dict:
     label_distribution: dict[str, dict] = {}
     for split in ["train", "validation", "test"]:
         split_df = df[df["split"] == split]
-        label_distribution[split] = (
-            split_df["label"].value_counts().to_dict()
-        )
+        label_distribution[split] = split_df["label"].value_counts().to_dict()
         # Ensure values are plain Python ints
         label_distribution[split] = {
             k: int(v) for k, v in label_distribution[split].items()
@@ -277,6 +281,7 @@ def build_metadata(df: pd.DataFrame, parquet_path: str) -> dict:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     log.info("Loading replay results from %s", INPUT_FILE)
