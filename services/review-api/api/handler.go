@@ -202,19 +202,19 @@ func GetLogs(c *gin.Context) {
 	}
 
 	type AlertResponse struct {
-		Timestamp          string                 `json:"timestamp"`
-		ClientIP           string                 `json:"client_ip"`
-		URI                string                 `json:"uri"`
-		AnomalyScore       float64                `json:"anomaly_score"`
-		TriggeredRules     []string               `json:"triggered_rules"`
-		AIStatus           string                 `json:"ai_status"`
-		AIScore            *float64               `json:"ai_score"`
-		AIConfidence       *float64               `json:"ai_confidence"`
-		AIPriority         *string                `json:"ai_priority"`
-		AIExplanation      map[string]interface{} `json:"ai_explanation"`
-		AIModelVersion     *string                `json:"ai_model_version"`
-		AIEntropy          *float64               `json:"ai_entropy"`
-		AIConfidenceInterval *map[string]float64   `json:"ai_confidence_interval"`
+		Timestamp            string                 `json:"timestamp"`
+		ClientIP             string                 `json:"client_ip"`
+		URI                  string                 `json:"uri"`
+		AnomalyScore         float64                `json:"anomaly_score"`
+		TriggeredRules       []string               `json:"triggered_rules"`
+		AIStatus             string                 `json:"ai_status"`
+		AIScore              *float64               `json:"ai_score"`
+		AIConfidence         *float64               `json:"ai_confidence"`
+		AIPriority           *string                `json:"ai_priority"`
+		AIExplanation        map[string]interface{} `json:"ai_explanation"`
+		AIModelVersion       *string                `json:"ai_model_version"`
+		AIEntropy            *float64               `json:"ai_entropy"`
+		AIConfidenceInterval *map[string]float64    `json:"ai_confidence_interval"`
 	}
 
 	alerts := make([]AlertResponse, 0, len(results))
