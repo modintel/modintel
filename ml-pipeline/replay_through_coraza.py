@@ -19,7 +19,7 @@ import os
 import json
 import time
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 import requests
 from typing import Optional
@@ -44,7 +44,7 @@ OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "data", "coraza_enriched")
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, "replay_results.jsonl")
 
 MAX_RETRIES = 3
-AUDIT_POLL_TIMEOUT = 5.0   # seconds to wait for a matching audit log entry
+AUDIT_POLL_TIMEOUT = 5.0  # seconds to wait for a matching audit log entry
 AUDIT_POLL_INTERVAL = 0.1  # seconds between polls
 
 # ---------------------------------------------------------------------------
@@ -57,6 +57,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Audit log helpers
 # ---------------------------------------------------------------------------
+
 
 def _read_audit_log_lines(path: str) -> list:
     """Return all lines from the audit log file, or empty list if unavailable."""
@@ -177,6 +178,7 @@ def _empty_coraza_fields() -> dict:
 # Audit log polling
 # ---------------------------------------------------------------------------
 
+
 def _poll_audit_log(uri: str, sent_at: float, audit_log_path: str) -> Optional[dict]:
     """
     Poll the audit log file for a new entry matching `uri` with a timestamp
@@ -205,7 +207,12 @@ def _poll_audit_log(uri: str, sent_at: float, audit_log_path: str) -> Optional[d
             # Check URI match
             transaction = entry.get("transaction", entry)
             req_section = transaction.get("request", {}) or {}
-            entry_uri = req_section.get("uri") or transaction.get("uri") or entry.get("uri") or ""
+            entry_uri = (
+                req_section.get("uri")
+                or transaction.get("uri")
+                or entry.get("uri")
+                or ""
+            )
 
             # Normalise: strip query string for matching if needed
             if uri.split("?")[0] not in entry_uri and uri not in entry_uri:
@@ -233,6 +240,7 @@ def _poll_audit_log(uri: str, sent_at: float, audit_log_path: str) -> Optional[d
 # ---------------------------------------------------------------------------
 # Request sending
 # ---------------------------------------------------------------------------
+
 
 def _send_request(record: dict) -> tuple[int, dict]:
     """
@@ -262,29 +270,30 @@ def _send_request(record: dict) -> tuple[int, dict]:
 # Core replay logic
 # ---------------------------------------------------------------------------
 
+
 def replay_record(record: dict, audit_log_available: bool) -> dict:
     """
     Replay a single request record through Coraza with up to MAX_RETRIES attempts.
     Returns the enriched output dict.
     """
-    last_status = None
-    last_headers: dict = {}
-
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             sent_at = time.time()
             status_code, resp_headers = _send_request(record)
-            last_status = status_code
-            last_headers = resp_headers
 
             if audit_log_available:
-                coraza_fields = _poll_audit_log(record["uri"], sent_at, CORAZA_AUDIT_LOG)
+                coraza_fields = _poll_audit_log(
+                    record["uri"], sent_at, CORAZA_AUDIT_LOG
+                )
                 if coraza_fields is not None:
                     break
                 # No match yet — retry
                 logger.debug(
                     "Attempt %d/%d: no audit log match for %s %s",
-                    attempt, MAX_RETRIES, record["method"], record["uri"],
+                    attempt,
+                    MAX_RETRIES,
+                    record["method"],
+                    record["uri"],
                 )
             else:
                 # No audit log — infer from response immediately
@@ -294,7 +303,11 @@ def replay_record(record: dict, audit_log_available: bool) -> dict:
         except requests.RequestException as exc:
             logger.warning(
                 "Attempt %d/%d failed for %s %s: %s",
-                attempt, MAX_RETRIES, record["method"], record["uri"], exc,
+                attempt,
+                MAX_RETRIES,
+                record["method"],
+                record["uri"],
+                exc,
             )
             coraza_fields = None
             if attempt < MAX_RETRIES:
@@ -327,6 +340,7 @@ def replay_record(record: dict, audit_log_available: bool) -> dict:
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
+
 
 def run_replay():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -378,7 +392,8 @@ def run_replay():
                         # Per Req 2.5: exclude unmatched from output
                         logger.debug(
                             "Unmatched (excluded): request_id=%s uri=%s",
-                            record.get("request_id"), record.get("uri"),
+                            record.get("request_id"),
+                            record.get("uri"),
                         )
 
                     if total % 1000 == 0:
