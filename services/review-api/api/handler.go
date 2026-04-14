@@ -91,7 +91,7 @@ func GetTrend(c *gin.Context) {
 
 	bucketCount := 96
 	bucketSize := 15 * time.Minute
-	start := now.Truncate(15 * time.Minute).Add(-time.Duration(bucketCount-1) * bucketSize)
+	var start time.Time
 
 	switch rangeType {
 	case "week":
