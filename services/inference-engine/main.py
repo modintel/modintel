@@ -13,16 +13,14 @@ import json
 import logging
 import math
 import os
-import sys
 import time
-import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import joblib
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -59,6 +57,7 @@ _total_latency_ms: float = 0.0
 # Model loading
 # ---------------------------------------------------------------------------
 
+
 def _resolve_model_dir() -> Path:
     model_version = os.getenv("MODEL_VERSION", "latest")
     models_root = Path(os.getenv("MODELS_DIR", "/app/models"))
@@ -70,13 +69,17 @@ def _load_artifacts() -> None:
     logger.info("Loading model artifacts from %s", model_dir)
 
     if not model_dir.exists():
-        logger.warning("Model directory %s does not exist — running in degraded mode", model_dir)
+        logger.warning(
+            "Model directory %s does not exist — running in degraded mode", model_dir
+        )
         return
 
     try:
         _model_state["model"] = joblib.load(model_dir / "model.joblib")
         _model_state["calibrator"] = joblib.load(model_dir / "calibrator.joblib")
-        _model_state["feature_extractor"] = joblib.load(model_dir / "feature_extractor.joblib")
+        _model_state["feature_extractor"] = joblib.load(
+            model_dir / "feature_extractor.joblib"
+        )
 
         with open(model_dir / "feature_schema.json") as f:
             _model_state["feature_schema"] = json.load(f)
@@ -87,9 +90,14 @@ def _load_artifacts() -> None:
         with open(model_dir / "model_metadata.json") as f:
             _model_state["model_metadata"] = json.load(f)
 
-        _model_state["model_version"] = _model_state["model_metadata"].get("model_version", "unknown")
+        _model_state["model_version"] = _model_state["model_metadata"].get(
+            "model_version", "unknown"
+        )
         _model_state["loaded"] = True
-        logger.info("Model artifacts loaded successfully (version=%s)", _model_state["model_version"])
+        logger.info(
+            "Model artifacts loaded successfully (version=%s)",
+            _model_state["model_version"],
+        )
     except Exception as exc:
         logger.error("Failed to load model artifacts: %s", exc)
         _model_state["loaded"] = False
@@ -98,6 +106,7 @@ def _load_artifacts() -> None:
 # ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -119,13 +128,16 @@ app = FastAPI(
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+
 class CorazaAuditEvent(BaseModel):
     """Coraza audit event payload accepted by POST /predict."""
 
     # Request structure
     method: str = Field(..., description="HTTP method (GET, POST, …)")
     uri: str = Field(..., description="Request URI")
-    headers: Optional[Any] = Field(default=None, description="Request headers (dict or string)")
+    headers: Optional[Any] = Field(
+        default=None, description="Request headers (dict or string)"
+    )
     body: Optional[str] = Field(default=None, description="Request body")
 
     # Coraza WAF fields
@@ -168,6 +180,7 @@ class AdvisoryResponse(BaseModel):
 # Input validation against Feature_Schema
 # ---------------------------------------------------------------------------
 
+
 def _validate_input(event: CorazaAuditEvent) -> Optional[str]:
     """
     Validate the audit event against the loaded Feature_Schema.
@@ -189,9 +202,7 @@ def _validate_input(event: CorazaAuditEvent) -> Optional[str]:
 
     # anomaly_score range check (min=0)
     if event.anomaly_score is not None and event.anomaly_score < 0:
-        errors.append(
-            f"Field 'anomaly_score' must be >= 0, got {event.anomaly_score}."
-        )
+        errors.append(f"Field 'anomaly_score' must be >= 0, got {event.anomaly_score}.")
 
     # inbound_threshold range check (min=0)
     if event.inbound_threshold is not None and event.inbound_threshold < 0:
@@ -205,6 +216,7 @@ def _validate_input(event: CorazaAuditEvent) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Inference helpers
 # ---------------------------------------------------------------------------
+
 
 def _compute_ci(prob: float, quantiles: Dict[str, Any]) -> ConfidenceInterval:
     """
@@ -240,9 +252,7 @@ def _compute_entropy(prob: float) -> tuple[float, float]:
     return round(h, 6), round(h_norm, 6)
 
 
-def _assign_priority(
-    prob: float, ci_width: float, h_norm: float
-) -> tuple[str, str]:
+def _assign_priority(prob: float, ci_width: float, h_norm: float) -> tuple[str, str]:
     """
     Assign priority band and produce reasoning string.
 
@@ -282,7 +292,9 @@ def _assign_priority(
     return band, reason
 
 
-def _top5_shap(feature_vector: np.ndarray, feature_names: List[str], schema: Dict) -> List[ShapContribution]:
+def _top5_shap(
+    feature_vector: np.ndarray, feature_names: List[str], schema: Dict
+) -> List[ShapContribution]:
     """
     Compute top-5 SHAP feature contributions using TreeExplainer when available,
     falling back to feature-value magnitude ranking.
@@ -292,6 +304,7 @@ def _top5_shap(feature_vector: np.ndarray, feature_names: List[str], schema: Dic
 
     try:
         import shap  # type: ignore
+
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(feature_vector)
         if isinstance(shap_values, list):
@@ -342,6 +355,7 @@ def _conformal_prediction_set(prob: float) -> List[str]:
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @app.post("/predict", response_model=AdvisoryResponse)
 async def predict(event: CorazaAuditEvent) -> JSONResponse:
     """
@@ -359,7 +373,10 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
     if not _model_state["loaded"]:
         return JSONResponse(
             status_code=500,
-            content={"ai_status": "unavailable", "error": "Model artifacts not loaded."},
+            content={
+                "ai_status": "unavailable",
+                "error": "Model artifacts not loaded.",
+            },
         )
 
     t_start = time.perf_counter()
@@ -469,7 +486,10 @@ async def model_info() -> JSONResponse:
     if not _model_state["loaded"]:
         return JSONResponse(
             status_code=500,
-            content={"ai_status": "unavailable", "error": "Model artifacts not loaded."},
+            content={
+                "ai_status": "unavailable",
+                "error": "Model artifacts not loaded.",
+            },
         )
 
     metadata = _model_state["model_metadata"] or {}
