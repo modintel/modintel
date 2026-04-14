@@ -30,6 +30,7 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _metrics(f1=0.0, ece=0.0, auroc=0.0, fpr=0.0):
     """Build a minimal metrics dict for composite_score."""
     return {"f1": f1, "ece": ece, "auroc": auroc, "fpr": fpr}
@@ -38,6 +39,7 @@ def _metrics(f1=0.0, ece=0.0, auroc=0.0, fpr=0.0):
 # ---------------------------------------------------------------------------
 # composite_score — selection logic (Requirement 5.5)
 # ---------------------------------------------------------------------------
+
 
 class TestCompositeScore:
     def test_formula_matches_weights(self):
@@ -80,10 +82,10 @@ class TestCompositeScore:
     def test_selects_best_candidate_from_list(self):
         """Simulates the selection logic: argmax composite_score picks the right candidate."""
         candidates = [
-            ("xgboost",  _metrics(f1=0.85, ece=0.08, auroc=0.92, fpr=0.05)),
-            ("lgbm",     _metrics(f1=0.80, ece=0.12, auroc=0.88, fpr=0.07)),
-            ("rf",       _metrics(f1=0.75, ece=0.15, auroc=0.84, fpr=0.10)),
-            ("logreg",   _metrics(f1=0.70, ece=0.20, auroc=0.78, fpr=0.15)),
+            ("xgboost", _metrics(f1=0.85, ece=0.08, auroc=0.92, fpr=0.05)),
+            ("lgbm", _metrics(f1=0.80, ece=0.12, auroc=0.88, fpr=0.07)),
+            ("rf", _metrics(f1=0.75, ece=0.15, auroc=0.84, fpr=0.10)),
+            ("logreg", _metrics(f1=0.70, ece=0.20, auroc=0.78, fpr=0.15)),
         ]
         scores = [(name, composite_score(m)) for name, m in candidates]
         best_name = max(scores, key=lambda x: x[1])[0]
@@ -104,13 +106,18 @@ class TestCompositeScore:
             for ece in [0.0, 0.5, 1.0]:
                 for auroc in [0.0, 0.5, 1.0]:
                     for fpr in [0.0, 0.5, 1.0]:
-                        s = composite_score(_metrics(f1=f1, ece=ece, auroc=auroc, fpr=fpr))
-                        assert 0.0 <= s <= 1.0, f"Score {s} out of bounds for inputs {f1},{ece},{auroc},{fpr}"
+                        s = composite_score(
+                            _metrics(f1=f1, ece=ece, auroc=auroc, fpr=fpr)
+                        )
+                        assert 0.0 <= s <= 1.0, (
+                            f"Score {s} out of bounds for inputs {f1},{ece},{auroc},{fpr}"
+                        )
 
 
 # ---------------------------------------------------------------------------
 # compute_ece — metric gate computation (Requirement 5.5)
 # ---------------------------------------------------------------------------
+
 
 class TestComputeECE:
     def test_perfect_calibration_returns_zero(self):
@@ -180,6 +187,7 @@ class TestComputeECE:
 # ---------------------------------------------------------------------------
 # brier_score — metric gate computation (Requirement 5.5)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.skipif(brier_score_loss is None, reason="sklearn not available")
 class TestBrierScore:
