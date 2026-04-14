@@ -13,13 +13,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.12'
+          node-version: '20'
 
-      - name: Install link checker
-        run: pip install markdown-link-check
+      - name: Install markdown-link-check
+        run: npm install -g markdown-link-check
 
       - name: Check README links
         run: |
