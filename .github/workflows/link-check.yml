@@ -1,0 +1,34 @@
+name: link-check
+
+on:
+  push:
+    branches: [ modintel-base ]
+  pull_request:
+    branches: [ modintel-base ]
+
+jobs:
+  markdown-links:
+    name: Markdown Link Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install link checker
+        run: pip install markdown-link-check
+
+      - name: Check README links
+        run: markdown-link-check --config .github/workflows/linkcheck-config.json README.md || true
+
+      - name: Check docs links
+        run: markdown-link-check --config .github/workflows/linkcheck-config.json docs/ || true
+
+      - name: Check landing site links
+        run: |
+          for file in landing-site/**/*.md; do
+            markdown-link-check --config .github/workflows/linkcheck-config.json "$file" || true
+          done
