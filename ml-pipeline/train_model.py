@@ -44,12 +44,14 @@ from sklearn.metrics import (
 
 try:
     from xgboost import XGBClassifier
+
     _HAS_XGB = True
 except ImportError:
     _HAS_XGB = False
 
 try:
     from lightgbm import LGBMClassifier
+
     _HAS_LGB = True
 except ImportError:
     _HAS_LGB = False
@@ -61,7 +63,9 @@ from feature_extractor import WAFFeatureExtractor
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-PARQUET_PATH = os.path.join(SCRIPT_DIR, "..", "data", "processed", "waf_dataset_v1.parquet")
+PARQUET_PATH = os.path.join(
+    SCRIPT_DIR, "..", "data", "processed", "waf_dataset_v1.parquet"
+)
 FEATURE_SCHEMA_SRC = os.path.join(SCRIPT_DIR, "feature_schema.json")
 MODELS_BASE_DIR = os.path.join(SCRIPT_DIR, "..", "models")
 
@@ -91,6 +95,7 @@ log = logging.getLogger(__name__)
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def sha256_file(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -103,7 +108,8 @@ def next_model_version(base_dir: str) -> int:
     """Return the next version number N by scanning existing models/v{N}/ dirs."""
     os.makedirs(base_dir, exist_ok=True)
     existing = [
-        d for d in os.listdir(base_dir)
+        d
+        for d in os.listdir(base_dir)
         if os.path.isdir(os.path.join(base_dir, d)) and d.startswith("v")
     ]
     versions = []
@@ -173,8 +179,12 @@ def compute_metrics(
         "precision": float(precision_score(y_true, y_pred, zero_division=0)),
         "recall": float(recall_score(y_true, y_pred, zero_division=0)),
         "f1": float(f1_score(y_true, y_pred, zero_division=0)),
-        "auroc": float(roc_auc_score(y_true, y_prob)) if len(np.unique(y_true)) > 1 else 0.0,
-        "pr_auc": float(average_precision_score(y_true, y_prob)) if len(np.unique(y_true)) > 1 else 0.0,
+        "auroc": float(roc_auc_score(y_true, y_prob))
+        if len(np.unique(y_true)) > 1
+        else 0.0,
+        "pr_auc": float(average_precision_score(y_true, y_prob))
+        if len(np.unique(y_true)) > 1
+        else 0.0,
         "fpr": fpr,
         "fnr": fnr,
         "ece": compute_ece(y_true, y_prob, n_bins=ECE_BINS),
@@ -197,6 +207,7 @@ def composite_score(metrics: Dict[str, Any]) -> float:
 # ---------------------------------------------------------------------------
 # Bootstrap CI
 # ---------------------------------------------------------------------------
+
 
 def bootstrap_quantiles(
     calibrated_model: Any,
@@ -242,61 +253,70 @@ def bootstrap_quantiles(
 # Candidate classifiers
 # ---------------------------------------------------------------------------
 
+
 def build_candidates() -> List[Tuple[str, Any]]:
     """Return list of (name, unfitted_estimator) tuples."""
     candidates: List[Tuple[str, Any]] = []
 
     if _HAS_XGB:
-        candidates.append((
-            "xgboost",
-            XGBClassifier(
-                n_estimators=200,
-                max_depth=6,
-                learning_rate=0.1,
-                eval_metric="logloss",
-                scale_pos_weight=5,
-                random_state=RANDOM_STATE,
-                verbosity=0,
-            ),
-        ))
+        candidates.append(
+            (
+                "xgboost",
+                XGBClassifier(
+                    n_estimators=200,
+                    max_depth=6,
+                    learning_rate=0.1,
+                    eval_metric="logloss",
+                    scale_pos_weight=5,
+                    random_state=RANDOM_STATE,
+                    verbosity=0,
+                ),
+            )
+        )
     else:
         log.warning("xgboost not installed — skipping XGBoost candidate.")
 
     if _HAS_LGB:
-        candidates.append((
-            "lightgbm",
-            LGBMClassifier(
-                n_estimators=200,
-                max_depth=6,
-                learning_rate=0.1,
-                class_weight="balanced",
-                random_state=RANDOM_STATE,
-                verbose=-1,
-            ),
-        ))
+        candidates.append(
+            (
+                "lightgbm",
+                LGBMClassifier(
+                    n_estimators=200,
+                    max_depth=6,
+                    learning_rate=0.1,
+                    class_weight="balanced",
+                    random_state=RANDOM_STATE,
+                    verbose=-1,
+                ),
+            )
+        )
     else:
         log.warning("lightgbm not installed — skipping LightGBM candidate.")
 
-    candidates.append((
-        "random_forest",
-        RandomForestClassifier(
-            n_estimators=200,
-            max_depth=None,
-            class_weight="balanced",
-            random_state=RANDOM_STATE,
-            n_jobs=-1,
-        ),
-    ))
+    candidates.append(
+        (
+            "random_forest",
+            RandomForestClassifier(
+                n_estimators=200,
+                max_depth=None,
+                class_weight="balanced",
+                random_state=RANDOM_STATE,
+                n_jobs=-1,
+            ),
+        )
+    )
 
-    candidates.append((
-        "logistic_regression",
-        LogisticRegression(
-            max_iter=1000,
-            class_weight="balanced",
-            random_state=RANDOM_STATE,
-            solver="lbfgs",
-        ),
-    ))
+    candidates.append(
+        (
+            "logistic_regression",
+            LogisticRegression(
+                max_iter=1000,
+                class_weight="balanced",
+                random_state=RANDOM_STATE,
+                solver="lbfgs",
+            ),
+        )
+    )
 
     return candidates
 
@@ -305,10 +325,19 @@ def build_candidates() -> List[Tuple[str, Any]]:
 # Data loading and feature extraction
 # ---------------------------------------------------------------------------
 
-def load_splits(parquet_path: str) -> Tuple[
-    pd.DataFrame, pd.DataFrame, pd.DataFrame,
-    np.ndarray, np.ndarray, np.ndarray,
-    np.ndarray, np.ndarray, np.ndarray,
+
+def load_splits(
+    parquet_path: str,
+) -> Tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
     WAFFeatureExtractor,
 ]:
     """
@@ -338,7 +367,9 @@ def load_splits(parquet_path: str) -> Tuple[
 
     log.info(
         "Split sizes — train: %d, val: %d, test: %d",
-        len(df_train), len(df_val), len(df_test),
+        len(df_train),
+        len(df_val),
+        len(df_test),
     )
 
     extractor = WAFFeatureExtractor()
@@ -351,12 +382,24 @@ def load_splits(parquet_path: str) -> Tuple[
     y_val = (df_val["label"] == "attack").astype(int).values
     y_test = (df_test["label"] == "attack").astype(int).values
 
-    return df_train, df_val, df_test, X_train, X_val, X_test, y_train, y_val, y_test, extractor
+    return (
+        df_train,
+        df_val,
+        df_test,
+        X_train,
+        X_val,
+        X_test,
+        y_train,
+        y_val,
+        y_test,
+        extractor,
+    )
 
 
 # ---------------------------------------------------------------------------
 # Training loop
 # ---------------------------------------------------------------------------
+
 
 def train_and_evaluate(
     candidates: List[Tuple[str, Any]],
@@ -396,7 +439,9 @@ def train_and_evaluate(
         y_prob = calibrated.predict_proba(X_test)[:, 1]
 
         # 4. Get attack families for per-family breakdown
-        families = df_test.get("attack_family", pd.Series(["unknown"] * len(df_test))).values
+        families = df_test.get(
+            "attack_family", pd.Series(["unknown"] * len(df_test))
+        ).values
 
         # 5. Compute metrics
         metrics = compute_metrics(y_test, y_pred, y_prob, families)
@@ -404,16 +449,23 @@ def train_and_evaluate(
 
         log.info(
             "%s — F1=%.4f ECE=%.4f AUROC=%.4f FPR=%.4f composite=%.4f",
-            name, metrics["f1"], metrics["ece"], metrics["auroc"], metrics["fpr"], score,
+            name,
+            metrics["f1"],
+            metrics["ece"],
+            metrics["auroc"],
+            metrics["fpr"],
+            score,
         )
 
-        results.append({
-            "name": name,
-            "base_estimator": base_estimator,
-            "calibrated_model": calibrated,
-            "metrics": metrics,
-            "composite_score": score,
-        })
+        results.append(
+            {
+                "name": name,
+                "base_estimator": base_estimator,
+                "calibrated_model": calibrated,
+                "metrics": metrics,
+                "composite_score": score,
+            }
+        )
 
     # Sort by composite score descending
     results.sort(key=lambda r: r["composite_score"], reverse=True)
@@ -423,6 +475,7 @@ def train_and_evaluate(
 # ---------------------------------------------------------------------------
 # Artifact export
 # ---------------------------------------------------------------------------
+
 
 def export_artifacts(
     best: Dict[str, Any],
@@ -446,7 +499,10 @@ def export_artifacts(
 
     # Save all candidate calibrated models for comparison reporting
     for r in all_results:
-        joblib.dump(r["calibrated_model"], os.path.join(out_dir, f"calibrator_{r['name']}.joblib"))
+        joblib.dump(
+            r["calibrated_model"],
+            os.path.join(out_dir, f"calibrator_{r['name']}.joblib"),
+        )
 
     # feature_extractor.joblib
     joblib.dump(extractor, os.path.join(out_dir, "feature_extractor.joblib"))
@@ -516,32 +572,46 @@ def _json_default(obj: Any) -> Any:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     # --- Load data and extract features ---
     (
-        df_train, df_val, df_test,
-        X_train, X_val, X_test,
-        y_train, y_val, y_test,
+        df_train,
+        df_val,
+        df_test,
+        X_train,
+        X_val,
+        X_test,
+        y_train,
+        y_val,
+        y_test,
         extractor,
     ) = load_splits(PARQUET_PATH)
 
     # --- Build and train candidates ---
     candidates = build_candidates()
     if not candidates:
-        log.error("No candidate classifiers available. Install xgboost and/or lightgbm.")
+        log.error(
+            "No candidate classifiers available. Install xgboost and/or lightgbm."
+        )
         raise RuntimeError("No candidate classifiers available.")
 
     results = train_and_evaluate(
         candidates,
-        X_train, X_val, X_test,
-        y_train, y_val, y_test,
+        X_train,
+        X_val,
+        X_test,
+        y_train,
+        y_val,
+        y_test,
         df_test,
     )
 
     best = results[0]
     log.info(
         "Best model: %s (composite score=%.4f)",
-        best["name"], best["composite_score"],
+        best["name"],
+        best["composite_score"],
     )
 
     # --- Bootstrap CI on calibration (validation) set ---
@@ -549,7 +619,8 @@ def main() -> None:
     bootstrap_q = bootstrap_quantiles(best["calibrated_model"], X_val, B=BOOTSTRAP_B)
     log.info(
         "Bootstrap 95%% CI: [%.4f, %.4f]",
-        bootstrap_q["quantile_low"], bootstrap_q["quantile_high"],
+        bootstrap_q["quantile_low"],
+        bootstrap_q["quantile_high"],
     )
 
     # --- Determine version ---
@@ -592,7 +663,9 @@ def main() -> None:
     print(f"  FPR            : {best['metrics']['fpr']:.4f}")
     print(f"  FNR            : {best['metrics']['fnr']:.4f}")
     print(f"  Brier score    : {best['metrics']['brier_score']:.4f}")
-    print(f"  Bootstrap CI   : [{bootstrap_q['quantile_low']:.4f}, {bootstrap_q['quantile_high']:.4f}]")
+    print(
+        f"  Bootstrap CI   : [{bootstrap_q['quantile_low']:.4f}, {bootstrap_q['quantile_high']:.4f}]"
+    )
     print(f"  Artifacts      : {out_dir}")
     print("========================\n")
 
