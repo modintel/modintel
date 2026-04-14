@@ -5,9 +5,9 @@ permissions:
 
 on:
   push:
-    branches: [ modintel-base ]
+    branches: [modintel-base]
   pull_request:
-    branches: [ modintel-base ]
+    branches: [modintel-base]
 
 env:
   REGISTRY: ghcr.io
@@ -49,7 +49,8 @@ jobs:
         with:
           context: ./services/inference-engine
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/inference-engine:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/inference-engine:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
