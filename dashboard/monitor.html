@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Monitor</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <meta name="description" content="System Monitor and metrics for ModIntel">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/monitor.css">
+</head>
+
+<body>
+    <nav>
+        <div class="nav-brand">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff570a" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span style="color: #ff570a;">MODINTEL</span>
+        </div>
+        <div class="nav-links">
+            <a href="index.html">Events</a>
+            <a href="rules.html">Rules</a>
+            <a href="training.html">Training</a>
+            <a href="datasets.html">Datasets</a>
+            <a href="reports.html">Reports</a>
+            <a href="Monitor.html" class="active">Monitor</a>
+            <a href="settings.html">Settings</a>
+        </div>
+        <div class="nav-actions">
+                <button class="btn btn-primary" id="sync-btn" onclick="handleSync()">
+                    <svg id="sync-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M21 2v6h-6" />
+                        <path d="M21 13a9 9 0 1 1-3-7.7L21 8" />
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+    </nav>
+    <div class="main">
+        <div class="panel-left">
+            <div class="hero">
+                <div class="hero-eyebrow">Operations</div>
+                <h1>System<br>Monitor</h1>
+                <p>Real-time infrastructure metrics and service health for the ModIntel engine. Track performance,
+                    latency, and system status.</p>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-cell">
+                    <div class="stat-label">Total Alerts</div>
+                    <div class="stat-value" id="stat-total">0</div>
+                </div>
+                <div class="stat-cell">
+                    <div class="stat-label">AI Enriched</div>
+                    <div class="stat-value" id="stat-enriched">0</div>
+                </div>
+                <div class="stat-cell">
+                    <div class="stat-label">Avg Latency</div>
+                    <div class="stat-value" id="stat-latency">0ms</div>
+                </div>
+                <div class="stat-cell">
+                    <div class="stat-label">Requests/min</div>
+                    <div class="stat-value" id="stat-rpm">0</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Service Status</h3>
+                <div class="service-list" id="service-list">
+                    <div class="service-item">
+                        <div class="service-status-indicator healthy"></div>
+                        <div class="service-info">
+                            <div class="service-name">review-api</div>
+                            <div class="service-detail">API Server</div>
+                        </div>
+                    </div>
+                    <div class="service-item">
+                        <div class="service-status-indicator" id="status-log-collector">
+                            <div class="status-loading"></div>
+                        </div>
+                        <div class="service-info">
+                            <div class="service-name">log-collector</div>
+                            <div class="service-detail">Log Processor</div>
+                        </div>
+                    </div>
+                    <div class="service-item">
+                        <div class="service-status-indicator" id="status-inference">
+                            <div class="status-loading"></div>
+                        </div>
+                        <div class="service-info">
+                            <div class="service-name">inference-engine</div>
+                            <div class="service-detail">ML Inference</div>
+                        </div>
+                    </div>
+                    <div class="service-item">
+                        <div class="service-status-indicator" id="status-proxy">
+                            <div class="status-loading"></div>
+                        </div>
+                        <div class="service-info">
+                            <div class="service-name">proxy-waf</div>
+                            <div class="service-detail">Caddy + Coraza</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Time Range</h3>
+                <div class="time-range-buttons">
+                    <button class="graph-btn active" data-range="1h">1H</button>
+                    <button class="graph-btn" data-range="6h">6H</button>
+                    <button class="graph-btn" data-range="24h">24H</button>
+                    <button class="graph-btn" data-range="7d">7D</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-right">
+            <div class="panel-right-header">
+                <div
+                    style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
+                    Performance Metrics
+                </div>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <span class="metric-title">Request Rate</span>
+                        <span class="metric-unit">req/min</span>
+                    </div>
+                    <div class="metric-chart">
+                        <svg id="request-rate-chart" viewBox="0 0 300 80" preserveAspectRatio="none">
+                            <defs>
+                                <linearGradient id="request-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#ff570a;stop-opacity:0.3" />
+                                    <stop offset="100%" style="stop-color:#ff570a;stop-opacity:0" />
+                                </linearGradient>
+                            </defs>
+                            <polyline id="request-line" fill="none" stroke="#ff570a" stroke-width="1.5" points="" />
+                            <path id="request-area" fill="url(#request-gradient)" stroke="none" d="" />
+                        </svg>
+                    </div>
+                    <div id="request-labels" class="chart-labels"></div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <span class="metric-title">Latency Distribution</span>
+                        <span class="metric-unit">percentiles</span>
+                    </div>
+                    <div class="latency-chart">
+                        <div class="latency-row">
+                            <span class="latency-label">p50</span>
+                            <div class="latency-bar-container">
+                                <div class="latency-bar" id="latency-p50" style="width: 0%"></div>
+                            </div>
+                            <span class="latency-value" id="latency-p50-value">0ms</span>
+                        </div>
+                        <div class="latency-row">
+                            <span class="latency-label">p95</span>
+                            <div class="latency-bar-container">
+                                <div class="latency-bar" id="latency-p95" style="width: 0%"></div>
+                            </div>
+                            <span class="latency-value" id="latency-p95-value">0ms</span>
+                        </div>
+                        <div class="latency-row">
+                            <span class="latency-label">p99</span>
+                            <div class="latency-bar-container">
+                                <div class="latency-bar" id="latency-p99" style="width: 0%"></div>
+                            </div>
+                            <span class="latency-value" id="latency-p99-value">0ms</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="metric-card wide">
+                    <div class="metric-header">
+                        <span class="metric-title">Error Rate</span>
+                        <span class="metric-unit">errors/min</span>
+                    </div>
+                    <div class="metric-chart">
+                        <svg id="error-rate-chart" viewBox="0 0 600 80" preserveAspectRatio="none">
+                            <defs>
+                                <linearGradient id="error-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#dc2626;stop-opacity:0.3" />
+                                    <stop offset="100%" style="stop-color:#dc2626;stop-opacity:0" />
+                                </linearGradient>
+                            </defs>
+                            <polyline id="error-line" fill="none" stroke="#dc2626" stroke-width="1.5" points="" />
+                            <path id="error-area" fill="url(#error-gradient)" stroke="none" d="" />
+                        </svg>
+                    </div>
+                    <div id="error-labels" class="chart-labels"></div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <span class="metric-title">MongoDB</span>
+                        <span class="metric-unit">connections</span>
+                    </div>
+                    <div class="metric-value-large" id="mongodb-connections">1</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="js/monitor.js"></script>
+</body>
+
+</html>
