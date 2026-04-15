@@ -34,7 +34,7 @@ Incoming traffic passes through a Caddy reverse proxy into the Coraza WAF engine
 - Verified safe anomalies are allowed through.
 - Edge cases are routed to a human-review dashboard. 
   - **Security Analysts** use the dashboard to triage alerts and verify false positives.
-  - **Administrators** use the dashboard to manage users, monitor system health, and oversee model performance.
+  - **Administrators** use the dashboard to manage users, Monitor system health, and oversee model performance.
 ## Directory Structure
 
 ```text
