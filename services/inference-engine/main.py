@@ -52,6 +52,7 @@ _model_state: Dict[str, Any] = {
 _startup_time: float = time.time()
 _prediction_count: int = 0
 _total_latency_ms: float = 0.0
+_recent_latencies: list = []
 
 # ---------------------------------------------------------------------------
 # Model loading
@@ -362,7 +363,7 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
     Accept a Coraza audit event and return an Advisory_Response.
     Requirements: 8.1, 8.2, 8.3, 8.4
     """
-    global _prediction_count, _total_latency_ms
+    global _prediction_count, _total_latency_ms, _recent_latencies
 
     # --- Input validation (Req 8.2) ---
     validation_error = _validate_input(event)
@@ -430,6 +431,9 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
         elapsed_ms = (time.perf_counter() - t_start) * 1000.0
         _prediction_count += 1
         _total_latency_ms += elapsed_ms
+        _recent_latencies.append(elapsed_ms)
+        if len(_recent_latencies) > 1000:
+            _recent_latencies = _recent_latencies[-1000:]
 
         response = AdvisoryResponse(
             attack_probability=attack_probability,
@@ -473,6 +477,41 @@ async def health() -> JSONResponse:
             "uptime_seconds": uptime,
             "total_predictions": _prediction_count,
             "avg_inference_latency_ms": avg_latency,
+        }
+    )
+
+
+@app.get("/metrics")
+async def metrics() -> JSONResponse:
+    """
+    Return detailed metrics for monitoring.
+    """
+    uptime = round(time.time() - _startup_time, 2)
+    avg_latency = (
+        round(_total_latency_ms / _prediction_count, 3)
+        if _prediction_count > 0
+        else 0.0
+    )
+
+    recent_latencies = []
+    for lat in _recent_latencies[-100:]:
+        recent_latencies.append(round(lat, 3))
+
+    p50 = round(np.percentile(recent_latencies, 50) if recent_latencies else 0, 3)
+    p95 = round(np.percentile(recent_latencies, 95) if recent_latencies else 0, 3)
+    p99 = round(np.percentile(recent_latencies, 99) if recent_latencies else 0, 3)
+
+    return JSONResponse(
+        content={
+            "status": "ok" if _model_state["loaded"] else "degraded",
+            "model_version": _model_state["model_version"],
+            "uptime_seconds": uptime,
+            "total_predictions": _prediction_count,
+            "avg_inference_latency_ms": avg_latency,
+            "p50_latency_ms": p50,
+            "p95_latency_ms": p95,
+            "p99_latency_ms": p99,
+            "predictions_per_minute": _prediction_count / max(uptime / 60, 1),
         }
     )
 
