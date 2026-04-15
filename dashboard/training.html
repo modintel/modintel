@@ -30,7 +30,7 @@
             <a href="training.html" class="active">Training</a>
             <a href="datasets.html">Datasets</a>
             <a href="reports.html">Reports</a>
-            <a href="config.html">Config</a>
+            <a href="Monitor.html">Monitor</a>
             <a href="settings.html">Settings</a>
         </div>
         <div class="nav-actions"></div>
@@ -39,7 +39,7 @@
         <div class="panel-left">
             <h1>ML Training</h1>
             <p>Train and evaluate ML models for hybrid WAF detection.</p>
-            
+
             <div class="stats-grid">
                 <div class="stat-cell">
                     <div class="stat-label">Active Model</div>
@@ -54,7 +54,7 @@
             <div class="section">
                 <h3>Train New Model</h3>
                 <p>Select datasets and train a new model version.</p>
-                
+
                 <div class="form-group">
                     <label>Training Dataset</label>
                     <select id="train-dataset">
@@ -63,7 +63,7 @@
                         <option value="combined" selected>Combined</option>
                     </select>
                 </div>
-                
+
                 <div class="form-group">
                     <label>Model Type</label>
                     <select id="model-type">
@@ -107,7 +107,9 @@
         </div>
         <div class="panel-right" style="overflow-y: auto;">
             <div class="panel-right-header">
-                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Training History</div>
+                <div
+                    style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
+                    Training History</div>
             </div>
             <table class="data-table">
                 <thead>
