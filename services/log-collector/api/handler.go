@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -16,6 +17,8 @@ import (
 func Serve() {
 	http.HandleFunc("/api/logs", handleLogs)
 	http.HandleFunc("/api/stats", handleStats)
+	http.HandleFunc("/health", handleHealth)
+	http.HandleFunc("/metrics", handleMetrics)
 
 	if err := http.ListenAndServe(":8081", nil); err != nil {
 		log.Fatal(err)
@@ -73,6 +76,52 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 		"latest_rule":  lastRule,
 		"status":       "protected",
 	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	collection := db.GetCollection("modintel", "alerts")
+	err := collection.Database().Client().Ping(ctx, nil)
+
+	status := "ok"
+	statusCode := http.StatusOK
+	if err != nil {
+		status = "degraded"
+		statusCode = http.StatusServiceUnavailable
+	}
+
+	w.WriteHeader(statusCode)
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"status":  status,
+		"service": "log-collector",
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+var logsProcessedTotal int64
+var logsEnrichedTotal int64
+
+func handleMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	metrics := fmt.Sprintf(`# HELP modintel_logs_processed_total Total logs processed by log-collector
+# TYPE modintel_logs_processed_total counter
+modintel_logs_processed_total %d
+# HELP modintel_logs_enriched_total Total logs enriched with AI
+# TYPE modintel_logs_enriched_total counter
+modintel_logs_enriched_total %d
+`, logsProcessedTotal, logsEnrichedTotal)
+
+	if _, err := w.Write([]byte(metrics)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
