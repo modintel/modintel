@@ -1,0 +1,247 @@
+.panel-left {
+    padding: 0 !important;
+}
+
+.panel-left .hero {
+    padding: 2.5rem 2rem;
+    border-bottom: 0.8px solid var(--border);
+}
+
+.panel-left .stats-grid {
+    border-bottom: 0.8px solid var(--border);
+}
+
+.panel-left .section {
+    padding: 1.5rem 2rem;
+    background: var(--bg-panel);
+    border-bottom: 0.8px solid var(--border);
+    margin-bottom: 0;
+}
+
+.panel-left .section h3 {
+    margin: 0 0 1rem 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--fg-subtle);
+}
+
+.service-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.service-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+.service-status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.service-status-indicator.healthy {
+    background: var(--success);
+    box-shadow: 0 0 6px rgba(22, 163, 74, 0.4);
+}
+
+.service-status-indicator.degraded {
+    background: #f59e0b;
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+}
+
+.service-status-indicator.down {
+    background: var(--danger);
+    box-shadow: 0 0 6px rgba(220, 38, 38, 0.4);
+}
+
+.status-loading {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--fg-subtle);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
+.service-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.service-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--fg);
+}
+
+.service-detail {
+    font-size: 0.7rem;
+    color: var(--fg-muted);
+}
+
+.time-range-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.time-range-buttons .graph-btn {
+    padding: 4px 10px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    border: 0.8px solid var(--border);
+    background: transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.time-range-buttons .graph-btn:first-child {
+    border-radius: 4px 0 0 4px;
+}
+
+.time-range-buttons .graph-btn:last-child {
+    border-radius: 0 4px 4px 0;
+}
+
+.time-range-buttons .graph-btn.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    flex: 1;
+    overflow-y: auto;
+}
+
+.metric-card {
+    background: var(--bg);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.metric-card.wide {
+    grid-column: span 2;
+}
+
+.metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.metric-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--fg-subtle);
+}
+
+.metric-unit {
+    font-size: 0.65rem;
+    color: var(--fg-muted);
+}
+
+.metric-chart {
+    flex: 1;
+    min-height: 80px;
+}
+
+.metric-chart svg {
+    width: 100%;
+    height: 100%;
+}
+
+.chart-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 0.6rem;
+    color: var(--fg-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.chart-labels span {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.latency-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 0.5rem;
+}
+
+.latency-row {
+    display: grid;
+    grid-template-columns: 30px 1fr 60px;
+    align-items: center;
+    gap: 8px;
+}
+
+.latency-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--fg-muted);
+}
+
+.latency-bar-container {
+    height: 8px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.latency-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.latency-value {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--fg);
+    text-align: right;
+}
+
+.metric-value-large {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--fg);
+    text-align: center;
+    padding: 1.5rem 0;
+}
+
+.panel-right {
+    overflow-y: auto;
+}
