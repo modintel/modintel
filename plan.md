@@ -543,7 +543,7 @@ ML Service
 Application Servers
 ```
 
-Add monitoring:
+Add Monitor:
 
 ```
 Prometheus
