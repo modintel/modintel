@@ -74,8 +74,8 @@ func enrichWithAI(doc *parsers.AlertDocument) bool {
 		return false
 	}
 
-	maxRetries := 6
-	backoff := 1 * time.Second
+	maxRetries := 3
+	backoff := 500 * time.Millisecond
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
@@ -84,7 +84,7 @@ func enrichWithAI(doc *parsers.AlertDocument) bool {
 			backoff *= 2
 		}
 
-		client := &http.Client{Timeout: 10 * time.Second}
+		client := &http.Client{Timeout: 5 * time.Second}
 		resp, err := client.Post(inferenceEngineURL()+"/predict", "application/json", bytes.NewBuffer(body))
 		if err != nil {
 			log.Printf("AI enrichment: request failed (attempt %d): %v", attempt+1, err)
@@ -179,10 +179,11 @@ func main() {
 	}
 
 	t, err := tail.TailFile(logFile, tail.Config{
-		Follow:    true,
-		ReOpen:    true,
-		MustExist: false,
-		Poll:      true,
+		Follow:         true,
+		ReOpen:         true,
+		MustExist:      false,
+		Poll:           false,
+		Location:       &tail.SeekInfo{Offset: 0, Whence: 2},
 	})
 
 	if err != nil {
