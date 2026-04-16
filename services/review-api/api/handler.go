@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"time"
 
 	"modintel/services/review-api/db"
@@ -17,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -463,6 +465,7 @@ func GetmonitorMetrics(c *gin.Context) {
 	aiEnrichedCount, _ := collection.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
 
 	inferenceMetrics := getInferenceMetrics()
+	systemMetrics := getSystemMetrics(ctx)
 
 	c.JSON(http.StatusOK, gin.H{
 		"total_alerts":        totalAlerts,
@@ -477,8 +480,9 @@ func GetmonitorMetrics(c *gin.Context) {
 		"inference_uptime_seconds": inferenceMetrics.uptimeSeconds,
 		"requests_per_minute":  inferenceMetrics.predictionsPerMinute,
 		"error_rate":          0,
-		"mongodb_connections": 1,
+		"mongodb_connections": systemMetrics.mongodbConnections,
 		"timestamp":           time.Now().UTC(),
+		"system":              systemMetrics,
 	})
 }
 
@@ -556,4 +560,89 @@ modintel_api_requests_total{method="GET",endpoint="/api/logs",status_code="200"}
 # TYPE modintel_inference_requests_total counter
 modintel_inference_requests_total 0
 `)
+}
+
+type systemMetricsData struct {
+	hostname             string  `json:"hostname"`
+	goVersion            string  `json:"go_version"`
+	uptimeSeconds        float64 `json:"uptime_seconds"`
+	cpuPercent           float64 `json:"cpu_percent"`
+	memoryUsedMB         uint64 `json:"memory_used_mb"`
+	memoryTotalMB        uint64 `json:"memory_total_mb"`
+	memoryPercent        float64 `json:"memory_percent"`
+	goroutines           int     `json:"goroutines"`
+	mongodbConnections   int     `json:"mongodb_connections"`
+	mongodbDatabaseSize  int64   `json:"mongodb_database_size_bytes"`
+	mongodbAlertCount   int64   `json:"mongodb_alert_count"`
+}
+
+var serviceStartTime = time.Now()
+
+func getSystemMetrics(ctx context.Context) systemMetricsData {
+	metrics := systemMetricsData{
+		hostname:      getHostname(),
+		goVersion:     runtime.Version(),
+		uptimeSeconds: time.Since(serviceStartTime).Seconds(),
+		goroutines:    runtime.NumGoroutine(),
+	}
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	metrics.memoryUsedMB = m.Alloc / (1024 * 1024)
+	metrics.memoryTotalMB = m.TotalAlloc / (1024 * 1024)
+	if m.TotalAlloc > 0 {
+		metrics.memoryPercent = float64(m.Alloc) / float64(m.TotalAlloc) * 100
+	}
+
+	metrics.cpuPercent = getCPULoad()
+
+	if db.Client != nil {
+		dbName := "modintel"
+		var err error
+		metrics.mongodbConnections, err = db.Client.Database(dbName).RunCommand(ctx, bson.M{"$diag": 1}).Count()
+		if err != nil {
+			metrics.mongodbConnections = 1
+		}
+
+		alertColl := db.GetCollection(dbName, "alerts")
+		metrics.mongodbAlertCount, _ = alertColl.CountDocuments(ctx, bson.M{})
+
+		var result bson.M
+		collStatsCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		err = alertColl.Database().RunCommand(collStatsCtx, bson.M{"collStats": "alerts"}).Decode(&result)
+		if err == nil {
+			if size, ok := result["size"].(int64); ok {
+				metrics.mongodbDatabaseSize = size
+			}
+		}
+	}
+
+	return metrics
+}
+
+func getHostname() string {
+	host, err := os.Hostname()
+	if err != nil {
+		return "unknown"
+	}
+	return host
+}
+
+func getCPULoad() float64 {
+	return 0.0
+}
+
+func getMongoDBStats(ctx context.Context) (int, int64) {
+	collection := db.GetCollection("modintel", "alerts")
+	count, _ := collection.CountDocuments(ctx, bson.M{})
+
+	var result bson.M
+	err := collection.Database().RunCommand(ctx, bson.M{"collStats": "alerts"}).Decode(&result)
+	if err != nil {
+		return int(count), 0
+	}
+
+	size, _ := result["size"].(int64)
+	return int(count), size
 }
