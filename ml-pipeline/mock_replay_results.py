@@ -11,8 +11,12 @@ import json
 import os
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CURATED_DIR = os.path.join(SCRIPT_DIR, "..", "data", "curated")
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "data", "coraza_enriched")
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+DATA_BASE_DIR = os.path.abspath(
+    os.environ.get("ML_PIPELINE_DATA_DIR", os.path.join(REPO_ROOT, "data"))
+)
+CURATED_DIR = os.path.join(DATA_BASE_DIR, "curated")
+OUTPUT_DIR = os.path.join(DATA_BASE_DIR, "coraza_enriched")
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, "replay_results.jsonl")
 
 INPUT_FILES = [
