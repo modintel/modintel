@@ -18,6 +18,10 @@
     margin-bottom: 0;
 }
 
+.panel-left .section.service-status-section {
+    margin-top: auto;
+}
+
 .panel-left .section h3 {
     margin: 0 0 1rem 0;
     font-size: 0.75rem;
