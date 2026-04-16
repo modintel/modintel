@@ -52,6 +52,11 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+DATA_BASE_DIR = os.path.abspath(
+    os.environ.get("ML_PIPELINE_DATA_DIR", os.path.join(REPO_ROOT, "data"))
+)
+DEFAULT_PARQUET_PATH = os.path.join(DATA_BASE_DIR, "processed", "waf_dataset_v1.parquet")
 ECE_BINS = 10
 COLORS = ["steelblue", "darkorange", "green", "crimson"]
 CANDIDATE_NAMES = ["xgboost", "lightgbm", "random_forest", "logistic_regression"]
@@ -498,7 +503,7 @@ def main():
 
     # Load test split
     parquet_path = os.path.abspath(
-        os.path.join(SCRIPT_DIR, "..", "data", "processed", "waf_dataset_v1.parquet")
+        os.environ.get("ML_PIPELINE_PARQUET_PATH", DEFAULT_PARQUET_PATH)
     )
     if not os.path.exists(parquet_path):
         log.error("Dataset not found: %s", parquet_path)
