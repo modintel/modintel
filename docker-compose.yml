@@ -77,6 +77,27 @@ services:
       - modintel-net
     restart: always
 
+  auth-service:
+    build: ./services/auth-service
+    ports:
+      - "8084:8084"
+    environment:
+      - AUTH_PORT=8084
+      - MONGO_URI=mongodb://mongodb:27017/modintel
+      - MONGO_DB_NAME=modintel
+      - JWT_SECRET=change-me-super-secret-key-min-32-chars
+      - JWT_ACCESS_EXPIRY=15m
+      - JWT_REFRESH_EXPIRY=168h
+      - BCRYPT_COST=12
+      - RATE_LIMIT_AUTH=5
+      - AUTH_BOOTSTRAP_ADMIN_EMAIL=admin@modintel.local
+      - AUTH_BOOTSTRAP_ADMIN_PASSWORD=ChangeMe123!
+      - AUTH_BOOTSTRAP_ADMIN_ROLE=admin
+      - AUTH_BOOTSTRAP_ADMIN_NAME=ModIntel Admin
+    networks:
+      - modintel-net
+    restart: always
+
 networks:
   modintel-net:
     name: modintel_net
