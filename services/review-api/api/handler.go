@@ -483,8 +483,10 @@ func GetmonitorMetrics(c *gin.Context) {
 	systemMetrics := getSystemMetrics(ctx)
 
 	var errorRate float64
-	if totalRequests > 0 {
-		errorRate = totalErrors / totalRequests
+	requests := totalRequests.Load()
+	if requests > 0 {
+		errors := totalErrors.Load()
+		errorRate = float64(errors) / float64(requests)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -500,8 +502,8 @@ func GetmonitorMetrics(c *gin.Context) {
 		"inference_uptime_seconds": inferenceMetrics.uptimeSeconds,
 		"requests_per_minute":  inferenceMetrics.predictionsPerMinute,
 		"error_rate":          errorRate,
-		"total_requests":      totalRequests,
-		"total_errors":        totalErrors,
+		"total_requests":      totalRequests.Load(),
+		"total_errors":        totalErrors.Load(),
 		"mongodb_connections": systemMetrics.MongoDBConnections,
 		"timestamp":           time.Now().UTC(),
 		"system":              systemMetrics,
@@ -583,7 +585,7 @@ type systemMetricsData struct {
 	MemoryTotalMB       uint64  `json:"memory_total_mb"`
 	MemoryPercent       float64 `json:"memory_percent"`
 	Goroutines          int     `json:"goroutines"`
-	MongoDBConnections  int     `json:"mongodb_connections"`
+	MongoDBConnections  int64     `json:"mongodb_connections"`
 	MongoDBDatabaseSize int64   `json:"mongodb_database_size_bytes"`
 	MongoDBAlertCount   int64   `json:"mongodb_alert_count"`
 }
