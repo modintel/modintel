@@ -27,11 +27,15 @@ from typing import Optional
 # Configuration
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+DATA_BASE_DIR = os.path.abspath(
+    os.environ.get("ML_PIPELINE_DATA_DIR", os.path.join(REPO_ROOT, "data"))
+)
 
 INPUT_FILE = os.path.join(
-    SCRIPT_DIR, "..", "data", "coraza_enriched", "replay_results.jsonl"
+    DATA_BASE_DIR, "coraza_enriched", "replay_results.jsonl"
 )
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "data", "processed")
+OUTPUT_DIR = os.path.join(DATA_BASE_DIR, "processed")
 PARQUET_FILE = os.path.join(OUTPUT_DIR, "waf_dataset_v1.parquet")
 METADATA_FILE = os.path.join(OUTPUT_DIR, "dataset_metadata.json")
 
