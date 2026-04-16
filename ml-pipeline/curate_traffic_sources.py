@@ -18,8 +18,12 @@ import pandas as pd
 # Paths (relative to this script's location in modintel/ml-pipeline/)
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+DATA_BASE_DIR = os.path.abspath(
+    os.environ.get("ML_PIPELINE_DATA_DIR", os.path.join(REPO_ROOT, "data"))
+)
 RAW_DATA_DIR = os.path.join(SCRIPT_DIR, "..", "..", "ModSecurity", "data", "raw")
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "data", "curated")
+OUTPUT_DIR = os.path.join(DATA_BASE_DIR, "curated")
 
 # ---------------------------------------------------------------------------
 # Logging
