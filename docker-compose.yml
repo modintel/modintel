@@ -70,6 +70,7 @@ services:
       - "8082:8082"
     environment:
       - MONGO_URI=mongodb://mongodb:27017/modintel
+      - JWT_SECRET=change-me-super-secret-key-min-32-chars
       - WAF_ENGINE=Coraza (Caddy edge)
       - BACKEND_TARGET=juice-shop:3000
       - INFERENCE_ENGINE_URL=http://inference-engine:8083
