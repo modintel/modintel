@@ -49,6 +49,8 @@ var (
 			Help: "Total inference requests through review-api",
 		},
 	)
+	totalRequests float64
+	totalErrors  float64
 )
 
 func init() {
@@ -70,6 +72,8 @@ func SetupRouter() *gin.Engine {
 		MaxAge:           12 * time.Hour,
 	}))
 
+	r.Use(requestTracker())
+
 	r.GET("/health", HealthCheck)
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
@@ -81,6 +85,17 @@ func SetupRouter() *gin.Engine {
 	r.GET("/api/monitor/metrics", GetmonitorMetrics)
 	r.DELETE("/api/logs", ClearLogs)
 	return r
+}
+
+func requestTracker() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+		totalRequests++
+		statusCode := c.Writer.Status()
+		if statusCode >= 400 {
+			totalErrors++
+		}
+	}
 }
 
 func GetConfig(c *gin.Context) {
@@ -466,6 +481,11 @@ func GetmonitorMetrics(c *gin.Context) {
 	inferenceMetrics := getInferenceMetrics()
 	systemMetrics := getSystemMetrics(ctx)
 
+	var errorRate float64
+	if totalRequests > 0 {
+		errorRate = totalErrors / totalRequests
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"total_alerts":        totalAlerts,
 		"ai_enriched_count":   aiEnrichedCount,
@@ -478,7 +498,9 @@ func GetmonitorMetrics(c *gin.Context) {
 		"model_version":       inferenceMetrics.modelVersion,
 		"inference_uptime_seconds": inferenceMetrics.uptimeSeconds,
 		"requests_per_minute":  inferenceMetrics.predictionsPerMinute,
-		"error_rate":          0,
+		"error_rate":          errorRate,
+		"total_requests":      totalRequests,
+		"total_errors":        totalErrors,
 		"mongodb_connections": systemMetrics.MongoDBConnections,
 		"timestamp":           time.Now().UTC(),
 		"system":              systemMetrics,
