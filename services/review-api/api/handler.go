@@ -612,7 +612,22 @@ func getSystemMetrics(ctx context.Context) systemMetricsData {
 		dbName := "modintel"
 
 		if err := db.Client.Ping(ctx, nil); err == nil {
-			metrics.MongoDBConnections = 1
+			var serverStatus bson.M
+			serverStatusCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			err = db.Client.Database("admin").RunCommand(serverStatusCtx, bson.D{{Key: "serverStatus", Value: 1}}).Decode(&serverStatus)
+			if err == nil {
+				if connections, ok := serverStatus["connections"].(bson.M); ok {
+					switch current := connections["current"].(type) {
+					case int32:
+						metrics.MongoDBConnections = int64(current)
+					case int64:
+						metrics.MongoDBConnections = current
+					case float64:
+						metrics.MongoDBConnections = int64(current)
+					}
+				}
+			}
 		}
 
 		alertColl := db.GetCollection(dbName, "alerts")
