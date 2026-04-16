@@ -242,6 +242,27 @@
     padding: 1.5rem 0;
 }
 
+.metric-card.compact {
+    padding: 1rem 1.5rem;
+}
+
+.metric-card.compact .metric-header {
+    margin-bottom: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+
+.metric-card.compact .metric-title {
+    font-size: 0.7rem;
+}
+
+.metric-value-inline {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--fg);
+}
+
 .panel-right {
     overflow-y: auto;
 }
