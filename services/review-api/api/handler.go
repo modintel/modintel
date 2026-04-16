@@ -573,16 +573,6 @@ func getInferenceMetrics() inferenceMetricsData {
 	return metrics
 }
 
-func formatMetricsOutput() string {
-	return fmt.Sprintf(`# HELP modintel_api_requests_total Total API requests
-# TYPE modintel_api_requests_total counter
-modintel_api_requests_total{method="GET",endpoint="/api/logs",status_code="200"} 0
-# HELP modintel_inference_requests_total Total inference requests
-# TYPE modintel_inference_requests_total counter
-modintel_inference_requests_total 0
-`)
-}
-
 type systemMetricsData struct {
 	Hostname            string  `json:"hostname"`
 	GoVersion           string  `json:"go_version"`
@@ -654,18 +644,4 @@ func getHostname() string {
 
 func getCPULoad() float64 {
 	return 0.0
-}
-
-func getMongoDBStats(ctx context.Context) (int, int64) {
-	collection := db.GetCollection("modintel", "alerts")
-	count, _ := collection.CountDocuments(ctx, bson.M{})
-
-	var result bson.M
-	err := collection.Database().RunCommand(ctx, bson.M{"collStats": "alerts"}).Decode(&result)
-	if err != nil {
-		return int(count), 0
-	}
-
-	size, _ := result["size"].(int64)
-	return int(count), size
 }
