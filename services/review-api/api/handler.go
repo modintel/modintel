@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"modintel/services/review-api/db"
@@ -49,8 +50,8 @@ var (
 			Help: "Total inference requests through review-api",
 		},
 	)
-	totalRequests float64
-	totalErrors  float64
+	totalRequests atomic.Uint64
+	totalErrors  atomic.Uint64
 )
 
 func init() {
@@ -90,10 +91,10 @@ func SetupRouter() *gin.Engine {
 func requestTracker() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
-		totalRequests++
+		totalRequests.Add(1)
 		statusCode := c.Writer.Status()
 		if statusCode >= 400 {
-			totalErrors++
+			totalErrors.Add(1)
 		}
 	}
 }
