@@ -104,6 +104,15 @@ async function updateMetrics() {
         document.getElementById('stat-rpm').textContent = (data.predictions_per_minute || 0).toFixed(1);
         document.getElementById('mongodb-connections').textContent = data.mongodb_connections || 1;
 
+        const system = data.system || {};
+        document.getElementById('memory-used').textContent = system.memory_used_mb || 0;
+        document.getElementById('memory-total').textContent = `/ ${system.memory_total_mb || 0} MB`;
+        document.getElementById('goroutines').textContent = system.goroutines || 0;
+        document.getElementById('sys-hostname').textContent = system.hostname || '-';
+        document.getElementById('sys-goversion').textContent = system.go_version || '-';
+        document.getElementById('sys-uptime').textContent = formatUptime(system.uptime_seconds);
+        document.getElementById('sys-dbsize').textContent = formatBytes(system.mongodb_database_size_bytes);
+
         const rpm = data.predictions_per_minute || 0;
         requestRateHistory.push(rpm);
         if (requestRateHistory.length > MAX_HISTORY) {
@@ -126,6 +135,28 @@ async function updateMetrics() {
     } catch (e) {
         console.error('Error fetching metrics:', e);
     }
+}
+
+function formatUptime(seconds) {
+    if (!seconds || seconds <= 0) return '-';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+}
+
+function formatBytes(bytes) {
+    if (!bytes || bytes <= 0) return '-';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let unitIndex = 0;
+    let value = bytes;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex++;
+    }
+    return `${value.toFixed(1)} ${units[unitIndex]}`;
 }
 
 function updateChartLabels(range) {
