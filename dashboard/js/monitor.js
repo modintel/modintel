@@ -102,15 +102,11 @@ async function updateMetrics() {
         document.getElementById('stat-enriched').textContent = data.ai_enriched_count || 0;
         document.getElementById('stat-latency').textContent = `${(data.avg_inference_ms || 0).toFixed(1)}ms`;
         document.getElementById('stat-rpm').textContent = (data.predictions_per_minute || 0).toFixed(1);
-        document.getElementById('mongodb-connections').textContent = data.mongodb_connections || 1;
 
         const system = data.system || {};
-        document.getElementById('memory-used').textContent = system.memory_used_mb || 0;
-        document.getElementById('memory-total').textContent = `/ ${system.memory_total_mb || 0} MB`;
+        document.getElementById('mongodb-connections').textContent = system.mongodb_connections || 1;
+        document.getElementById('memory-used').textContent = `${system.memory_used_mb || 0} MB`;
         document.getElementById('goroutines').textContent = system.goroutines || 0;
-        document.getElementById('sys-hostname').textContent = system.hostname || '-';
-        document.getElementById('sys-goversion').textContent = system.go_version || '-';
-        document.getElementById('sys-uptime').textContent = formatUptime(system.uptime_seconds);
         document.getElementById('sys-dbsize').textContent = formatBytes(system.mongodb_database_size_bytes);
 
         const rpm = data.predictions_per_minute || 0;
@@ -135,16 +131,6 @@ async function updateMetrics() {
     } catch (e) {
         console.error('Error fetching metrics:', e);
     }
-}
-
-function formatUptime(seconds) {
-    if (!seconds || seconds <= 0) return '-';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) return `${h}h ${m}m`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
 }
 
 function formatBytes(bytes) {

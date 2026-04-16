@@ -1,4 +1,14 @@
 services:
+  mongodb:
+    image: mongo:7
+    volumes:
+      - modintel_mongo_data:/data/db
+    networks:
+      - modintel-net
+    ports:
+      - "127.0.0.1:27017:27017"
+    restart: always
+
   proxy-waf:
     image: ghcr.io/coreruleset/coraza-crs:caddy-alpine
     volumes:
@@ -33,7 +43,7 @@ services:
       - modintel_waf-logs:/var/log/coraza:ro
     environment:
       - LOG_FILE_PATH=/var/log/coraza/audit.json
-      - MONGO_URI=mongodb://host.docker.internal:27017/modintel
+      - MONGO_URI=mongodb://mongodb:27017/modintel
       - INFERENCE_ENGINE_URL=http://inference-engine:8083
     networks:
       - modintel-net
@@ -59,7 +69,7 @@ services:
     ports:
       - "8082:8082"
     environment:
-      - MONGO_URI=mongodb://host.docker.internal:27017/modintel
+      - MONGO_URI=mongodb://mongodb:27017/modintel
       - WAF_ENGINE=Coraza (Caddy edge)
       - BACKEND_TARGET=juice-shop:3000
       - INFERENCE_ENGINE_URL=http://inference-engine:8083
@@ -74,3 +84,5 @@ networks:
 volumes:
   modintel_waf-logs:
     name: modintel_waf-logs
+  modintel_mongo_data:
+    name: modintel_mongo_data
