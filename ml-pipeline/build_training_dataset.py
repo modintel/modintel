@@ -32,9 +32,7 @@ DATA_BASE_DIR = os.path.abspath(
     os.environ.get("ML_PIPELINE_DATA_DIR", os.path.join(REPO_ROOT, "data"))
 )
 
-INPUT_FILE = os.path.join(
-    DATA_BASE_DIR, "coraza_enriched", "replay_results.jsonl"
-)
+INPUT_FILE = os.path.join(DATA_BASE_DIR, "coraza_enriched", "replay_results.jsonl")
 OUTPUT_DIR = os.path.join(DATA_BASE_DIR, "processed")
 PARQUET_FILE = os.path.join(OUTPUT_DIR, "waf_dataset_v1.parquet")
 METADATA_FILE = os.path.join(OUTPUT_DIR, "dataset_metadata.json")
