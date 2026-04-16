@@ -56,7 +56,9 @@ REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 DATA_BASE_DIR = os.path.abspath(
     os.environ.get("ML_PIPELINE_DATA_DIR", os.path.join(REPO_ROOT, "data"))
 )
-DEFAULT_PARQUET_PATH = os.path.join(DATA_BASE_DIR, "processed", "waf_dataset_v1.parquet")
+DEFAULT_PARQUET_PATH = os.path.join(
+    DATA_BASE_DIR, "processed", "waf_dataset_v1.parquet"
+)
 ECE_BINS = 10
 COLORS = ["steelblue", "darkorange", "green", "crimson"]
 CANDIDATE_NAMES = ["xgboost", "lightgbm", "random_forest", "logistic_regression"]
