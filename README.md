@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/Proxy-Caddy-00A2D0?style=flat&logo=caddy&logoColor=white&labelColor=333" />
   <img src="https://img.shields.io/badge/Infra-Docker-2496ED?style=flat&logo=docker&logoColor=white&labelColor=333" />
 
-  <br/>
+  <br />
 
 <b>Modintel</b> is a hybrid Web Application Firewall (WAF) research system designed to reduce false positives in rule-based WAFs using Machine Learning. 
 
