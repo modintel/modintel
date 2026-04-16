@@ -47,7 +47,7 @@
         <div class="panel-left">
             <div class="hero">
                 <div class="hero-eyebrow">Operations</div>
-                <h1>System<br>Monitor</h1>
+                <h1>System Monitor</h1>
                 <p>Real-time infrastructure metrics and service health for the ModIntel engine. Track performance,
                     latency, and system status.</p>
             </div>
@@ -201,41 +201,31 @@
                     <div id="error-labels" class="chart-labels"></div>
                 </div>
 
-                <div class="metric-card">
+                <div class="metric-card compact">
                     <div class="metric-header">
                         <span class="metric-title">MongoDB</span>
-                        <span class="metric-unit">connections</span>
+                        <span class="metric-value-inline" id="mongodb-connections">1</span>
                     </div>
-                    <div class="metric-value-large" id="mongodb-connections">1</div>
                 </div>
 
-                <div class="metric-card">
+                <div class="metric-card compact">
                     <div class="metric-header">
-                        <span class="metric-title">Memory Used</span>
-                        <span class="metric-unit">MB</span>
+                        <span class="metric-title">Memory</span>
+                        <span class="metric-value-inline" id="memory-used">0 MB</span>
                     </div>
-                    <div class="metric-value-large" id="memory-used">0</div>
-                    <div class="metric-sub" id="memory-total">/ 0 MB</div>
                 </div>
 
-                <div class="metric-card">
+                <div class="metric-card compact">
                     <div class="metric-header">
                         <span class="metric-title">Goroutines</span>
-                        <span class="metric-unit">count</span>
+                        <span class="metric-value-inline" id="goroutines">0</span>
                     </div>
-                    <div class="metric-value-large" id="goroutines">0</div>
                 </div>
 
-                <div class="metric-card wide">
+                <div class="metric-card compact">
                     <div class="metric-header">
-                        <span class="metric-title">System Info</span>
-                        <span class="metric-unit">details</span>
-                    </div>
-                    <div class="system-info">
-                        <div class="info-row"><span class="info-label">Hostname:</span><span class="info-value" id="sys-hostname">-</span></div>
-                        <div class="info-row"><span class="info-label">Go Version:</span><span class="info-value" id="sys-goversion">-</span></div>
-                        <div class="info-row"><span class="info-label">Uptime:</span><span class="info-value" id="sys-uptime">-</span></div>
-                        <div class="info-row"><span class="info-label">DB Size:</span><span class="info-value" id="sys-dbsize">-</span></div>
+                        <span class="metric-title">DB Size</span>
+                        <span class="metric-value-inline" id="sys-dbsize">-</span>
                     </div>
                 </div>
             </div>
