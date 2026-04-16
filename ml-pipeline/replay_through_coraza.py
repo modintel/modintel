@@ -28,19 +28,23 @@ from typing import Optional
 # Configuration
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+DATA_BASE_DIR = os.path.abspath(
+    os.environ.get("ML_PIPELINE_DATA_DIR", os.path.join(REPO_ROOT, "data"))
+)
 
 CORAZA_PROXY_URL = os.environ.get("CORAZA_PROXY_URL", "http://localhost:8080")
 CORAZA_AUDIT_LOG = os.environ.get(
     "CORAZA_AUDIT_LOG",
-    os.path.join(SCRIPT_DIR, "..", "proxy-waf", "coraza_audit.log"),
+    os.path.join(REPO_ROOT, "proxy-waf", "coraza_audit.log"),
 )
 REQUEST_DELAY_SECONDS = float(os.environ.get("REQUEST_DELAY_SECONDS", "0.05"))
 
 INPUT_FILES = [
-    os.path.join(SCRIPT_DIR, "..", "data", "curated", "attack_requests.jsonl"),
-    os.path.join(SCRIPT_DIR, "..", "data", "curated", "benign_requests.jsonl"),
+    os.path.join(DATA_BASE_DIR, "curated", "attack_requests.jsonl"),
+    os.path.join(DATA_BASE_DIR, "curated", "benign_requests.jsonl"),
 ]
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "data", "coraza_enriched")
+OUTPUT_DIR = os.path.join(DATA_BASE_DIR, "coraza_enriched")
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, "replay_results.jsonl")
 
 MAX_RETRIES = 3
