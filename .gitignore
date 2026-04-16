@@ -27,6 +27,7 @@ services/log-collector/log-collector.exe
 !services/log-collector/go.sum
 
 # ML artifacts
+data/
 ml-pipeline/data/
 ml-pipeline/models/
 ml-pipeline/notebooks/.ipynb_checkpoints/
