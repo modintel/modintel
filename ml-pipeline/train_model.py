@@ -62,12 +62,21 @@ from feature_extractor import WAFFeatureExtractor
 # Configuration
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+DATA_BASE_DIR = os.path.abspath(
+    os.environ.get("ML_PIPELINE_DATA_DIR", os.path.join(REPO_ROOT, "data"))
+)
 
-PARQUET_PATH = os.path.join(
-    SCRIPT_DIR, "..", "data", "processed", "waf_dataset_v1.parquet"
+PARQUET_PATH = os.path.abspath(
+    os.environ.get(
+        "ML_PIPELINE_PARQUET_PATH",
+        os.path.join(DATA_BASE_DIR, "processed", "waf_dataset_v1.parquet"),
+    )
 )
 FEATURE_SCHEMA_SRC = os.path.join(SCRIPT_DIR, "feature_schema.json")
-MODELS_BASE_DIR = os.path.join(SCRIPT_DIR, "..", "models")
+MODELS_BASE_DIR = os.path.abspath(
+    os.environ.get("ML_PIPELINE_MODELS_DIR", os.path.join(REPO_ROOT, "models"))
+)
 
 BOOTSTRAP_B = 200
 BOOTSTRAP_SEED = 42
