@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -480,7 +479,7 @@ func GetmonitorMetrics(c *gin.Context) {
 		"inference_uptime_seconds": inferenceMetrics.uptimeSeconds,
 		"requests_per_minute":  inferenceMetrics.predictionsPerMinute,
 		"error_rate":          0,
-		"mongodb_connections": systemMetrics.mongodbConnections,
+		"mongodb_connections": systemMetrics.MongoDBConnections,
 		"timestamp":           time.Now().UTC(),
 		"system":              systemMetrics,
 	})
@@ -563,57 +562,59 @@ modintel_inference_requests_total 0
 }
 
 type systemMetricsData struct {
-	hostname             string  `json:"hostname"`
-	goVersion            string  `json:"go_version"`
-	uptimeSeconds        float64 `json:"uptime_seconds"`
-	cpuPercent           float64 `json:"cpu_percent"`
-	memoryUsedMB         uint64 `json:"memory_used_mb"`
-	memoryTotalMB        uint64 `json:"memory_total_mb"`
-	memoryPercent        float64 `json:"memory_percent"`
-	goroutines           int     `json:"goroutines"`
-	mongodbConnections   int     `json:"mongodb_connections"`
-	mongodbDatabaseSize  int64   `json:"mongodb_database_size_bytes"`
-	mongodbAlertCount   int64   `json:"mongodb_alert_count"`
+	Hostname            string  `json:"hostname"`
+	GoVersion           string  `json:"go_version"`
+	UptimeSeconds       float64 `json:"uptime_seconds"`
+	CpuPercent          float64 `json:"cpu_percent"`
+	MemoryUsedMB        uint64  `json:"memory_used_mb"`
+	MemoryTotalMB       uint64  `json:"memory_total_mb"`
+	MemoryPercent       float64 `json:"memory_percent"`
+	Goroutines          int     `json:"goroutines"`
+	MongoDBConnections  int     `json:"mongodb_connections"`
+	MongoDBDatabaseSize int64   `json:"mongodb_database_size_bytes"`
+	MongoDBAlertCount   int64   `json:"mongodb_alert_count"`
 }
 
 var serviceStartTime = time.Now()
 
 func getSystemMetrics(ctx context.Context) systemMetricsData {
 	metrics := systemMetricsData{
-		hostname:      getHostname(),
-		goVersion:     runtime.Version(),
-		uptimeSeconds: time.Since(serviceStartTime).Seconds(),
-		goroutines:    runtime.NumGoroutine(),
+		Hostname:      getHostname(),
+		GoVersion:    runtime.Version(),
+		UptimeSeconds: time.Since(serviceStartTime).Seconds(),
+		Goroutines:    runtime.NumGoroutine(),
 	}
 
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	metrics.memoryUsedMB = m.Alloc / (1024 * 1024)
-	metrics.memoryTotalMB = m.TotalAlloc / (1024 * 1024)
+	metrics.MemoryUsedMB = m.Alloc / (1024 * 1024)
+	metrics.MemoryTotalMB = m.TotalAlloc / (1024 * 1024)
 	if m.TotalAlloc > 0 {
-		metrics.memoryPercent = float64(m.Alloc) / float64(m.TotalAlloc) * 100
+		metrics.MemoryPercent = float64(m.Alloc) / float64(m.TotalAlloc) * 100
 	}
 
-	metrics.cpuPercent = getCPULoad()
+	metrics.CpuPercent = getCPULoad()
 
 	if db.Client != nil {
 		dbName := "modintel"
-		var err error
-		metrics.mongodbConnections, err = db.Client.Database(dbName).RunCommand(ctx, bson.M{"$diag": 1}).Count()
-		if err != nil {
-			metrics.mongodbConnections = 1
+
+		if err := db.Client.Ping(ctx, nil); err == nil {
+			metrics.MongoDBConnections = 1
 		}
 
 		alertColl := db.GetCollection(dbName, "alerts")
-		metrics.mongodbAlertCount, _ = alertColl.CountDocuments(ctx, bson.M{})
+		count, err := alertColl.CountDocuments(ctx, bson.M{})
+		if err == nil {
+			metrics.MongoDBAlertCount = count
+		}
 
 		var result bson.M
 		collStatsCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
-		err = alertColl.Database().RunCommand(collStatsCtx, bson.M{"collStats": "alerts"}).Decode(&result)
+		err = alertColl.Database().RunCommand(collStatsCtx, bson.D{{Key: "collStats", Value: "alerts"}}).Decode(&result)
 		if err == nil {
 			if size, ok := result["size"].(int64); ok {
-				metrics.mongodbDatabaseSize = size
+				metrics.MongoDBDatabaseSize = size
 			}
 		}
 	}
