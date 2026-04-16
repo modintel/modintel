@@ -51,7 +51,7 @@ var (
 		},
 	)
 	totalRequests atomic.Uint64
-	totalErrors  atomic.Uint64
+	totalErrors   atomic.Uint64
 )
 
 func init() {
@@ -63,6 +63,7 @@ func init() {
 
 func SetupRouter() *gin.Engine {
 	r := gin.Default()
+	jwtSecret := os.Getenv("JWT_SECRET")
 
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
@@ -78,13 +79,17 @@ func SetupRouter() *gin.Engine {
 	r.GET("/health", HealthCheck)
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	r.GET("/api/logs", GetLogs)
-	r.GET("/api/stats", GetStats)
-	r.GET("/api/trend", GetTrend)
-	r.GET("/api/config", GetConfig)
-	r.GET("/api/monitor/health", GetmonitorHealth)
-	r.GET("/api/monitor/metrics", GetmonitorMetrics)
-	r.DELETE("/api/logs", ClearLogs)
+	api := r.Group("/api")
+	api.Use(AuthMiddleware(jwtSecret))
+	{
+		api.GET("/logs", RequireRoles("admin", "analyst", "viewer"), GetLogs)
+		api.GET("/stats", RequireRoles("admin", "analyst", "viewer"), GetStats)
+		api.GET("/trend", RequireRoles("admin", "analyst", "viewer"), GetTrend)
+		api.GET("/config", RequireRoles("admin", "analyst", "viewer"), GetConfig)
+		api.GET("/monitor/health", RequireRoles("admin", "analyst", "viewer"), GetmonitorHealth)
+		api.GET("/monitor/metrics", RequireRoles("admin", "analyst", "viewer"), GetmonitorMetrics)
+		api.DELETE("/logs", RequireRoles("admin", "analyst"), ClearLogs)
+	}
 	return r
 }
 
@@ -490,23 +495,23 @@ func GetmonitorMetrics(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"total_alerts":        totalAlerts,
-		"ai_enriched_count":   aiEnrichedCount,
-		"avg_inference_ms":    inferenceMetrics.avgLatencyMs,
-		"p50_latency_ms":      inferenceMetrics.p50LatencyMs,
-		"p95_latency_ms":      inferenceMetrics.p95LatencyMs,
-		"p99_latency_ms":      inferenceMetrics.p99LatencyMs,
-		"total_predictions":   inferenceMetrics.totalPredictions,
-		"predictions_per_minute": inferenceMetrics.predictionsPerMinute,
-		"model_version":       inferenceMetrics.modelVersion,
+		"total_alerts":             totalAlerts,
+		"ai_enriched_count":        aiEnrichedCount,
+		"avg_inference_ms":         inferenceMetrics.avgLatencyMs,
+		"p50_latency_ms":           inferenceMetrics.p50LatencyMs,
+		"p95_latency_ms":           inferenceMetrics.p95LatencyMs,
+		"p99_latency_ms":           inferenceMetrics.p99LatencyMs,
+		"total_predictions":        inferenceMetrics.totalPredictions,
+		"predictions_per_minute":   inferenceMetrics.predictionsPerMinute,
+		"model_version":            inferenceMetrics.modelVersion,
 		"inference_uptime_seconds": inferenceMetrics.uptimeSeconds,
-		"requests_per_minute":  inferenceMetrics.predictionsPerMinute,
-		"error_rate":          errorRate,
-		"total_requests":      totalRequests.Load(),
-		"total_errors":        totalErrors.Load(),
-		"mongodb_connections": systemMetrics.MongoDBConnections,
-		"timestamp":           time.Now().UTC(),
-		"system":              systemMetrics,
+		"requests_per_minute":      inferenceMetrics.predictionsPerMinute,
+		"error_rate":               errorRate,
+		"total_requests":           totalRequests.Load(),
+		"total_errors":             totalErrors.Load(),
+		"mongodb_connections":      systemMetrics.MongoDBConnections,
+		"timestamp":                time.Now().UTC(),
+		"system":                   systemMetrics,
 	})
 }
 
@@ -585,7 +590,7 @@ type systemMetricsData struct {
 	MemoryTotalMB       uint64  `json:"memory_total_mb"`
 	MemoryPercent       float64 `json:"memory_percent"`
 	Goroutines          int     `json:"goroutines"`
-	MongoDBConnections  int64     `json:"mongodb_connections"`
+	MongoDBConnections  int64   `json:"mongodb_connections"`
 	MongoDBDatabaseSize int64   `json:"mongodb_database_size_bytes"`
 	MongoDBAlertCount   int64   `json:"mongodb_alert_count"`
 }
@@ -595,7 +600,7 @@ var serviceStartTime = time.Now()
 func getSystemMetrics(ctx context.Context) systemMetricsData {
 	metrics := systemMetricsData{
 		Hostname:      getHostname(),
-		GoVersion:    runtime.Version(),
+		GoVersion:     runtime.Version(),
 		UptimeSeconds: time.Since(serviceStartTime).Seconds(),
 		Goroutines:    runtime.NumGoroutine(),
 	}
