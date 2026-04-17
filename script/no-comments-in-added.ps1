@@ -1,4 +1,4 @@
-$files = git diff --cached --name-only --diff-filter=A
+$files = git diff --cached --name-only --diff-filter=AM
 $files = $files | Where-Object { $_ -and $_.Trim().Length -gt 0 }
 
 if (-not $files) {
