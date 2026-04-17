@@ -4,6 +4,14 @@ let requestRateHistory = [];
 let errorRateHistory = [];
 const MAX_HISTORY = 20;
 
+const HEALTH_ENDPOINTS = {
+    'review-api': `${API_BASE}/health/review-api`,
+    'log-collector': `${API_BASE}/health/log-collector`,
+    'inference-engine': `${API_BASE}/health/inference-engine`,
+    'auth-service': `${API_BASE}/health/auth-service`,
+    'proxy-waf': `${API_BASE}/health/proxy-waf`,
+};
+
 function generateChartPoints(data, width, height, padding) {
     if (!data || data.length === 0) {
         data = new Array(20).fill(0);
@@ -61,20 +69,62 @@ function updateLatencyBars(p50, p95, p99) {
 
 async function updateServiceHealth() {
     try {
-        const res = await fetch(`${API_BASE}/monitor/health`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const [review, logCollector, inference, proxy] = await Promise.all([
+            fetchServiceStatus(HEALTH_ENDPOINTS['review-api']),
+            fetchServiceStatus(HEALTH_ENDPOINTS['log-collector']),
+            fetchServiceStatus(HEALTH_ENDPOINTS['inference-engine']),
+            fetchServiceStatus(HEALTH_ENDPOINTS['proxy-waf']),
+        ]);
 
-        const services = data.services || {};
-        updateServiceStatus('status-log-collector', services['log-collector'] || 'unknown');
-        updateServiceStatus('status-inference', services['inference-engine'] || 'unknown');
-        updateServiceStatus('status-proxy', services['proxy-waf'] || 'unknown');
+        updateServiceStatus('status-review-api', review);
+        updateServiceStatus('status-log-collector', logCollector);
+        updateServiceStatus('status-inference', inference);
+        updateServiceStatus('status-proxy', proxy);
     } catch (e) {
         console.error('Error fetching service health:', e);
+        updateServiceStatus('status-review-api', 'unknown');
         updateServiceStatus('status-log-collector', 'unknown');
         updateServiceStatus('status-inference', 'unknown');
         updateServiceStatus('status-proxy', 'unknown');
     }
+}
+
+async function fetchServiceStatus(url) {
+    try {
+        const res = await fetch(url, {
+            headers: {
+                Authorization: `Bearer ${getAccessToken()}`,
+            },
+        });
+
+        if (!res.ok) {
+            return res.status >= 500 ? 'down' : 'degraded';
+        }
+
+        const payload = await res.json();
+        return normalizeServiceStatus(payload.status);
+    } catch (_) {
+        return 'down';
+    }
+}
+
+function normalizeServiceStatus(status) {
+    if (!status || typeof status !== 'string') {
+        return 'unknown';
+    }
+
+    const normalized = status.toLowerCase();
+    if (normalized === 'ok' || normalized === 'healthy') {
+        return 'ok';
+    }
+    if (normalized === 'degraded' || normalized === 'warn' || normalized === 'warning') {
+        return 'degraded';
+    }
+    if (normalized === 'down' || normalized === 'unhealthy') {
+        return 'down';
+    }
+
+    return 'unknown';
 }
 
 function updateServiceStatus(elementId, status) {
@@ -94,7 +144,7 @@ function updateServiceStatus(elementId, status) {
 
 async function updateMetrics() {
     try {
-        const res = await fetch(`${API_BASE}/monitor/metrics?range=${currentRange}`);
+        const res = await apiFetch(`${API_BASE}/monitor/metrics?range=${currentRange}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
 

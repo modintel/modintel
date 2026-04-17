@@ -22,13 +22,13 @@
             <span style="color: #ff570a;">MODINTEL</span>
         </div>
         <div class="nav-links">
-            <a href="index.html">Events</a>
-            <a href="rules.html">Rules</a>
-            <a href="training.html">Training</a>
-            <a href="datasets.html">Datasets</a>
-            <a href="reports.html">Reports</a>
-            <a href="Monitor.html" class="active">Monitor</a>
-            <a href="settings.html">Settings</a>
+            <a href="/events">Events</a>
+            <a href="/rules">Rules</a>
+            <a href="/training">Training</a>
+            <a href="/datasets">Datasets</a>
+            <a href="/reports">Reports</a>
+            <a href="/monitor" class="active">Monitor</a>
+            <a href="/settings">Settings</a>
         </div>
         <div class="nav-actions">
                 <button class="btn btn-primary" id="sync-btn" onclick="handleSync()">
@@ -68,14 +68,16 @@
                 </div>
             </div>
 
-            <div class="section service-status-section">
+<div class="section service-status-section">
                 <h3>Service Status</h3>
                 <div class="service-list" id="service-list">
                     <div class="service-item">
-                        <div class="service-status-indicator healthy"></div>
+                        <div class="service-status-indicator" id="status-proxy">
+                            <div class="status-loading"></div>
+                        </div>
                         <div class="service-info">
-                            <div class="service-name">review-api</div>
-                            <div class="service-detail">API Server</div>
+                            <div class="service-name">proxy-waf</div>
+                            <div class="service-detail">Caddy + Coraza (Entry)</div>
                         </div>
                     </div>
                     <div class="service-item">
@@ -97,12 +99,12 @@
                         </div>
                     </div>
                     <div class="service-item">
-                        <div class="service-status-indicator" id="status-proxy">
+                        <div class="service-status-indicator" id="status-review-api">
                             <div class="status-loading"></div>
                         </div>
                         <div class="service-info">
-                            <div class="service-name">proxy-waf</div>
-                            <div class="service-detail">Caddy + Coraza</div>
+                            <div class="service-name">review-api</div>
+                            <div class="service-detail">API Server</div>
                         </div>
                     </div>
                 </div>
@@ -228,7 +230,18 @@
             </div>
         </div>
     </div>
+    <script src="js/auth.js"></script>
+    <script>
+        if (typeof requireAuth === 'function') {
+            requireAuth();
+        }
+    </script>
     <script src="js/monitor.js"></script>
 </body>
 
 </html>
+
+
+
+
+
