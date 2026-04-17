@@ -75,7 +75,11 @@
                 <div
                     style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
                     Security Signatures</div>
-                <div class="restart-notice">⚠️ Changes require WAF restart to take effect.</div>
+                <div class="restart-notice-wrap">
+                    <div class="restart-notice">Changes require WAF restart to take effect.</div>
+                    <button class="btn btn-secondary restart-btn" id="restart-waf-btn" type="button"
+                        onclick="restartWAF()">Restart WAF</button>
+                </div>
             </div>
             <div class="log-scroll">
                 <table class="rules-table">
@@ -84,8 +88,7 @@
                             <th style="width: 15%;">Rule ID</th>
                             <th>Classification</th>
                             <th style="width: 50%;">Description</th>
-                             <th>Status</th>
-                             <th style="width: 10%;">Actions</th>
+                            <th style="width: 22%;">Status</th>
                         </tr>
                     </thead>
                     <tbody id="rules-tbody">
@@ -305,6 +308,8 @@
         };
 
         const rows = Array.from(document.querySelectorAll('tbody tr[id^="rule-"]'));
+        const PENDING_RESTART_KEY = 'rules_pending_restart';
+        let hasPendingRestart = localStorage.getItem(PENDING_RESTART_KEY) === '1';
 
         function createDetailsRow(ruleId) {
             const note = ruleNotes[ruleId] || {
@@ -318,7 +323,7 @@
             detailsRow.className = 'rule-details-row';
             detailsRow.id = `rule-${ruleId}-details`;
             detailsRow.innerHTML = `
-                <td colspan="5" class="rule-details-cell">
+                <td colspan="4" class="rule-details-cell">
                     <div class="rule-details">
                         <div class="rule-detail-item">
                             <b>What This Rule Does</b>
@@ -342,55 +347,140 @@
             return detailsRow;
         }
 
-        async function loadRules() {
-            try {
-                const response = await fetch('/api/rules');
-                const rules = await response.json();
-                
-                const tbody = document.getElementById('rules-tbody');
-                rules.forEach(rule => {
-                    const row = document.createElement('tr');
-                    row.id = `rule-${rule.id}`;
-                    row.innerHTML = `
-                        <td class="rule-id">${rule.id}</td>
-                        <td>${rule.category}</td>
-                        <td>${rule.description}</td>
-                        <td><span class="rule-status ${rule.enabled ? 'enabled' : 'disabled'}">${rule.enabled ? 'Enabled' : 'Disabled'}</span></td>
-                        <td><button class="rule-toggle-btn" onclick="toggleRuleStatus('${rule.id}')">${rule.enabled ? 'Disable' : 'Enable'}</button></td>
-                    `;
-                    tbody.appendChild(row);
-                });
-                
-                // Re-attach event listeners for rows
-                const newRows = Array.from(document.querySelectorAll('tbody tr[id^="rule-"]'));
-                newRows.forEach((row) => {
-                    row.classList.add('rule-row');
-                    const firstCell = row.querySelector('td');
-                    if (firstCell) {
-                        const current = firstCell.innerHTML;
-                        firstCell.innerHTML = `<span class="rule-id-wrap"><span class="rule-toggle">&#8250;</span>${current}</span>`;
-                    }
-                    row.addEventListener('click', () => toggleRuleDetails(row));
-                });
-            } catch (error) {
-                console.error('Failed to load rules:', error);
-                // Fallback to show error or load static
+        function setRuleRowUI(row, enabled) {
+            const statusSpan = row.querySelector('.rule-status');
+            const button = row.querySelector('.rule-toggle-btn');
+            if (!statusSpan || !button) {
+                return;
+            }
+
+            if (enabled) {
+                statusSpan.classList.remove('disabled');
+                statusSpan.classList.add('enabled');
+                statusSpan.textContent = 'Enabled';
+                button.textContent = 'Disable';
+            } else {
+                statusSpan.classList.remove('enabled');
+                statusSpan.classList.add('disabled');
+                statusSpan.textContent = 'Disabled';
+                button.textContent = 'Enable';
             }
         }
 
-        function toggleRuleDetails(row) {
-            const ruleId = row.id.replace('rule-', '');
-            const detailsId = `rule-${ruleId}-details`;
-            let detailsRow = document.getElementById(detailsId);
-
-            if (!detailsRow) {
-                detailsRow = createDetailsRow(ruleId);
-                row.insertAdjacentElement('afterend', detailsRow);
+        function updateRestartButtonState() {
+            const btn = document.getElementById('restart-waf-btn');
+            if (!btn) {
+                return;
             }
 
-            const isOpen = detailsRow.classList.contains('open');
-            detailsRow.classList.toggle('open', !isOpen);
-            row.classList.toggle('expanded', !isOpen);
+            localStorage.setItem(PENDING_RESTART_KEY, hasPendingRestart ? '1' : '0');
+
+            if (hasPendingRestart) {
+                btn.classList.add('pending-restart');
+            } else {
+                btn.classList.remove('pending-restart');
+            }
+        }
+
+        function attachRuleRowBehavior(row) {
+            row.classList.add('rule-row');
+
+            const firstCell = row.querySelector('td');
+            if (firstCell && !firstCell.querySelector('.rule-id-wrap')) {
+                const current = firstCell.innerHTML;
+                firstCell.innerHTML = `<span class="rule-id-wrap"><span class="rule-toggle">&#8250;</span>${current}</span>`;
+            }
+
+            row.addEventListener('click', () => toggleRuleDetails(row));
+
+            const actionBtn = row.querySelector('.rule-toggle-btn');
+            if (actionBtn) {
+                actionBtn.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    toggleRuleStatus(row.id.replace('rule-', ''), row);
+                });
+            }
+        }
+
+        function buildRuleRow(rule) {
+            const row = document.createElement('tr');
+            row.id = `rule-${rule.id}`;
+
+            const idCell = document.createElement('td');
+            idCell.className = 'rule-id';
+            idCell.textContent = String(rule.id || '');
+
+            const categoryCell = document.createElement('td');
+            categoryCell.textContent = String(rule.category || 'Uncategorized');
+
+            const descCell = document.createElement('td');
+            descCell.textContent = String(rule.description || 'No description provided');
+
+            const statusCell = document.createElement('td');
+            statusCell.className = 'rule-status-cell';
+            const statusWrap = document.createElement('div');
+            statusWrap.className = 'rule-status-controls';
+
+            const statusSpan = document.createElement('span');
+            statusSpan.className = `rule-status ${rule.enabled ? 'enabled' : 'disabled'}`;
+            statusSpan.textContent = rule.enabled ? 'Enabled' : 'Disabled';
+
+            const actionBtn = document.createElement('button');
+            actionBtn.className = 'rule-toggle-btn';
+            actionBtn.textContent = rule.enabled ? 'Disable' : 'Enable';
+
+            statusWrap.appendChild(statusSpan);
+            statusWrap.appendChild(actionBtn);
+            statusCell.appendChild(statusWrap);
+
+            row.appendChild(idCell);
+            row.appendChild(categoryCell);
+            row.appendChild(descCell);
+            row.appendChild(statusCell);
+
+            return row;
+        }
+
+        function fallbackRulesFromNotes() {
+            return Object.keys(ruleNotes).sort().map((id) => ({
+                id,
+                category: 'CRS',
+                description: ruleNotes[id].purpose,
+                enabled: true
+            }));
+        }
+
+        async function loadRules() {
+            const tbody = document.getElementById('rules-tbody');
+            if (!tbody) {
+                return;
+            }
+
+            tbody.innerHTML = '';
+
+            try {
+                const response = await apiFetch('/api/rules');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const payload = await response.json();
+                const rules = Array.isArray(payload) ? payload : (payload?.data?.rules || []);
+                const list = rules.length > 0 ? rules : fallbackRulesFromNotes();
+
+                list.forEach((rule) => {
+                    const row = buildRuleRow(rule);
+                    tbody.appendChild(row);
+                    attachRuleRowBehavior(row);
+                });
+            } catch (error) {
+                console.error('Failed to load rules from API, using fallback:', error);
+                fallbackRulesFromNotes().forEach((rule) => {
+                    const row = buildRuleRow(rule);
+                    tbody.appendChild(row);
+                    attachRuleRowBehavior(row);
+                });
+            }
         }
 
         function toggleRuleDetails(row) {
@@ -442,50 +532,70 @@
             document.getElementById('rule-syntax').value = '';
         }
 
-        function toggleRuleStatus(ruleId) {
-            // TODO: Call API to toggle
-            const statusSpan = document.querySelector(`#rule-${ruleId} .rule-status`);
-            const button = document.querySelector(`#rule-${ruleId} .rule-toggle-btn`);
-            
-            const isEnabled = statusSpan.classList.contains('enabled');
-            const newEnabled = !isEnabled;
-            
-            // Optimistic update
-            if (newEnabled) {
-                statusSpan.classList.remove('disabled');
-                statusSpan.classList.add('enabled');
-                statusSpan.textContent = 'Enabled';
-                button.textContent = 'Disable';
-            } else {
-                statusSpan.classList.remove('enabled');
-                statusSpan.classList.add('disabled');
-                statusSpan.textContent = 'Disabled';
-                button.textContent = 'Enable';
+        async function restartWAF() {
+            const btn = document.getElementById('restart-waf-btn');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Restarting...';
             }
-            
-            // API call
-            fetch(`/api/rules/${ruleId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ enabled: newEnabled })
-            }).then(response => {
-                if (!response.ok) {
-                    // Revert on error
-                    toggleRuleStatus(ruleId); // Recursive revert
-                    console.error('Failed to update rule');
+
+            try {
+                const response = await apiFetch('/api/system/restart/proxy-waf', {
+                    method: 'POST'
+                });
+                if (!(response.ok || response.status === 202)) {
+                    throw new Error(`HTTP ${response.status}`);
                 }
-            }).catch(error => {
-                // Revert
-                toggleRuleStatus(ruleId);
-                console.error('Error updating rule:', error);
-            });
+
+                hasPendingRestart = false;
+                updateRestartButtonState();
+                showModal('Restart Triggered', 'WAF restart command has been sent. Wait a few seconds and refresh if needed.');
+            } catch (error) {
+                showModal('Restart Failed', 'Could not restart WAF automatically. Please check service permissions/logs.', 'error');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Restart WAF';
+                }
+            }
         }
+
+        async function toggleRuleStatus(ruleId, rowEl) {
+            const row = rowEl || document.getElementById(`rule-${ruleId}`);
+            if (!row) {
+                return;
+            }
+
+            const statusSpan = row.querySelector('.rule-status');
+            if (!statusSpan) {
+                return;
+            }
+
+            const wasEnabled = statusSpan.classList.contains('enabled');
+            const nextEnabled = !wasEnabled;
+
+            try {
+                const response = await apiFetch(`/api/rules/${ruleId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: nextEnabled })
+                });
+
+                if (!response.ok) {
+                    console.error('Failed to update rule');
+                    return;
+                }
+
+                setRuleRowUI(row, nextEnabled);
+                hasPendingRestart = true;
+                updateRestartButtonState();
+            } catch (error) {
+                console.error('Error updating rule:', error);
+            }
+        }
+
+        updateRestartButtonState();
     </script>
 </body>
 
 </html>
-
-
-
-
-
