@@ -3,3 +3,131 @@ function saveProfile() {
     const email = document.getElementById('email').value;
     showModal('Profile Saved', 'Profile updated: ' + name + ' (' + email + ')');
 }
+
+function formatSessionDate(value) {
+    if (!value) return '-';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '-';
+    return d.toLocaleString();
+}
+
+function shortUserAgent(ua) {
+    if (!ua) return 'Unknown device';
+    if (ua.length <= 72) return ua;
+    return ua.slice(0, 72) + '...';
+}
+
+function renderSessions(sessions) {
+    const listEl = document.getElementById('sessions-list');
+    const emptyEl = document.getElementById('sessions-empty');
+    if (!listEl || !emptyEl) return;
+
+    listEl.innerHTML = '';
+
+    if (!Array.isArray(sessions) || sessions.length === 0) {
+        emptyEl.style.display = 'block';
+        return;
+    }
+
+    emptyEl.style.display = 'none';
+
+    sessions.forEach((session) => {
+        const item = document.createElement('div');
+        item.className = 'session-item';
+
+        const details = document.createElement('div');
+        details.innerHTML = `
+            <div class="session-title">${shortUserAgent(session.user_agent)}</div>
+            <div class="session-meta">
+                <span>IP: ${session.client_ip || '-'}</span>
+                <span>Created: ${formatSessionDate(session.created_at)}</span>
+                <span>Last used: ${formatSessionDate(session.last_used_at)}</span>
+                <span>Expires: ${formatSessionDate(session.expires_at)}</span>
+            </div>
+        `;
+
+        const revokeBtn = document.createElement('button');
+        revokeBtn.className = 'btn btn-danger session-revoke-btn';
+        revokeBtn.textContent = 'Revoke';
+        revokeBtn.addEventListener('click', () => revokeSession(session.id));
+
+        item.appendChild(details);
+        item.appendChild(revokeBtn);
+        listEl.appendChild(item);
+    });
+}
+
+async function loadSessions() {
+    try {
+        const res = await apiFetch('/api/v1/auth/sessions');
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+        }
+        const payload = await res.json();
+        const sessions = payload?.data?.sessions || [];
+        renderSessions(sessions);
+    } catch (err) {
+        renderSessions([]);
+        showModal('Session Error', 'Failed to load active sessions.', 'error');
+    }
+}
+
+async function revokeSession(sessionId) {
+    showConfirm(
+        'Revoke Session',
+        'Are you sure you want to revoke this session?',
+        async () => {
+            try {
+                const res = await apiFetch('/api/v1/auth/sessions/revoke', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId }),
+                });
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                await loadSessions();
+                showModal('Session Revoked', 'The selected session has been revoked.');
+            } catch (err) {
+                showModal('Session Error', 'Failed to revoke session.', 'error');
+            }
+        }
+    );
+}
+
+async function revokeAllSessionsAction() {
+    showConfirm(
+        'Revoke All Sessions',
+        'This will revoke all your active sessions. Continue?',
+        async () => {
+            try {
+                const res = await apiFetch('/api/v1/auth/sessions/revoke-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
+                });
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                await loadSessions();
+                showModal('Sessions Revoked', 'All active sessions have been revoked.');
+            } catch (err) {
+                showModal('Session Error', 'Failed to revoke all sessions.', 'error');
+            }
+        }
+    );
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const refreshBtn = document.getElementById('refresh-sessions-btn');
+    const revokeAllBtn = document.getElementById('revoke-all-sessions-btn');
+
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', loadSessions);
+    }
+    if (revokeAllBtn) {
+        revokeAllBtn.addEventListener('click', revokeAllSessionsAction);
+    }
+
+    loadSessions();
+});

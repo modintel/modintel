@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -22,13 +22,13 @@
             <span style="color: #ff570a;">MODINTEL</span>
         </div>
         <div class="nav-links">
-            <a href="index.html" class="active">Events</a>
-            <a href="rules.html">Rules</a>
-            <a href="training.html">Training</a>
-            <a href="datasets.html">Datasets</a>
-            <a href="reports.html">Reports</a>
-            <a href="Monitor.html">Monitor</a>
-            <a href="settings.html">Settings</a>
+            <a href="/events" class="active">Events</a>
+            <a href="/rules">Rules</a>
+            <a href="/training">Training</a>
+            <a href="/datasets">Datasets</a>
+            <a href="/reports">Reports</a>
+            <a href="/monitor">Monitor</a>
+            <a href="/settings">Settings</a>
         </div>
         <div class="nav-actions">
             <button class="btn btn-primary" id="sync-btn" onclick="handleSync()">
@@ -123,7 +123,7 @@
                 <table>
                     <thead>
                         <tr>
-                            <th style="width: 6%;" data-tooltip="Time the request was logged (UTC)">Timestamp</th>
+                            <th style="width: 7%;" data-tooltip="Time the request was logged (UTC)">Timestamp</th>
                             <th style="width: 6%;" data-tooltip="Source IP address of the client">Client IP</th>
                             <th style="width: 28%; text-align: center;" data-tooltip="Requested path and query string">
                                 URI</th>
@@ -146,6 +146,12 @@
             </div>
         </div>
     </div>
+    <script src="js/auth.js"></script>
+    <script>
+        if (typeof requireAuth === 'function') {
+            requireAuth();
+        }
+    </script>
     <script src="js/index.js"></script>
 </body>
 

@@ -7,8 +7,14 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
+	"regexp"
 	"runtime"
+	"sort"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -52,7 +58,112 @@ var (
 	)
 	totalRequests atomic.Uint64
 	totalErrors   atomic.Uint64
+	requestStats  = newRequestWindowStats()
+	ruleIDPattern = regexp.MustCompile(`^[0-9]+$`)
 )
+
+type requestMinuteBucket struct {
+	Requests uint64
+	Errors   uint64
+}
+
+type requestWindowStats struct {
+	mu      sync.Mutex
+	buckets map[int64]*requestMinuteBucket
+}
+
+func newRequestWindowStats() *requestWindowStats {
+	return &requestWindowStats{buckets: make(map[int64]*requestMinuteBucket)}
+}
+
+func (s *requestWindowStats) record(ts time.Time, isError bool) {
+	minute := ts.UTC().Truncate(time.Minute).Unix()
+	cutoff := minute - int64((24*time.Hour)/time.Minute)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	bucket, ok := s.buckets[minute]
+	if !ok {
+		bucket = &requestMinuteBucket{}
+		s.buckets[minute] = bucket
+	}
+	bucket.Requests++
+	if isError {
+		bucket.Errors++
+	}
+
+	for key := range s.buckets {
+		if key < cutoff {
+			delete(s.buckets, key)
+		}
+	}
+}
+
+func (s *requestWindowStats) totals(window time.Duration, now time.Time) (uint64, uint64) {
+	if window <= 0 {
+		window = time.Hour
+	}
+
+	startMinute := now.UTC().Add(-window).Truncate(time.Minute).Unix()
+	endMinute := now.UTC().Truncate(time.Minute).Unix()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var requests uint64
+	var errors uint64
+	for minute, bucket := range s.buckets {
+		if minute < startMinute || minute > endMinute {
+			continue
+		}
+		requests += bucket.Requests
+		errors += bucket.Errors
+	}
+
+	return requests, errors
+}
+
+type WAFRule struct {
+	ID          string    `json:"id" bson:"id"`
+	Category    string    `json:"category" bson:"category"`
+	Description string    `json:"description" bson:"description"`
+	Enabled     bool      `json:"enabled" bson:"enabled"`
+	UpdatedAt   time.Time `json:"updated_at,omitempty" bson:"updated_at,omitempty"`
+}
+
+type toggleRuleRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
+var defaultWAFRules = []WAFRule{
+	{ID: "990001", Category: "LFI", Description: "Custom LFI Protection: etc/passwd access denied", Enabled: true},
+	{ID: "990002", Category: "LFI", Description: "Custom LFI Protection: etc/shadow access denied", Enabled: true},
+	{ID: "990003", Category: "LFI", Description: "Custom LFI Protection: Windows System32 access denied", Enabled: true},
+	{ID: "990004", Category: "CMDi", Description: "Custom CMDi Protection: Backtick operator detected", Enabled: true},
+	{ID: "990005", Category: "RCE", Description: "Custom Log4Shell Protection: JNDI in User-Agent", Enabled: true},
+	{ID: "990006", Category: "Protocol", Description: "Custom Protocol Protection: CRLF Injection detected", Enabled: true},
+	{ID: "990007", Category: "XXE", Description: "Custom XXE Protection: DTD/Entity detected in body", Enabled: true},
+	{ID: "990008", Category: "NoSQLi", Description: "Custom NoSQLi Protection: MongoDB operator detected", Enabled: true},
+	{ID: "990009", Category: "NoSQLi", Description: "Custom NoSQLi Protection: URI based NoSQLi detected", Enabled: true},
+	{ID: "990010", Category: "NoSQLi", Description: "Custom NoSQLi Protection: $where operator detected", Enabled: true},
+	{ID: "990011", Category: "SSTI", Description: "Custom SSTI Protection: Handlebars Template markers detected", Enabled: true},
+	{ID: "990012", Category: "SSTI", Description: "Custom SSTI Protection: EL/JEXL Template markers detected", Enabled: true},
+	{ID: "990020", Category: "SQLi", Description: "Custom SQLi Protection: SQL keyword detected", Enabled: true},
+	{ID: "990021", Category: "SQLi", Description: "Custom SQLi Protection: SQL keyword in URI detected", Enabled: true},
+	{ID: "990022", Category: "SQLi", Description: "Custom SQLi Protection: SQL phrase detected", Enabled: true},
+	{ID: "990023", Category: "SQLi", Description: "Custom SQLi Protection: OR/AND 1=1 detected", Enabled: true},
+	{ID: "990024", Category: "SQLi", Description: "Custom SQLi Protection: Time-based SQL injection detected", Enabled: true},
+	{ID: "990030", Category: "XSS", Description: "Custom XSS Protection: HTML tag detected", Enabled: true},
+	{ID: "990031", Category: "XSS", Description: "Custom XSS Protection: Event handler detected", Enabled: true},
+	{ID: "990032", Category: "XSS", Description: "Custom XSS Protection: javascript: URI detected", Enabled: true},
+	{ID: "990033", Category: "XSS", Description: "Custom XSS Protection: JS function detected", Enabled: true},
+	{ID: "990040", Category: "CMDi", Description: "Custom CMDi Protection: Pipe command detected", Enabled: true},
+	{ID: "990041", Category: "CMDi", Description: "Custom CMDi Protection: Command injection chars detected", Enabled: true},
+	{ID: "990042", Category: "CMDi", Description: "Custom CMDi Protection: Shell command in URI", Enabled: true},
+	{ID: "990050", Category: "SSRF", Description: "Custom SSRF Protection: URL scheme detected", Enabled: true},
+	{ID: "990051", Category: "SSRF", Description: "Custom SSRF Protection: Localhost/internal IP detected", Enabled: true},
+}
 
 func init() {
 	prometheus.MustRegister(httpRequestsTotal)
@@ -78,30 +189,284 @@ func SetupRouter() *gin.Engine {
 
 	r.GET("/health", HealthCheck)
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	r.GET("/api/whoami", AuthMiddleware(jwtSecret), GetWhoAmI)
 
 	api := r.Group("/api")
 	api.Use(AuthMiddleware(jwtSecret))
+	api.Use(AuthAuditLog())
 	{
+		api.GET("/rules", RequireRoles("admin", "analyst", "viewer"), GetRules)
+		api.PUT("/rules/:id", RequireRoles("admin"), UpdateRuleStatus)
 		api.GET("/logs", RequireRoles("admin", "analyst", "viewer"), GetLogs)
 		api.GET("/stats", RequireRoles("admin", "analyst", "viewer"), GetStats)
 		api.GET("/trend", RequireRoles("admin", "analyst", "viewer"), GetTrend)
 		api.GET("/config", RequireRoles("admin", "analyst", "viewer"), GetConfig)
 		api.GET("/monitor/health", RequireRoles("admin", "analyst", "viewer"), GetmonitorHealth)
 		api.GET("/monitor/metrics", RequireRoles("admin", "analyst", "viewer"), GetmonitorMetrics)
+		api.POST("/system/restart/proxy-waf", RequireRoles("admin"), RestartProxyWAF)
 		api.DELETE("/logs", RequireRoles("admin", "analyst"), ClearLogs)
 	}
 	return r
 }
 
+type dockerContainerInfo struct {
+	ID string `json:"Id"`
+}
+
+func RestartProxyWAF(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
+	defer cancel()
+
+	containerID, err := dockerFindComposeServiceContainer(ctx, "proxy-waf")
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "proxy-waf container not found", "details": err.Error()})
+		return
+	}
+
+	go func(id string) {
+		// Give the API response a moment to leave before restarting proxy-waf,
+		// otherwise the user can get a dropped connection from the edge restart.
+		time.Sleep(750 * time.Millisecond)
+		bgCtx, cancelBg := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancelBg()
+		if restartErr := dockerRestartContainer(bgCtx, id); restartErr != nil {
+			log.Printf("failed restarting proxy-waf container=%s error=%v", id, restartErr)
+		}
+	}(containerID)
+
+	c.JSON(http.StatusAccepted, gin.H{"success": true, "service": "proxy-waf", "status": "restart_queued"})
+}
+
+func dockerClient(timeout time.Duration) *http.Client {
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			dialer := &net.Dialer{}
+			return dialer.DialContext(ctx, "unix", "/var/run/docker.sock")
+		},
+	}
+
+	return &http.Client{Transport: transport, Timeout: timeout}
+}
+
+func dockerFindComposeServiceContainer(ctx context.Context, service string) (string, error) {
+	labels := []string{fmt.Sprintf("com.docker.compose.service=%s", service)}
+	project := strings.TrimSpace(os.Getenv("COMPOSE_PROJECT_NAME"))
+	if project == "" {
+		project = strings.TrimSpace(os.Getenv("PROJECT_NAME"))
+	}
+	if project != "" {
+		labels = append(labels, fmt.Sprintf("com.docker.compose.project=%s", project))
+	}
+
+	filterPayload := map[string][]string{"label": labels}
+	filterBytes, err := json.Marshal(filterPayload)
+	if err != nil {
+		return "", err
+	}
+
+	filters := string(filterBytes)
+	path := fmt.Sprintf("http://docker/containers/json?filters=%s", url.QueryEscape(filters))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := dockerClient(10 * time.Second).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("docker api returned status %d", resp.StatusCode)
+	}
+
+	containers := make([]dockerContainerInfo, 0)
+	if err := json.NewDecoder(resp.Body).Decode(&containers); err != nil {
+		return "", err
+	}
+
+	if len(containers) == 0 {
+		return "", fmt.Errorf("no container found for compose service %s", service)
+	}
+
+	return containers[0].ID, nil
+}
+
+func dockerRestartContainer(ctx context.Context, containerID string) error {
+	path := fmt.Sprintf("http://docker/containers/%s/restart?t=10", url.PathEscape(containerID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, path, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := dockerClient(12 * time.Second).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("docker api returned status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 func requestTracker() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
-		totalRequests.Add(1)
+		now := time.Now().UTC()
 		statusCode := c.Writer.Status()
-		if statusCode >= 400 {
+		isErr := statusCode >= 400
+		totalRequests.Add(1)
+		requestStats.record(now, isErr)
+		if isErr {
 			totalErrors.Add(1)
 		}
 	}
+}
+
+func GetRules(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	ruleColl := db.GetCollection("modintel", "waf_rules")
+
+	rules := make([]WAFRule, 0, len(defaultWAFRules))
+	rules = append(rules, defaultWAFRules...)
+
+	cursor, err := ruleColl.Find(ctx, bson.M{})
+	if err == nil {
+		defer cursor.Close(ctx)
+		for cursor.Next(ctx) {
+			var override WAFRule
+			if decodeErr := cursor.Decode(&override); decodeErr != nil {
+				continue
+			}
+			for i := range rules {
+				if rules[i].ID == override.ID {
+					rules[i].Enabled = override.Enabled
+					rules[i].UpdatedAt = override.UpdatedAt
+					break
+				}
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, rules)
+}
+
+func UpdateRuleStatus(c *gin.Context) {
+	ruleID := strings.TrimSpace(c.Param("id"))
+	if ruleID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rule id is required"})
+		return
+	}
+
+	if !ruleIDPattern.MatchString(ruleID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid rule id format"})
+		return
+	}
+
+	known := false
+	for _, rule := range defaultWAFRules {
+		if rule.ID == ruleID {
+			known = true
+			break
+		}
+	}
+	if !known {
+		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		return
+	}
+
+	var req toggleRuleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
+		return
+	}
+	if req.Enabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled is required"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	ruleColl := db.GetCollection("modintel", "waf_rules")
+	_, err := ruleColl.UpdateOne(
+		ctx,
+		bson.M{"id": ruleID},
+		bson.M{"$set": bson.M{"enabled": *req.Enabled, "updated_at": time.Now().UTC()}},
+		options.Update().SetUpsert(true),
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed updating rule status"})
+		return
+	}
+
+	if err := syncManagedWAFOverrides(ctx); err != nil {
+		log.Printf("failed syncing managed overrides: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed syncing waf overrides"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID, "enabled": *req.Enabled})
+}
+
+func getWAFOverridesFilePath() string {
+	path := strings.TrimSpace(os.Getenv("WAF_OVERRIDES_FILE"))
+	if path == "" {
+		path = "/waf-overrides/managed-overrides.conf"
+	}
+	return path
+}
+
+func syncManagedWAFOverrides(ctx context.Context) error {
+	ruleColl := db.GetCollection("modintel", "waf_rules")
+
+	cur, err := ruleColl.Find(ctx, bson.M{"enabled": false})
+	if err != nil {
+		return err
+	}
+	defer cur.Close(ctx)
+
+	disabledIDs := make([]string, 0)
+	for cur.Next(ctx) {
+		var rec struct {
+			ID string `bson:"id"`
+		}
+		if decodeErr := cur.Decode(&rec); decodeErr != nil {
+			continue
+		}
+		id := strings.TrimSpace(rec.ID)
+		if id == "" || !ruleIDPattern.MatchString(id) {
+			continue
+		}
+		disabledIDs = append(disabledIDs, id)
+	}
+
+	sort.Strings(disabledIDs)
+
+	content := strings.Builder{}
+	content.WriteString("# Auto-generated by review-api. Do not edit manually.\n")
+	content.WriteString(fmt.Sprintf("# Generated at %s\n\n", time.Now().UTC().Format(time.RFC3339)))
+	for _, id := range disabledIDs {
+		content.WriteString(fmt.Sprintf("SecRuleRemoveById %s\n", id))
+	}
+
+	overridesPath := getWAFOverridesFilePath()
+	if err := os.MkdirAll(filepath.Dir(overridesPath), 0o755); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(overridesPath, []byte(content.String()), 0o644); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func GetConfig(c *gin.Context) {
@@ -125,6 +490,28 @@ func GetConfig(c *gin.Context) {
 		"waf_engine":           wafEngine,
 		"backend_target":       backendTarget,
 		"inference_engine_url": inferenceURL,
+	})
+}
+
+func GetWhoAmI(c *gin.Context) {
+	claimsAny, exists := c.Get("access_claims")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	claims, ok := claimsAny.(*AccessClaims)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"user_id": claims.UserID,
+			"email":   claims.Email,
+			"role":    claims.Role,
+		},
 	})
 }
 
@@ -466,7 +853,7 @@ func checkHTTPService(url string, timeout time.Duration) string {
 }
 
 func checkTCPService(host string, port int, timeout time.Duration) string {
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	conn, err := net.DialTimeout("tcp", address, timeout)
 	if err != nil {
 		return "down"
@@ -486,12 +873,12 @@ func GetmonitorMetrics(c *gin.Context) {
 
 	inferenceMetrics := getInferenceMetrics()
 	systemMetrics := getSystemMetrics(ctx)
+	window := parseMetricsWindow(c.Query("range"))
+	windowRequests, windowErrors := requestStats.totals(window, time.Now().UTC())
 
 	var errorRate float64
-	requests := totalRequests.Load()
-	if requests > 0 {
-		errors := totalErrors.Load()
-		errorRate = float64(errors) / float64(requests)
+	if windowRequests > 0 {
+		errorRate = float64(windowErrors) / float64(windowRequests)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -507,12 +894,36 @@ func GetmonitorMetrics(c *gin.Context) {
 		"inference_uptime_seconds": inferenceMetrics.uptimeSeconds,
 		"requests_per_minute":      inferenceMetrics.predictionsPerMinute,
 		"error_rate":               errorRate,
+		"error_rate_window":        window.String(),
+		"window_requests":          windowRequests,
+		"window_errors":            windowErrors,
 		"total_requests":           totalRequests.Load(),
 		"total_errors":             totalErrors.Load(),
 		"mongodb_connections":      systemMetrics.MongoDBConnections,
 		"timestamp":                time.Now().UTC(),
 		"system":                   systemMetrics,
 	})
+}
+
+func parseMetricsWindow(raw string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "5m":
+		return 5 * time.Minute
+	case "15m":
+		return 15 * time.Minute
+	case "30m":
+		return 30 * time.Minute
+	case "6h":
+		return 6 * time.Hour
+	case "24h":
+		return 24 * time.Hour
+	case "7d":
+		return 7 * 24 * time.Hour
+	case "1h", "":
+		return time.Hour
+	default:
+		return time.Hour
+	}
 }
 
 type inferenceMetricsData struct {

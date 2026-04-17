@@ -3,6 +3,11 @@
     border-collapse: collapse;
 }
 
+.rules-table thead th:first-child,
+.rules-table thead th:nth-child(4) {
+    padding-left: 3rem;
+}
+
 td {
     padding: 0.75rem 1rem;
     font-size: 0.82rem;
@@ -92,8 +97,13 @@ td {
 }
 
 @keyframes highlightFade {
-    0% { background-color: rgba(255, 87, 10, 0.2); }
-    100% { background-color: transparent; }
+    0% {
+        background-color: rgba(255, 87, 10, 0.2);
+    }
+
+    100% {
+        background-color: transparent;
+    }
 }
 
 .rule-editor {
@@ -157,4 +167,76 @@ td {
     display: flex;
     gap: 0.5rem;
     margin-top: 1rem;
+}
+
+.restart-notice-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.restart-notice {
+    font-size: 0.75rem;
+    color: #ff570a;
+}
+
+.restart-btn {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.restart-btn.pending-restart {
+    background: #ff570a;
+    border-color: #ff570a;
+    color: #fff;
+}
+
+.restart-btn.pending-restart:hover {
+    background: #e04d09;
+    border-color: #e04d09;
+}
+
+.rule-status {
+    padding: 0.25rem 0.5rem;
+    border-radius: 0;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.rule-status-cell {
+    white-space: nowrap;
+}
+
+.rule-status-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.rule-status.enabled {
+    background: #ff570a;
+    color: white;
+}
+
+.rule-status.disabled {
+    background: #666;
+    color: white;
+}
+
+.rule-toggle-btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.7rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    color: var(--fg);
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.rule-toggle-btn:hover {
+    background: var(--accent);
+    color: white;
 }

@@ -2,8 +2,10 @@ package api
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -51,6 +53,11 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		if claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(time.Now().UTC()) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "access token expired"})
+			c.Abort()
+			return
+		}
 
 		c.Set("access_claims", claims)
 		c.Next()
@@ -85,5 +92,36 @@ func RequireRoles(roles ...string) gin.HandlerFunc {
 		}
 
 		c.Next()
+	}
+}
+
+func AuthAuditLog() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+
+		userID := "unauthenticated"
+		role := "unknown"
+		if claimsAny, exists := c.Get("access_claims"); exists {
+			if claims, ok := claimsAny.(*AccessClaims); ok {
+				if strings.TrimSpace(claims.UserID) != "" {
+					userID = claims.UserID
+				}
+				if strings.TrimSpace(claims.Role) != "" {
+					role = claims.Role
+				}
+			}
+		}
+
+		log.Printf(
+			"AUTH_AUDIT method=%s path=%s status=%d user_id=%s role=%s ip=%s latency_ms=%d",
+			c.Request.Method,
+			c.Request.URL.Path,
+			c.Writer.Status(),
+			userID,
+			role,
+			c.ClientIP(),
+			time.Since(start).Milliseconds(),
+		)
 	}
 }

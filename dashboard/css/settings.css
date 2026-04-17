@@ -107,11 +107,22 @@
 .account-section {
     display: flex;
     align-items: center;
+    gap: 12px;
     padding: 16px;
     background: var(--bg-panel);
     border: 1px solid var(--border);
     border-radius: 4px;
     margin-bottom: 16px;
+}
+
+.account-info {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.account-section #logout-btn {
+    margin-left: 12px;
+    white-space: nowrap;
 }
 
 .account-avatar {
@@ -151,4 +162,79 @@
     width: 100%;
     justify-content: center;
     padding: 10px 16px;
+}
+
+.session-actions {
+    display: flex;
+    gap: 8px;
+    margin: 8px 16px 10px;
+    justify-content: flex-start;
+    max-width: 980px;
+}
+
+.session-actions .btn {
+    flex: 0 0 auto;
+    min-width: 0;
+    justify-content: center;
+}
+
+#revoke-all-sessions-btn {
+    margin-left: auto;
+}
+
+#refresh-sessions-btn:hover {
+    border-color: var(--border);
+}
+
+.sessions-empty {
+    color: var(--fg-muted);
+    font-size: 0.75rem;
+    margin: 0 16px 10px;
+    max-width: 980px;
+}
+
+.sessions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 16px;
+    max-width: 980px;
+}
+
+.session-item {
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    padding: 10px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+}
+
+.session-meta {
+    font-size: 0.7rem;
+    color: var(--fg-muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.session-title {
+    font-size: 0.78rem;
+    color: var(--fg);
+    font-weight: 600;
+}
+
+.session-revoke-btn {
+    align-self: center;
+    justify-self: end;
+    min-width: 72px;
+    justify-content: center;
+}
+
+#revoke-all-sessions-btn:hover,
+.session-revoke-btn:hover {
+    background: var(--danger-subtle);
+    color: var(--danger);
+    border-color: rgba(220, 38, 38, 0.3);
 }

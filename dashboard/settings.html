@@ -21,13 +21,13 @@
             <span style="color: #ff570a;">MODINTEL</span>
         </div>
         <div class="nav-links">
-            <a href="index.html">Events</a>
-            <a href="rules.html">Rules</a>
-            <a href="training.html">Training</a>
-            <a href="datasets.html">Datasets</a>
-            <a href="reports.html">Reports</a>
-            <a href="Monitor.html">Monitor</a>
-            <a href="settings.html" class="active">Settings</a>
+            <a href="/events">Events</a>
+            <a href="/rules">Rules</a>
+            <a href="/training">Training</a>
+            <a href="/datasets">Datasets</a>
+            <a href="/reports">Reports</a>
+            <a href="/monitor">Monitor</a>
+            <a href="/settings" class="active">Settings</a>
         </div>
         <div class="nav-actions"></div>
     </nav>
@@ -110,20 +110,35 @@
                     <div class="account-name">Security Analyst</div>
                     <div class="account-role">analyst@modintel.local</div>
                 </div>
+                <button class="btn btn-danger" id="logout-btn">Logout</button>
             </div>
             <div class="panel-right-header" style="margin-top: 16px;">
                 <div
                     style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
-                    Danger Zone</div>
+                    Active Sessions</div>
             </div>
-            <div class="danger-actions">
-                <button class="btn btn-danger">Delete All Alerts</button>
-                <button class="btn btn-danger">Reset ML Model</button>
+            <div class="session-actions">
+                <button class="btn btn-secondary" id="refresh-sessions-btn">Refresh Sessions</button>
+                <button class="btn btn-danger" id="revoke-all-sessions-btn">Revoke All Sessions</button>
             </div>
+            <div id="sessions-empty" class="sessions-empty">No active sessions found.</div>
+<div id="sessions-list" class="sessions-list"></div>
         </div>
     </div>
+    <script src="js/auth.js"></script>
+    <script>
+        if (typeof requireAuth === 'function') {
+            requireAuth();
+            attachLogoutButtons();
+        }
+    </script>
     <script src="js/modal.js"></script>
     <script src="js/settings.js"></script>
 </body>
 
 </html>
+
+
+
+
+

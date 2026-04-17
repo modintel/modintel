@@ -1,4 +1,4 @@
-$files = git diff --cached --name-only --diff-filter=A
+$files = git diff --cached --name-only --diff-filter=AM
 $files = $files | Where-Object { $_ -and $_.Trim().Length -gt 0 }
 
 if (-not $files) {
@@ -38,7 +38,8 @@ $extensions = @(
     ".scss",
     ".go",
     ".py",
-    ".dockerfile"
+    ".dockerfile",
+    ".conf"
 )
 
 $commentFiles = @()
@@ -106,6 +107,11 @@ foreach ($file in $files) {
     }
     elseif ($ext -in @(".css", ".scss")) {
         if ($content -match "(?m)^\s*//") {
+            $hasComment = $true
+        }
+    }
+    elseif ($ext -in @(".conf")) {
+        if ($content -match "(?m)^\s*#") {
             $hasComment = $true
         }
     }

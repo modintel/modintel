@@ -149,7 +149,7 @@ function renderStats(alerts) {
 async function refreshReports() {
     const apiBase = resolveApiBase();
     try {
-        const res = await fetch(`${apiBase}/logs`);
+        const res = await apiFetch(`${apiBase}/logs`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         const alerts = data.alerts || [];

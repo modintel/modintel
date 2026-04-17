@@ -8,7 +8,7 @@ function formatRules(rules) {
     const visibleRules = rules.slice(0, MAX_VISIBLE_RULES);
     const hiddenCount = rules.length - MAX_VISIBLE_RULES;
 
-    let html = visibleRules.map(r => `<a href="rules.html?rule=${r}" class="rule-code">${r}</a>`).join(' ');
+    let html = visibleRules.map(r => `<a href="/rules?rule=${r}" class="rule-code">${r}</a>`).join(' ');
 
     if (hiddenCount > 0) {
         html += ` <span class="rules-more" data-hidden="${rules.slice(MAX_VISIBLE_RULES).join(',')}">+${hiddenCount} more</span>`;
@@ -19,7 +19,7 @@ function formatRules(rules) {
 
 function expandRules(element) {
     const hiddenRules = element.dataset.hidden.split(',');
-    const links = hiddenRules.map(r => `<a href="rules.html?rule=${r}" class="rule-code">${r}</a>`).join(' ');
+    const links = hiddenRules.map(r => `<a href="/rules?rule=${r}" class="rule-code">${r}</a>`).join(' ');
     const parent = element.parentElement;
     parent.innerHTML = parent.innerHTML.replace(element.outerHTML, links);
 }
@@ -32,19 +32,19 @@ document.addEventListener('click', (e) => {
 
 async function updateStats() {
     try {
-        const res = await fetch(`${API_BASE}/stats`);
+        const res = await apiFetch(`${API_BASE}/stats`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         document.getElementById('stat-total').textContent = data.total_alerts || 0;
         document.getElementById('stat-ai-count').textContent = data.ai_enriched_count || 0;
-        document.getElementById('stat-rule').textContent = data.latest_rule || '—';
+        document.getElementById('stat-rule').textContent = data.latest_rule || '-';
 
         const priorityEl = document.getElementById('stat-priority');
-        if (data.latest_priority && data.latest_priority !== '—') {
+        if (data.latest_priority && data.latest_priority !== '-') {
             priorityEl.textContent = data.latest_priority;
             priorityEl.className = 'stat-value priority-' + data.latest_priority.toLowerCase();
         } else {
-            priorityEl.textContent = '—';
+            priorityEl.textContent = '-';
             priorityEl.className = 'stat-value';
         }
     } catch (e) { }
@@ -52,7 +52,7 @@ async function updateStats() {
 
 async function updateLogs() {
     try {
-        const res = await fetch(`${API_BASE}/logs`);
+        const res = await apiFetch(`${API_BASE}/logs`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (!data.alerts) {
@@ -100,7 +100,7 @@ updateLogs();
 
 async function clearLogs() {
     try {
-        const res = await fetch(`${API_BASE}/logs`, { method: 'DELETE' });
+        const res = await apiFetch(`${API_BASE}/logs`, { method: 'DELETE' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         updateStats();
         updateLogs();
@@ -208,7 +208,7 @@ function renderGraphLabels(range, labels) {
 async function updateGraph(range) {
     currentGraphRange = range;
     try {
-        const res = await fetch(`${API_BASE}/trend?range=${range}`);
+        const res = await apiFetch(`${API_BASE}/trend?range=${range}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         const values = Array.isArray(data.values) && data.values.length > 0 ? data.values : new Array(96).fill(0);
@@ -226,3 +226,7 @@ document.querySelectorAll('.graph-btn').forEach(btn => {
 });
 
 updateGraph('day');
+
+
+
+

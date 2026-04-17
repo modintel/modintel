@@ -9,6 +9,9 @@ Phase 1 authentication service for ModIntel.
 - `POST /api/v1/auth/refresh`
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/me`
+- `GET /api/v1/auth/sessions`
+- `POST /api/v1/auth/sessions/revoke`
+- `POST /api/v1/auth/sessions/revoke-all`
 
 ## Environment
 
