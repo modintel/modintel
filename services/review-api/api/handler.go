@@ -836,7 +836,7 @@ func checkHTTPService(url string, timeout time.Duration) string {
 }
 
 func checkTCPService(host string, port int, timeout time.Duration) string {
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	conn, err := net.DialTimeout("tcp", address, timeout)
 	if err != nil {
 		return "down"
