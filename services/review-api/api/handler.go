@@ -78,9 +78,11 @@ func SetupRouter() *gin.Engine {
 
 	r.GET("/health", HealthCheck)
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	r.GET("/api/whoami", AuthMiddleware(jwtSecret), GetWhoAmI)
 
 	api := r.Group("/api")
 	api.Use(AuthMiddleware(jwtSecret))
+	api.Use(AuthAuditLog())
 	{
 		api.GET("/logs", RequireRoles("admin", "analyst", "viewer"), GetLogs)
 		api.GET("/stats", RequireRoles("admin", "analyst", "viewer"), GetStats)
@@ -125,6 +127,28 @@ func GetConfig(c *gin.Context) {
 		"waf_engine":           wafEngine,
 		"backend_target":       backendTarget,
 		"inference_engine_url": inferenceURL,
+	})
+}
+
+func GetWhoAmI(c *gin.Context) {
+	claimsAny, exists := c.Get("access_claims")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	claims, ok := claimsAny.(*AccessClaims)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"user_id": claims.UserID,
+			"email":   claims.Email,
+			"role":    claims.Role,
+		},
 	})
 }
 
