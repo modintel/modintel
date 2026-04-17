@@ -21,13 +21,13 @@
             <span style="color: #ff570a;">MODINTEL</span>
         </div>
         <div class="nav-links">
-            <a href="index.html">Events</a>
-            <a href="rules.html" class="active">Rules</a>
-            <a href="training.html">Training</a>
-            <a href="datasets.html">Datasets</a>
-            <a href="reports.html">Reports</a>
-            <a href="Monitor.html">Monitor</a>
-            <a href="settings.html">Settings</a>
+            <a href="/events">Events</a>
+            <a href="/rules" class="active">Rules</a>
+            <a href="/training">Training</a>
+            <a href="/datasets">Datasets</a>
+            <a href="/reports">Reports</a>
+            <a href="/monitor">Monitor</a>
+            <a href="/settings">Settings</a>
         </div>
         <div class="nav-actions"></div>
     </nav>
@@ -75,6 +75,7 @@
                 <div
                     style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
                     Security Signatures</div>
+                <div class="restart-notice">⚠️ Changes require WAF restart to take effect.</div>
             </div>
             <div class="log-scroll">
                 <table class="rules-table">
@@ -83,213 +84,23 @@
                             <th style="width: 15%;">Rule ID</th>
                             <th>Classification</th>
                             <th style="width: 50%;">Description</th>
-                            <th style="width: 10%;">Status</th>
+                             <th>Status</th>
+                             <th style="width: 10%;">Actions</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <tr id="rule-913100">
-                            <td class="rule-id">913100</td>
-                            <td>Scanner Detection</td>
-                            <td>Blocked potential scanner/automation tool</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-930100">
-                            <td class="rule-id">930100</td>
-                            <td>Path Traversal</td>
-                            <td>OS Path Injection Attack</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-931100">
-                            <td class="rule-id">931100</td>
-                            <td>RFI Attack</td>
-                            <td>Possible Remote File Inclusion</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-932100">
-                            <td class="rule-id">932100</td>
-                            <td>RCE Attack</td>
-                            <td>Remote Command Execution</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-932105">
-                            <td class="rule-id">932105</td>
-                            <td>RCE Attack</td>
-                            <td>RCE via Unix Command Injection</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-932115">
-                            <td class="rule-id">932115</td>
-                            <td>RCE Attack</td>
-                            <td>RCE via Common Unix Commands</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-933100">
-                            <td class="rule-id">933100</td>
-                            <td>PHP Attack</td>
-                            <td>PHP Code Injection Attack</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-933160">
-                            <td class="rule-id">933160</td>
-                            <td>PHP Attack</td>
-                            <td>PHP File Inclusion Attempt</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-934110">
-                            <td class="rule-id">934110</td>
-                            <td>Generic Attack</td>
-                            <td>Node.js/Ruby Injection Attempt</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-934130">
-                            <td class="rule-id">934130</td>
-                            <td>Generic Attack</td>
-                            <td>NoSQL Injection Attempt</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-941100">
-                            <td class="rule-id">941100</td>
-                            <td>XSS Attack</td>
-                            <td>XSS Attack Detected via libinjection</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-941110">
-                            <td class="rule-id">941110</td>
-                            <td>XSS Attack</td>
-                            <td>XSS Filter Attack Category</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-941160">
-                            <td class="rule-id">941160</td>
-                            <td>XSS Attack</td>
-                            <td>NoScript XSS InjectionChecker: HTML Injection</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-941170">
-                            <td class="rule-id">941170</td>
-                            <td>XSS Attack</td>
-                            <td>NoScript XSS InjectionChecker: Attribute Injection</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-941210">
-                            <td class="rule-id">941210</td>
-                            <td>XSS Attack</td>
-                            <td>IE XSS Filters - Attack Detected</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-942100">
-                            <td class="rule-id">942100</td>
-                            <td>SQL Injection</td>
-                            <td>SQL Injection Attack</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-942151">
-                            <td class="rule-id">942151</td>
-                            <td>SQL Injection</td>
-                            <td>SQL Injection - GROUP BY Injection</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-942160">
-                            <td class="rule-id">942160</td>
-                            <td>SQL Injection</td>
-                            <td>SQL Injection - Detected SLEEP()</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-942190">
-                            <td class="rule-id">942190</td>
-                            <td>SQL Injection</td>
-                            <td>SQL Injection - Detected BENCHMARK()</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-942270">
-                            <td class="rule-id">942270</td>
-                            <td>SQL Injection</td>
-                            <td>SQL Injection - Tautology Detected</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-942350">
-                            <td class="rule-id">942350</td>
-                            <td>SQL Injection</td>
-                            <td>SQL Injection - Time-Based Blind</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-942360">
-                            <td class="rule-id">942360</td>
-                            <td>SQL Injection</td>
-                            <td>SQL Injection - Stacked Queries</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-949110">
-                            <td class="rule-id">949110</td>
-                            <td>Blocking</td>
-                            <td>Inbound Anomaly Score Exceeded</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-990001">
-                            <td class="rule-id">990001</td>
-                            <td>Protocol</td>
-                            <td>HTTP Protocol Compliance - Multiple Headers</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-990002">
-                            <td class="rule-id">990002</td>
-                            <td>Protocol</td>
-                            <td>HTTP Protocol Compliance - Host Header</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-990003">
-                            <td class="rule-id">990003</td>
-                            <td>Protocol</td>
-                            <td>HTTP Protocol Compliance - Content-Length</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-990004">
-                            <td class="rule-id">990004</td>
-                            <td>Protocol</td>
-                            <td>HTTP Protocol Compliance - Encoding</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-990006">
-                            <td class="rule-id">990006</td>
-                            <td>Protocol</td>
-                            <td>HTTP Protocol Compliance - Post Size</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-990008">
-                            <td class="rule-id">990008</td>
-                            <td>Protocol</td>
-                            <td>HTTP Protocol Compliance - Range Field</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-990009">
-                            <td class="rule-id">990009</td>
-                            <td>Protocol</td>
-                            <td>HTTP Protocol Compliance - TE Headers</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-990011">
-                            <td class="rule-id">990011</td>
-                            <td>Protocol</td>
-                            <td>HTTP Protocol Compliance - Empty Host Header</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-990012">
-                            <td class="rule-id">990012</td>
-                            <td>Protocol</td>
-                            <td>HTTP Protocol Compliance - Case of Method</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
-                        <tr id="rule-990030">
-                            <td class="rule-id">990030</td>
-                            <td>XSS Attack</td>
-                            <td>Custom XSS Protection - HTML Tag Detected</td>
-                            <td style="color:var(--success);">Active</td>
-                        </tr>
+                    <tbody id="rules-tbody">
+                        <!-- Rules will be loaded dynamically -->
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
+    <script src="js/auth.js"></script>
+    <script>
+        if (typeof requireAuth === 'function') {
+            requireAuth();
+        }
+    </script>
     <script src="js/modal.js"></script>
     <script>
         const ruleNotes = {
@@ -507,7 +318,7 @@
             detailsRow.className = 'rule-details-row';
             detailsRow.id = `rule-${ruleId}-details`;
             detailsRow.innerHTML = `
-                <td colspan="4" class="rule-details-cell">
+                <td colspan="5" class="rule-details-cell">
                     <div class="rule-details">
                         <div class="rule-detail-item">
                             <b>What This Rule Does</b>
@@ -529,6 +340,57 @@
                 </td>
             `;
             return detailsRow;
+        }
+
+        async function loadRules() {
+            try {
+                const response = await fetch('/api/rules');
+                const rules = await response.json();
+                
+                const tbody = document.getElementById('rules-tbody');
+                rules.forEach(rule => {
+                    const row = document.createElement('tr');
+                    row.id = `rule-${rule.id}`;
+                    row.innerHTML = `
+                        <td class="rule-id">${rule.id}</td>
+                        <td>${rule.category}</td>
+                        <td>${rule.description}</td>
+                        <td><span class="rule-status ${rule.enabled ? 'enabled' : 'disabled'}">${rule.enabled ? 'Enabled' : 'Disabled'}</span></td>
+                        <td><button class="rule-toggle-btn" onclick="toggleRuleStatus('${rule.id}')">${rule.enabled ? 'Disable' : 'Enable'}</button></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+                
+                // Re-attach event listeners for rows
+                const newRows = Array.from(document.querySelectorAll('tbody tr[id^="rule-"]'));
+                newRows.forEach((row) => {
+                    row.classList.add('rule-row');
+                    const firstCell = row.querySelector('td');
+                    if (firstCell) {
+                        const current = firstCell.innerHTML;
+                        firstCell.innerHTML = `<span class="rule-id-wrap"><span class="rule-toggle">&#8250;</span>${current}</span>`;
+                    }
+                    row.addEventListener('click', () => toggleRuleDetails(row));
+                });
+            } catch (error) {
+                console.error('Failed to load rules:', error);
+                // Fallback to show error or load static
+            }
+        }
+
+        function toggleRuleDetails(row) {
+            const ruleId = row.id.replace('rule-', '');
+            const detailsId = `rule-${ruleId}-details`;
+            let detailsRow = document.getElementById(detailsId);
+
+            if (!detailsRow) {
+                detailsRow = createDetailsRow(ruleId);
+                row.insertAdjacentElement('afterend', detailsRow);
+            }
+
+            const isOpen = detailsRow.classList.contains('open');
+            detailsRow.classList.toggle('open', !isOpen);
+            row.classList.toggle('expanded', !isOpen);
         }
 
         function toggleRuleDetails(row) {
@@ -570,6 +432,9 @@
             }
         }
 
+        // Load rules on page load
+        loadRules();
+
         function clearRuleForm() {
             document.getElementById('rule-id').value = '';
             document.getElementById('rule-category').value = 'SQLi';
@@ -577,32 +442,50 @@
             document.getElementById('rule-syntax').value = '';
         }
 
-        function saveRule() {
-            const ruleId = document.getElementById('rule-id').value.trim();
-            const category = document.getElementById('rule-category').value;
-            const desc = document.getElementById('rule-desc').value.trim();
-            const syntax = document.getElementById('rule-syntax').value.trim();
-
-            if (!ruleId || !desc || !syntax) {
-                showModal('Missing Fields', 'Please fill in Rule ID, Description, and Rule Syntax.', 'error');
-                return;
+        function toggleRuleStatus(ruleId) {
+            // TODO: Call API to toggle
+            const statusSpan = document.querySelector(`#rule-${ruleId} .rule-status`);
+            const button = document.querySelector(`#rule-${ruleId} .rule-toggle-btn`);
+            
+            const isEnabled = statusSpan.classList.contains('enabled');
+            const newEnabled = !isEnabled;
+            
+            // Optimistic update
+            if (newEnabled) {
+                statusSpan.classList.remove('disabled');
+                statusSpan.classList.add('enabled');
+                statusSpan.textContent = 'Enabled';
+                button.textContent = 'Disable';
+            } else {
+                statusSpan.classList.remove('enabled');
+                statusSpan.classList.add('disabled');
+                statusSpan.textContent = 'Disabled';
+                button.textContent = 'Enable';
             }
-
-            const customRules = JSON.parse(localStorage.getItem('customRules') || '[]');
-            const newRule = {
-                id: ruleId,
-                category: category,
-                description: desc,
-                syntax: syntax,
-                createdAt: new Date().toISOString()
-            };
-            customRules.push(newRule);
-            localStorage.setItem('customRules', JSON.stringify(customRules));
-
-            showModal('Rule Saved', 'Rule ' + ruleId + ' saved. Apply changes to enable it in the WAF.');
-            clearRuleForm();
+            
+            // API call
+            fetch(`/api/rules/${ruleId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: newEnabled })
+            }).then(response => {
+                if (!response.ok) {
+                    // Revert on error
+                    toggleRuleStatus(ruleId); // Recursive revert
+                    console.error('Failed to update rule');
+                }
+            }).catch(error => {
+                // Revert
+                toggleRuleStatus(ruleId);
+                console.error('Error updating rule:', error);
+            });
         }
     </script>
 </body>
 
 </html>
+
+
+
+
+
