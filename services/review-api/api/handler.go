@@ -133,7 +133,7 @@ type WAFRule struct {
 }
 
 type toggleRuleRequest struct {
-	Enabled bool `json:"enabled"`
+	Enabled *bool `json:"enabled"`
 }
 
 var defaultWAFRules = []WAFRule{
@@ -249,7 +249,22 @@ func dockerClient(timeout time.Duration) *http.Client {
 }
 
 func dockerFindComposeServiceContainer(ctx context.Context, service string) (string, error) {
-	filters := fmt.Sprintf(`{"label":["com.docker.compose.service=%s"]}`, service)
+	labels := []string{fmt.Sprintf("com.docker.compose.service=%s", service)}
+	project := strings.TrimSpace(os.Getenv("COMPOSE_PROJECT_NAME"))
+	if project == "" {
+		project = strings.TrimSpace(os.Getenv("PROJECT_NAME"))
+	}
+	if project != "" {
+		labels = append(labels, fmt.Sprintf("com.docker.compose.project=%s", project))
+	}
+
+	filterPayload := map[string][]string{"label": labels}
+	filterBytes, err := json.Marshal(filterPayload)
+	if err != nil {
+		return "", err
+	}
+
+	filters := string(filterBytes)
 	path := fmt.Sprintf("http://docker/containers/json?filters=%s", url.QueryEscape(filters))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
@@ -374,6 +389,10 @@ func UpdateRuleStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
 		return
 	}
+	if req.Enabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled is required"})
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
@@ -382,7 +401,7 @@ func UpdateRuleStatus(c *gin.Context) {
 	_, err := ruleColl.UpdateOne(
 		ctx,
 		bson.M{"id": ruleID},
-		bson.M{"$set": bson.M{"enabled": req.Enabled, "updated_at": time.Now().UTC()}},
+		bson.M{"$set": bson.M{"enabled": *req.Enabled, "updated_at": time.Now().UTC()}},
 		options.Update().SetUpsert(true),
 	)
 	if err != nil {
@@ -396,7 +415,7 @@ func UpdateRuleStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID, "enabled": req.Enabled})
+	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID, "enabled": *req.Enabled})
 }
 
 func getWAFOverridesFilePath() string {
