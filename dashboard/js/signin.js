@@ -74,29 +74,6 @@
     }
 
     /**
-     * Handle demo mode login (fallback when auth service is unavailable)
-     * @param {string} email - User email
-     */
-    function handleDemoLogin(email) {
-        const isAdmin = email.includes('admin');
-        const demoToken = 'demo_token_' + Date.now();
-        const demoUser = {
-            id: 'demo_user_' + Date.now(),
-            email: email,
-            role: isAdmin ? 'admin' : 'analyst',
-            first_name: 'Demo',
-            last_name: 'User'
-        };
-
-        storeAuthData(demoToken, demoUser);
-        showAlert('success', 'Demo mode: Sign in successful! Redirecting...');
-        
-        setTimeout(() => {
-            window.location.href = DASHBOARD_URL;
-        }, 800);
-    }
-
-    /**
      * Attempt to authenticate with the auth service
      * @param {string} email - User email
      * @param {string} password - User password
@@ -121,14 +98,8 @@
             }
         } catch (error) {
             console.error('Auth service error:', error);
-            
-            // Fallback to demo mode for development
-            if (email === 'admin@modintel.io' || email === 'analyst@modintel.io') {
-                handleDemoLogin(email);
-            } else {
-                showAlert('danger', 'Authentication service unavailable. Try admin@modintel.io or analyst@modintel.io with any password for demo.');
-                setLoading(false);
-            }
+            showAlert('danger', 'Authentication service unavailable. Please try again shortly.');
+            setLoading(false);
         }
     }
 
