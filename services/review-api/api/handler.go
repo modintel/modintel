@@ -352,6 +352,11 @@ func UpdateRuleStatus(c *gin.Context) {
 		return
 	}
 
+	if !ruleIDPattern.MatchString(ruleID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid rule id format"})
+		return
+	}
+
 	known := false
 	for _, rule := range defaultWAFRules {
 		if rule.ID == ruleID {
