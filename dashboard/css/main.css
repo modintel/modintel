@@ -135,6 +135,8 @@ nav {
 
 .nav-links a.active {
     color: var(--fg);
+    pointer-events: none;
+    cursor: default;
 }
 
 .nav-links a.active::after {

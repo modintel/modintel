@@ -81,6 +81,11 @@ Hooks enforce:
 - **Commit message format**: `type(scope): message` (e.g., `feat: add new feature`)
 - **No comments in new code**: Added files must not contain comments
 
+## Auth & Deployment Docs
+
+- `docs/AUTHENTICATION_GUIDE.md` - auth flow, RBAC, sessions, and quick verification commands
+- `docs/DEPLOYMENT_CHECKLIST.md` - operational checklist before production deployment
+
 ## License
 
 This project is licensed under the MIT License.

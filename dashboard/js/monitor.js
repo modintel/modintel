@@ -69,12 +69,20 @@ function updateLatencyBars(p50, p95, p99) {
 
 async function updateServiceHealth() {
     try {
-        const [review, logCollector, inference, proxy] = await Promise.all([
-            fetchServiceStatus(HEALTH_ENDPOINTS['review-api']),
-            fetchServiceStatus(HEALTH_ENDPOINTS['log-collector']),
-            fetchServiceStatus(HEALTH_ENDPOINTS['inference-engine']),
-            fetchServiceStatus(HEALTH_ENDPOINTS['proxy-waf']),
-        ]);
+        const aggregate = await fetchAggregateHealth();
+        const [review, logCollector, inference, proxy] = aggregate
+            ? [
+                aggregate['review-api'] || 'unknown',
+                aggregate['log-collector'] || 'unknown',
+                aggregate['inference-engine'] || 'unknown',
+                aggregate['proxy-waf'] || 'unknown',
+            ]
+            : await Promise.all([
+                fetchServiceStatus(HEALTH_ENDPOINTS['review-api']),
+                fetchServiceStatus(HEALTH_ENDPOINTS['log-collector']),
+                fetchServiceStatus(HEALTH_ENDPOINTS['inference-engine']),
+                fetchServiceStatus(HEALTH_ENDPOINTS['proxy-waf']),
+            ]);
 
         updateServiceStatus('status-review-api', review);
         updateServiceStatus('status-log-collector', logCollector);
@@ -86,6 +94,26 @@ async function updateServiceHealth() {
         updateServiceStatus('status-log-collector', 'unknown');
         updateServiceStatus('status-inference', 'unknown');
         updateServiceStatus('status-proxy', 'unknown');
+    }
+}
+
+async function fetchAggregateHealth() {
+    try {
+        const res = await fetch(`${API_BASE}/health/aggregate`, {
+            headers: {
+                Authorization: `Bearer ${getAccessToken()}`,
+            },
+        });
+        if (!res.ok) {
+            return null;
+        }
+        const payload = await res.json();
+        if (!payload || typeof payload !== 'object' || !payload.services) {
+            return null;
+        }
+        return payload.services;
+    } catch (_) {
+        return null;
     }
 }
 
