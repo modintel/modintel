@@ -307,9 +307,28 @@
             }
         };
 
-        const rows = Array.from(document.querySelectorAll('tbody tr[id^="rule-"]'));
         const PENDING_RESTART_KEY = 'rules_pending_restart';
         let hasPendingRestart = localStorage.getItem(PENDING_RESTART_KEY) === '1';
+
+        function applyRuleDeepLink() {
+            const params = new URLSearchParams(window.location.search);
+            const ruleId = params.get('rule');
+            if (!ruleId) {
+                return;
+            }
+
+            const row = document.getElementById('rule-' + ruleId);
+            if (!row) {
+                return;
+            }
+
+            toggleRuleDetails(row);
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            row.classList.add('highlight-row');
+            setTimeout(() => {
+                row.classList.remove('highlight-row');
+            }, 4000);
+        }
 
         function createDetailsRow(ruleId) {
             const note = ruleNotes[ruleId] || {
@@ -481,6 +500,8 @@
                     attachRuleRowBehavior(row);
                 });
             }
+
+            applyRuleDeepLink();
         }
 
         function toggleRuleDetails(row) {
@@ -498,31 +519,6 @@
             row.classList.toggle('expanded', !isOpen);
         }
 
-        rows.forEach((row) => {
-            row.classList.add('rule-row');
-            const firstCell = row.querySelector('td');
-            if (firstCell) {
-                const current = firstCell.innerHTML;
-                firstCell.innerHTML = `<span class="rule-id-wrap"><span class="rule-toggle">&#8250;</span>${current}</span>`;
-            }
-            row.addEventListener('click', () => toggleRuleDetails(row));
-        });
-
-        const params = new URLSearchParams(window.location.search);
-        const ruleId = params.get('rule');
-        if (ruleId) {
-            const row = document.getElementById('rule-' + ruleId);
-            if (row) {
-                toggleRuleDetails(row);
-                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                row.classList.add('highlight-row');
-                setTimeout(() => {
-                    row.classList.remove('highlight-row');
-                }, 4000);
-            }
-        }
-
-        // Load rules on page load
         loadRules();
 
         function clearRuleForm() {
