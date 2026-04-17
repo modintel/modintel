@@ -38,7 +38,8 @@ $extensions = @(
     ".scss",
     ".go",
     ".py",
-    ".dockerfile"
+    ".dockerfile",
+    ".conf"
 )
 
 $commentFiles = @()
@@ -106,6 +107,11 @@ foreach ($file in $files) {
     }
     elseif ($ext -in @(".css", ".scss")) {
         if ($content -match "(?m)^\s*//") {
+            $hasComment = $true
+        }
+    }
+    elseif ($ext -in @(".conf")) {
+        if ($content -match "(?m)^\s*#") {
             $hasComment = $true
         }
     }
