@@ -46,18 +46,18 @@ func newAggregator(project string) *aggregator {
 	return &aggregator{
 		project: project,
 		services: map[string]serviceState{
-			"proxy-waf":      {Name: "proxy-waf", Status: "unknown", Source: "init", UpdatedAt: now},
-			"review-api":     {Name: "review-api", Status: "unknown", Source: "init", UpdatedAt: now},
-			"log-collector":  {Name: "log-collector", Status: "unknown", Source: "init", UpdatedAt: now},
+			"proxy-waf":        {Name: "proxy-waf", Status: "unknown", Source: "init", UpdatedAt: now},
+			"review-api":       {Name: "review-api", Status: "unknown", Source: "init", UpdatedAt: now},
+			"log-collector":    {Name: "log-collector", Status: "unknown", Source: "init", UpdatedAt: now},
 			"inference-engine": {Name: "inference-engine", Status: "unknown", Source: "init", UpdatedAt: now},
-			"auth-service":   {Name: "auth-service", Status: "unknown", Source: "init", UpdatedAt: now},
+			"auth-service":     {Name: "auth-service", Status: "unknown", Source: "init", UpdatedAt: now},
 		},
 		tracked: map[string]struct{}{
-			"proxy-waf":      {},
-			"review-api":     {},
-			"log-collector":  {},
+			"proxy-waf":        {},
+			"review-api":       {},
+			"log-collector":    {},
 			"inference-engine": {},
-			"auth-service":   {},
+			"auth-service":     {},
 		},
 	}
 }
