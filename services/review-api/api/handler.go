@@ -335,9 +335,7 @@ func GetRules(c *gin.Context) {
 	ruleColl := db.GetCollection("modintel", "waf_rules")
 
 	rules := make([]WAFRule, 0, len(defaultWAFRules))
-	for _, rule := range defaultWAFRules {
-		rules = append(rules, rule)
-	}
+	rules = append(rules, defaultWAFRules...)
 
 	cursor, err := ruleColl.Find(ctx, bson.M{})
 	if err == nil {
