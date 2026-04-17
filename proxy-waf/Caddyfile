@@ -38,6 +38,35 @@
 		Content-Security-Policy "default-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
 	}
 
+	handle /api/v1/auth/* {
+		reverse_proxy auth-service:8084
+	}
+
+	handle /api/health/review-api {
+		rewrite * /health
+		reverse_proxy review-api:8082
+	}
+
+	handle /api/health/log-collector {
+		rewrite * /health
+		reverse_proxy log-collector:8081
+	}
+
+	handle /api/health/inference-engine {
+		rewrite * /health
+		reverse_proxy inference-engine:8083
+	}
+
+	handle /api/health/auth-service {
+		rewrite * /health
+		reverse_proxy auth-service:8084
+	}
+
+	handle /api/health/proxy-waf {
+		header Content-Type application/json
+		respond "{\"status\":\"ok\",\"service\":\"proxy-waf\"}" 200
+	}
+
 	handle /api/* {
 		reverse_proxy review-api:8082
 	}
@@ -45,6 +74,44 @@
 	handle_path /inference/* {
 		reverse_proxy inference-engine:8083
 	}
+
+	redir /signin.html /signin 308
+	redir /index.html /events 308
+	redir /rules.html /rules 308
+	redir /training.html /training 308
+	redir /datasets.html /datasets 308
+	redir /reports.html /reports 308
+	redir /monitor.html /monitor 308
+	redir /Monitor.html /monitor 308
+	redir /settings.html /settings 308
+	redir /help.html /help 308
+
+	@signin path /signin
+	rewrite @signin /signin.html
+
+	@events path / /events
+	rewrite @events /index.html
+
+	@rules path /rules
+	rewrite @rules /rules.html
+
+	@training path /training
+	rewrite @training /training.html
+
+	@datasets path /datasets
+	rewrite @datasets /datasets.html
+
+	@reports path /reports
+	rewrite @reports /reports.html
+
+	@monitor path /monitor
+	rewrite @monitor /monitor.html
+
+	@settings path /settings
+	rewrite @settings /settings.html
+
+	@help path /help
+	rewrite @help /help.html
 
 	file_server
 }
