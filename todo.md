@@ -379,3 +379,40 @@ Implement in order above. Each practice should be a separate commit with tests p
 | Redis Caching | Cache hit rate | > 80% |
 | Compression | Response size reduction | > 70% |
 | Connection Pooling | Connection errors under load | 0 |
+
+---
+
+## 6. Dashboard Access Control Hardening (Auth/RBAC Gaps)
+
+### Goal
+Close weak frontend access-control behavior so dashboard route protection is enforceable, role-aware, and production-safe.
+
+### Current Gaps
+- Route protection is mostly client-side (`requireAuth()`), so static page URLs are not server-denied.
+- No frontend role-based page guards (admin/analyst/viewer page-level access matrix not enforced in UI routing).
+- Sign-in has demo fallback auth path when auth-service is unavailable.
+- Frontend token storage uses `localStorage` (higher XSS exposure risk than httpOnly cookies).
+
+### Implementation Tasks
+- [ ] Remove demo fallback login flow from `dashboard/js/signin.js`.
+- [ ] Add a centralized frontend route guard that checks role permissions before rendering page content.
+- [ ] Define and enforce a page-to-role access matrix (e.g., destructive pages/actions hidden or blocked for viewer).
+- [ ] Add `/api/whoami` check during app bootstrap to validate token + role before page render.
+- [ ] Add server-side protection for dashboard routes in Caddy (redirect unauthenticated users to `/signin` where feasible).
+- [ ] Keep API-side RBAC as source of truth and align frontend UX with backend permissions.
+- [ ] Add explicit unauthorized page (`403`) handling in dashboard UI.
+
+### Affected Files
+| File | Changes |
+|------|---------|
+| `dashboard/js/signin.js` | Remove demo fallback and hardcoded dev credentials |
+| `dashboard/js/auth.js` | Add role-aware route guard and bootstrap verification |
+| `dashboard/*.html` | Apply centralized guard consistently |
+| `proxy-waf/Caddyfile` | Add stronger route-level access controls/redirect logic |
+| `docs/AUTHENTICATION_GUIDE.md` | Document frontend + backend access enforcement model |
+
+### Verification
+1. Unauthenticated request to `/events`, `/monitor`, `/settings` redirects to `/signin`.
+2. Viewer cannot access admin-only flows in UI (and API still returns 403 if attempted directly).
+3. Invalid/expired token always clears auth and redirects cleanly.
+4. No dashboard login path works when auth-service is down (except explicit maintenance message).
