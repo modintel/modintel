@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -22,13 +22,13 @@
             <span style="color: #ff570a;">MODINTEL</span>
         </div>
         <div class="nav-links">
-            <a href="index.html">Events</a>
-            <a href="rules.html">Rules</a>
-            <a href="training.html">Training</a>
-            <a href="datasets.html">Datasets</a>
-            <a href="reports.html" class="active">Reports</a>
-            <a href="monitor.html">Monitor</a>
-            <a href="settings.html">Settings</a>
+            <a href="/events">Events</a>
+            <a href="/rules">Rules</a>
+            <a href="/training">Training</a>
+            <a href="/datasets">Datasets</a>
+            <a href="/reports" class="active">Reports</a>
+            <a href="/monitor">Monitor</a>
+            <a href="/settings">Settings</a>
         </div>
         <div class="nav-actions"></div>
     </nav>
@@ -99,7 +99,18 @@
             </table>
         </div>
     </div>
+    <script src="js/auth.js"></script>
+    <script>
+        if (typeof requireAuth === 'function') {
+            requireAuth();
+        }
+    </script>
     <script src="js/reports.js"></script>
 </body>
 
 </html>
+
+
+
+
+
