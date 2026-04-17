@@ -158,3 +158,43 @@ td {
     gap: 0.5rem;
     margin-top: 1rem;
 }
+
+.restart-notice {
+    font-size: 0.75rem;
+    color: var(--fg-subtle);
+    margin-top: 0.5rem;
+}
+
+.rule-status {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.rule-status.enabled {
+    background: #ff570a;
+    color: white;
+}
+
+.rule-status.disabled {
+    background: #666;
+    color: white;
+}
+
+.rule-toggle-btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.7rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--fg);
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.rule-toggle-btn:hover {
+    background: var(--accent);
+    color: white;
+}
