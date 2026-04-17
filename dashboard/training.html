@@ -22,13 +22,13 @@
             <span style="color: #ff570a;">MODINTEL</span>
         </div>
         <div class="nav-links">
-            <a href="index.html">Events</a>
-            <a href="rules.html">Rules</a>
-            <a href="training.html" class="active">Training</a>
-            <a href="datasets.html">Datasets</a>
-            <a href="reports.html">Reports</a>
-            <a href="Monitor.html">Monitor</a>
-            <a href="settings.html">Settings</a>
+            <a href="/events">Events</a>
+            <a href="/rules">Rules</a>
+            <a href="/training" class="active">Training</a>
+            <a href="/datasets">Datasets</a>
+            <a href="/reports">Reports</a>
+            <a href="/monitor">Monitor</a>
+            <a href="/settings">Settings</a>
         </div>
         <div class="nav-actions"></div>
     </nav>
@@ -43,7 +43,7 @@
                     <div class="stat-label">Active Model</div>
                     <div class="stat-value" id="model-version">v3</div>
                 </div>
-                <div class="stat-cell">
+<div class="stat-cell">
                     <div class="stat-label">Last Trained</div>
                     <div class="stat-value" id="last-trained">—</div>
                 </div>
@@ -157,7 +157,18 @@
             </table>
         </div>
     </div>
+    <script src="js/auth.js"></script>
+    <script>
+        if (typeof requireAuth === 'function') {
+            requireAuth();
+        }
+    </script>
     <script src="js/training.js"></script>
 </body>
 
 </html>
+
+
+
+
+
