@@ -40,6 +40,10 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+type RevokeSessionRequest struct {
+	SessionID string `json:"session_id"`
+}
+
 type CreateUserRequest struct {
 	Email     string `json:"email"`
 	Password  string `json:"password"`
@@ -85,6 +89,9 @@ func SetupRouter(cfg config.Config, database *db.Database) *gin.Engine {
 		authGroup.POST("/login", loginLimiter.Middleware(), h.login)
 		authGroup.POST("/refresh", h.refresh)
 		authGroup.POST("/logout", h.logout)
+		authGroup.GET("/sessions", h.authMiddleware(), h.listSessions)
+		authGroup.POST("/sessions/revoke", h.authMiddleware(), h.revokeSession)
+		authGroup.POST("/sessions/revoke-all", h.authMiddleware(), h.revokeAllSessions)
 	}
 
 	v1.GET("/auth/me", h.authMiddleware(), h.me)
@@ -167,12 +174,15 @@ func (h *Handler) login(c *gin.Context) {
 	}
 
 	tokenDoc := models.RefreshToken{
-		UserID:    userIDHex,
-		TokenHash: auth.HashToken(refreshToken),
-		JTI:       jti,
-		ExpiresAt: refreshExp,
-		CreatedAt: now,
-		Revoked:   false,
+		UserID:     userIDHex,
+		TokenHash:  auth.HashToken(refreshToken),
+		JTI:        jti,
+		UserAgent:  c.GetHeader("User-Agent"),
+		ClientIP:   c.ClientIP(),
+		ExpiresAt:  refreshExp,
+		CreatedAt:  now,
+		LastUsedAt: now,
+		Revoked:    false,
 	}
 
 	if _, err := h.tokens.InsertOne(ctx, tokenDoc); err != nil {
@@ -254,12 +264,15 @@ func (h *Handler) refresh(c *gin.Context) {
 	}
 
 	_, err = h.tokens.InsertOne(ctx, models.RefreshToken{
-		UserID:    claims.UserID,
-		TokenHash: auth.HashToken(newRefresh),
-		JTI:       newJTI,
-		ExpiresAt: refreshExp,
-		CreatedAt: now,
-		Revoked:   false,
+		UserID:     claims.UserID,
+		TokenHash:  auth.HashToken(newRefresh),
+		JTI:        newJTI,
+		UserAgent:  c.GetHeader("User-Agent"),
+		ClientIP:   c.ClientIP(),
+		ExpiresAt:  refreshExp,
+		CreatedAt:  now,
+		LastUsedAt: now,
+		Revoked:    false,
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errResp("Failed storing refresh token", "AUTH_500"))
@@ -612,6 +625,124 @@ func (h *Handler) deactivateUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
+func (h *Handler) listSessions(c *gin.Context) {
+	claimsAny, exists := c.Get("access_claims")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, errResp("Unauthorized", "AUTH_003"))
+		return
+	}
+	claims := claimsAny.(*auth.AccessClaims)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	cursor, err := h.tokens.Find(ctx, bson.M{
+		"user_id":    claims.UserID,
+		"revoked":    false,
+		"expires_at": bson.M{"$gt": time.Now().UTC()},
+	}, options.Find().SetSort(bson.M{"created_at": -1}))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errResp("Failed listing sessions", "AUTH_500"))
+		return
+	}
+	defer cursor.Close(ctx)
+
+	sessions := make([]gin.H, 0)
+	for cursor.Next(ctx) {
+		var token models.RefreshToken
+		if err := cursor.Decode(&token); err != nil {
+			c.JSON(http.StatusInternalServerError, errResp("Failed decoding sessions", "AUTH_500"))
+			return
+		}
+		sessions = append(sessions, gin.H{
+			"id":           token.ID.Hex(),
+			"jti":          token.JTI,
+			"created_at":   token.CreatedAt,
+			"last_used_at": token.LastUsedAt,
+			"expires_at":   token.ExpiresAt,
+			"device":       shortUserAgent(token.UserAgent),
+			"user_agent":   token.UserAgent,
+			"client_ip":    token.ClientIP,
+		})
+	}
+
+	if err := cursor.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, errResp("Failed iterating sessions", "AUTH_500"))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"sessions": sessions}})
+}
+
+func (h *Handler) revokeSession(c *gin.Context) {
+	claimsAny, exists := c.Get("access_claims")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, errResp("Unauthorized", "AUTH_003"))
+		return
+	}
+	claims := claimsAny.(*auth.AccessClaims)
+
+	var req RevokeSessionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errResp("Invalid request payload", "AUTH_400"))
+		return
+	}
+
+	id := strings.TrimSpace(req.SessionID)
+	if id == "" {
+		c.JSON(http.StatusBadRequest, errResp("session_id is required", "AUTH_400"))
+		return
+	}
+
+	oid, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, errResp("invalid session id", "AUTH_400"))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	res, err := h.tokens.UpdateOne(ctx, bson.M{
+		"_id":     oid,
+		"user_id": claims.UserID,
+		"revoked": false,
+	}, bson.M{"$set": bson.M{"revoked": true, "revoked_at": time.Now().UTC()}})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errResp("Failed revoking session", "AUTH_500"))
+		return
+	}
+	if res.MatchedCount == 0 {
+		c.JSON(http.StatusNotFound, errResp("Session not found", "AUTH_404"))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+func (h *Handler) revokeAllSessions(c *gin.Context) {
+	claimsAny, exists := c.Get("access_claims")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, errResp("Unauthorized", "AUTH_003"))
+		return
+	}
+	claims := claimsAny.(*auth.AccessClaims)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	res, err := h.tokens.UpdateMany(ctx, bson.M{
+		"user_id": claims.UserID,
+		"revoked": false,
+	}, bson.M{"$set": bson.M{"revoked": true, "revoked_at": time.Now().UTC()}})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errResp("Failed revoking sessions", "AUTH_500"))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"revoked_count": res.ModifiedCount}})
+}
+
 func parseUserID(c *gin.Context) (primitive.ObjectID, bool) {
 	id := strings.TrimSpace(c.Param("id"))
 	userOID, err := primitive.ObjectIDFromHex(id)
@@ -633,6 +764,17 @@ func isValidRole(role string) bool {
 
 func isValidEmail(email string) bool {
 	return emailRegex.MatchString(strings.TrimSpace(strings.ToLower(email)))
+}
+
+func shortUserAgent(ua string) string {
+	trimmed := strings.TrimSpace(ua)
+	if trimmed == "" {
+		return "Unknown device"
+	}
+	if len(trimmed) <= 72 {
+		return trimmed
+	}
+	return trimmed[:72] + "..."
 }
 
 func userDTO(user models.User) gin.H {

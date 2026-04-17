@@ -21,12 +21,15 @@ type User struct {
 }
 
 type RefreshToken struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	UserID    string             `bson:"user_id" json:"user_id"`
-	TokenHash string             `bson:"token_hash" json:"-"`
-	JTI       string             `bson:"jti" json:"jti"`
-	ExpiresAt time.Time          `bson:"expires_at" json:"expires_at"`
-	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
-	Revoked   bool               `bson:"revoked" json:"revoked"`
-	RevokedAt time.Time          `bson:"revoked_at,omitempty" json:"revoked_at,omitempty"`
+	ID         primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	UserID     string             `bson:"user_id" json:"user_id"`
+	TokenHash  string             `bson:"token_hash" json:"-"`
+	JTI        string             `bson:"jti" json:"jti"`
+	UserAgent  string             `bson:"user_agent,omitempty" json:"user_agent,omitempty"`
+	ClientIP   string             `bson:"client_ip,omitempty" json:"client_ip,omitempty"`
+	ExpiresAt  time.Time          `bson:"expires_at" json:"expires_at"`
+	CreatedAt  time.Time          `bson:"created_at" json:"created_at"`
+	LastUsedAt time.Time          `bson:"last_used_at,omitempty" json:"last_used_at,omitempty"`
+	Revoked    bool               `bson:"revoked" json:"revoked"`
+	RevokedAt  time.Time          `bson:"revoked_at,omitempty" json:"revoked_at,omitempty"`
 }
