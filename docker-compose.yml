@@ -70,7 +70,7 @@ services:
       - "8082:8082"
     environment:
       - MONGO_URI=mongodb://mongodb:27017/modintel
-      - JWT_SECRET=change-me-super-secret-key-min-32-chars
+      - JWT_SECRET=${JWT_SECRET}
       - WAF_ENGINE=Coraza (Caddy edge)
       - BACKEND_TARGET=juice-shop:3000
       - INFERENCE_ENGINE_URL=http://inference-engine:8083
@@ -86,15 +86,15 @@ services:
       - AUTH_PORT=8084
       - MONGO_URI=mongodb://mongodb:27017/modintel
       - MONGO_DB_NAME=modintel
-      - JWT_SECRET=change-me-super-secret-key-min-32-chars
+      - JWT_SECRET=${JWT_SECRET}
       - JWT_ACCESS_EXPIRY=15m
       - JWT_REFRESH_EXPIRY=168h
       - BCRYPT_COST=12
       - RATE_LIMIT_AUTH=5
-      - AUTH_BOOTSTRAP_ADMIN_EMAIL=admin@modintel.local
-      - AUTH_BOOTSTRAP_ADMIN_PASSWORD=ChangeMe123!
-      - AUTH_BOOTSTRAP_ADMIN_ROLE=admin
-      - AUTH_BOOTSTRAP_ADMIN_NAME=ModIntel Admin
+      - AUTH_BOOTSTRAP_ADMIN_EMAIL=${AUTH_BOOTSTRAP_ADMIN_EMAIL}
+      - AUTH_BOOTSTRAP_ADMIN_PASSWORD=${AUTH_BOOTSTRAP_ADMIN_PASSWORD}
+      - AUTH_BOOTSTRAP_ADMIN_ROLE=${AUTH_BOOTSTRAP_ADMIN_ROLE}
+      - AUTH_BOOTSTRAP_ADMIN_NAME=${AUTH_BOOTSTRAP_ADMIN_NAME}
     networks:
       - modintel-net
     restart: always
