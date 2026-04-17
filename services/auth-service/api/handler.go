@@ -343,12 +343,10 @@ func (h *Handler) logout(c *gin.Context) {
 }
 
 func (h *Handler) me(c *gin.Context) {
-	claimsAny, exists := c.Get("access_claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, errResp("Unauthorized", "AUTH_003"))
+	claims, ok := getAccessClaims(c)
+	if !ok {
 		return
 	}
-	claims := claimsAny.(*auth.AccessClaims)
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
@@ -409,13 +407,11 @@ func (h *Handler) requireRoles(roles ...string) gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
-		claimsAny, exists := c.Get("access_claims")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, errResp("Unauthorized", "AUTH_003"))
+		claims, ok := getAccessClaims(c)
+		if !ok {
 			c.Abort()
 			return
 		}
-		claims := claimsAny.(*auth.AccessClaims)
 		if _, ok := allowed[strings.ToLower(claims.Role)]; !ok {
 			c.JSON(http.StatusForbidden, errResp("Insufficient permissions", "AUTH_004"))
 			c.Abort()
@@ -626,12 +622,10 @@ func (h *Handler) deactivateUser(c *gin.Context) {
 }
 
 func (h *Handler) listSessions(c *gin.Context) {
-	claimsAny, exists := c.Get("access_claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, errResp("Unauthorized", "AUTH_003"))
+	claims, ok := getAccessClaims(c)
+	if !ok {
 		return
 	}
-	claims := claimsAny.(*auth.AccessClaims)
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
@@ -654,11 +648,15 @@ func (h *Handler) listSessions(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, errResp("Failed decoding sessions", "AUTH_500"))
 			return
 		}
+		var lastUsedAt any
+		if !token.LastUsedAt.IsZero() {
+			lastUsedAt = token.LastUsedAt
+		}
 		sessions = append(sessions, gin.H{
 			"id":           token.ID.Hex(),
 			"jti":          token.JTI,
 			"created_at":   token.CreatedAt,
-			"last_used_at": token.LastUsedAt,
+			"last_used_at": lastUsedAt,
 			"expires_at":   token.ExpiresAt,
 			"device":       shortUserAgent(token.UserAgent),
 			"user_agent":   token.UserAgent,
@@ -675,12 +673,10 @@ func (h *Handler) listSessions(c *gin.Context) {
 }
 
 func (h *Handler) revokeSession(c *gin.Context) {
-	claimsAny, exists := c.Get("access_claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, errResp("Unauthorized", "AUTH_003"))
+	claims, ok := getAccessClaims(c)
+	if !ok {
 		return
 	}
-	claims := claimsAny.(*auth.AccessClaims)
 
 	var req RevokeSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -721,12 +717,10 @@ func (h *Handler) revokeSession(c *gin.Context) {
 }
 
 func (h *Handler) revokeAllSessions(c *gin.Context) {
-	claimsAny, exists := c.Get("access_claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, errResp("Unauthorized", "AUTH_003"))
+	claims, ok := getAccessClaims(c)
+	if !ok {
 		return
 	}
-	claims := claimsAny.(*auth.AccessClaims)
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
@@ -751,6 +745,22 @@ func parseUserID(c *gin.Context) (primitive.ObjectID, bool) {
 		return primitive.NilObjectID, false
 	}
 	return userOID, true
+}
+
+func getAccessClaims(c *gin.Context) (*auth.AccessClaims, bool) {
+	claimsAny, exists := c.Get("access_claims")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, errResp("Unauthorized", "AUTH_003"))
+		return nil, false
+	}
+
+	claims, ok := claimsAny.(*auth.AccessClaims)
+	if !ok || claims == nil {
+		c.JSON(http.StatusUnauthorized, errResp("Unauthorized", "AUTH_003"))
+		return nil, false
+	}
+
+	return claims, true
 }
 
 func isValidRole(role string) bool {
