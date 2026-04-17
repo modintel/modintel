@@ -1,0 +1,335 @@
+/* Sign In Page Styles */
+
+/* Override main.css body styles - must use body.signin-page to target body with class */
+body.signin-page {
+    --bg-signin: #ffffff;
+    
+    font-family: var(--font);
+    background: var(--bg-signin);
+    color: var(--fg);
+    min-height: 100vh;
+    height: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    overflow: auto;
+    position: static;
+}
+
+/* Remove noise overlay for signin page */
+body.signin-page::before {
+    display: none;
+}
+
+.signin-container {
+    display: flex;
+    width: 100%;
+    max-width: 1000px;
+    min-height: 600px;
+    background: var(--bg-signin);
+    border-radius: 0;
+    overflow: hidden;
+    border: 1.5px solid rgba(0, 0, 0, 0.15);
+}
+
+/* Left Side - Full Orange Brand Section */
+.brand-section-orange {
+    flex: 1;
+    background: var(--accent);
+    display: flex;
+    flex-direction: column;
+    border-right: 1.5px solid rgba(0, 0, 0, 0.15);
+    padding: 48px 56px;
+}
+
+.brand-logo-top {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 32px;
+}
+
+.brand-logo-top svg {
+    width: 100%;
+    height: 100%;
+    stroke: #ffffff;
+}
+
+.brand-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-top: 16px;
+}
+
+.brand-headline {
+    font-size: 2.4rem;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+    margin-bottom: 48px;
+}
+
+.features-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.feature-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.feature-icon {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.feature-icon svg {
+    width: 100%;
+    height: 100%;
+    stroke: #ffffff;
+}
+
+.feature-text {
+    font-size: 0.76rem;
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 500;
+}
+
+.brand-footer-orange {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.6);
+    text-align: left;
+    margin-top: auto;
+    padding-top: 40px;
+}
+
+/* Right Side - Form */
+.form-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: var(--bg-signin);
+    padding: 40px 56px;
+}
+
+.form-wrapper {
+    width: 100%;
+    max-width: 360px;
+}
+
+.form-header {
+    margin-bottom: 40px;
+}
+
+.form-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    color: var(--fg);
+}
+
+.form-subtitle {
+    font-size: 0.9rem;
+    color: var(--fg-muted);
+}
+
+.signin-form-group {
+    margin-bottom: 20px;
+}
+
+.signin-form-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--fg-muted);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.signin-form-input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 0.8px solid var(--border);
+    border-radius: 0;
+    font-size: 0.9rem;
+    color: var(--fg);
+    background: var(--bg-signin);
+    font-family: var(--font);
+    transition: all 0.15s;
+    outline: none;
+}
+
+.signin-form-input::placeholder {
+    color: var(--fg-subtle);
+}
+
+.signin-form-input:focus {
+    border-color: var(--accent);
+}
+
+.form-options {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+}
+
+.checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.checkbox-wrapper input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.checkbox-label {
+    font-size: 0.8rem;
+    color: var(--fg-muted);
+    cursor: pointer;
+}
+
+.forgot-link {
+    font-size: 0.8rem;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.forgot-link:hover {
+    text-decoration: underline;
+}
+
+.signin-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 12px 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-family: var(--font);
+    border: 0.8px solid var(--border);
+    cursor: pointer;
+    transition: all 0.15s;
+    background: transparent;
+    color: var(--fg);
+    width: 100%;
+}
+
+.signin-btn:hover {
+    border-color: var(--border-active);
+}
+
+.signin-btn-primary {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+}
+
+.signin-btn-primary:hover {
+    opacity: 0.9;
+}
+
+.form-footer {
+    margin-top: 32px;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--fg-muted);
+}
+
+.form-footer a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.form-footer a:hover {
+    text-decoration: underline;
+}
+
+.signin-alert {
+    padding: 12px 16px;
+    border: 0.8px solid var(--border);
+    margin-bottom: 20px;
+    font-size: 0.85rem;
+    display: none;
+}
+
+.signin-alert-danger {
+    background: rgba(220, 38, 38, 0.05);
+    border-color: rgba(220, 38, 38, 0.3);
+    color: var(--danger);
+}
+
+.signin-alert-success {
+    background: rgba(22, 163, 74, 0.05);
+    border-color: rgba(22, 163, 74, 0.3);
+    color: var(--success);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    body.signin-page {
+        padding: 0;
+        align-items: flex-start;
+    }
+    
+    .signin-container {
+        flex-direction: column;
+        max-width: 100%;
+        min-height: 100vh;
+        border: none;
+    }
+
+    .brand-section-orange {
+        border-right: none;
+        border-bottom: 1.5px solid rgba(0, 0, 0, 0.15);
+        padding: 32px 32px;
+        min-height: auto;
+    }
+
+    .brand-logo-top {
+        margin-bottom: 24px;
+    }
+
+    .brand-headline {
+        font-size: 1.8rem;
+        margin-bottom: 32px;
+    }
+
+    .brand-headline {
+        font-size: 1.8rem;
+        margin-bottom: 32px;
+    }
+
+    .brand-content {
+        padding-top: 0;
+    }
+
+    .form-section {
+        padding: 40px 32px;
+        flex: none;
+    }
+}
