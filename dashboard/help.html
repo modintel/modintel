@@ -27,7 +27,8 @@
             <a href="/datasets">Datasets</a>
             <a href="/reports">Reports</a>
             <a href="/monitor">Monitor</a>
-            <a href="/settings" class="active">Settings</a>
+            <a href="/settings">Settings</a>
+            <a href="/help" class="active">Help</a>
         </div>
         <div class="nav-actions"></div>
     </nav>
@@ -71,6 +72,13 @@
             </div>
         </div>
     </div>
+    <script src="js/auth.js"></script>
+    <script>
+        if (typeof requireAuth === 'function') {
+            requireAuth();
+            attachLogoutButtons();
+        }
+    </script>
 </body>
 
 </html>
