@@ -179,11 +179,11 @@ func main() {
 	}
 
 	t, err := tail.TailFile(logFile, tail.Config{
-		Follow:         true,
-		ReOpen:         true,
-		MustExist:      false,
-		Poll:           false,
-		Location:       &tail.SeekInfo{Offset: 0, Whence: 2},
+		Follow:    true,
+		ReOpen:    true,
+		MustExist: false,
+		Poll:      false,
+		Location:  &tail.SeekInfo{Offset: 0, Whence: 2},
 	})
 
 	if err != nil {
