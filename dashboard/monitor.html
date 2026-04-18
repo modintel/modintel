@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="css/monitor.css">
 </head>
 
-<body>
+<body data-attach-logout="false">
     <nav>
         <div class="nav-brand">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff570a" stroke-width="2.5"
@@ -231,11 +231,7 @@
         </div>
     </div>
     <script src="js/auth.js"></script>
-    <script>
-        if (typeof requireAuth === 'function') {
-            requireAuth();
-        }
-    </script>
+    <script src="js/boot.js"></script>
     <script src="js/monitor.js"></script>
 </body>
 
