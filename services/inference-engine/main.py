@@ -450,11 +450,14 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
         return JSONResponse(content=response.model_dump())
 
     except Exception as exc:
-        # Req 8.7 — HTTP 500, no stack trace
+        # Req 8.7 — HTTP 500, no stack trace in production
         logger.error("Inference failure: %s", exc)
+        error_msg = "Internal server error"
+        if os.getenv("DEBUG", "false").lower() == "true":
+            error_msg = str(exc)  # Include details in debug mode for development
         return JSONResponse(
             status_code=500,
-            content={"ai_status": "unavailable", "error": str(exc)},
+            content={"ai_status": "unavailable", "error": error_msg},
         )
 
 
