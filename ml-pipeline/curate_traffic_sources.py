@@ -1,11 +1,4 @@
-"""
-curate_traffic_sources.py
-Curates labeled HTTP request corpora from multiple CSV sources into JSONL files.
 
-Output:
-  ../data/curated/attack_requests.jsonl  — label="attack" records
-  ../data/curated/benign_requests.jsonl  — label="benign" records
-"""
 
 import os
 import json
@@ -14,9 +7,6 @@ import uuid
 import logging
 import pandas as pd
 
-# ---------------------------------------------------------------------------
-# Paths (relative to this script's location in modintel/ml-pipeline/)
-# ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 DATA_BASE_DIR = os.path.abspath(
@@ -25,16 +15,10 @@ DATA_BASE_DIR = os.path.abspath(
 RAW_DATA_DIR = os.path.join(SCRIPT_DIR, "..", "..", "ModSecurity", "data", "raw")
 OUTPUT_DIR = os.path.join(DATA_BASE_DIR, "curated")
 
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# HTTP request wrapping helpers
-# ---------------------------------------------------------------------------
 _USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
@@ -56,7 +40,7 @@ def _base_headers(extra: dict = None) -> dict:
 
 
 def wrap_payload(payload: str) -> dict:
-    """Wrap a raw payload string into a synthetic HTTP request dict."""
+    
     mode = random.choice(_INJECTION_MODES)
 
     if mode == "query":
@@ -75,7 +59,7 @@ def wrap_payload(payload: str) -> dict:
             ),
             "body": f"data={payload}",
         }
-    else:  # header injection
+    else:
         return {
             "method": "GET",
             "uri": "/api/resource",
@@ -84,9 +68,6 @@ def wrap_payload(payload: str) -> dict:
         }
 
 
-# ---------------------------------------------------------------------------
-# Synthetic benign request templates (≥500 records)
-# ---------------------------------------------------------------------------
 _REST_ENDPOINTS = [
     ("GET", "/api/users"),
     ("GET", "/api/users/{id}"),
@@ -138,10 +119,9 @@ def _expand_uri(uri: str) -> str:
 
 
 def generate_synthetic_benign(count: int = 600) -> list:
-    """Generate at least `count` synthetic benign HTTP request records."""
+    
     records = []
 
-    # REST API calls
     for _ in range(count // 3):
         method, uri_tpl = random.choice(_REST_ENDPOINTS)
         uri = _expand_uri(uri_tpl)
@@ -162,7 +142,6 @@ def generate_synthetic_benign(count: int = 600) -> list:
             }
         )
 
-    # Static asset requests
     for _ in range(count // 3):
         asset = random.choice(_STATIC_ASSETS)
         records.append(
@@ -177,7 +156,6 @@ def generate_synthetic_benign(count: int = 600) -> list:
             }
         )
 
-    # Form submissions
     while len(records) < count:
         method, uri, body = random.choice(_FORM_ENDPOINTS)
         headers = _base_headers({"Content-Type": "application/x-www-form-urlencoded"})
@@ -196,17 +174,10 @@ def generate_synthetic_benign(count: int = 600) -> list:
     return records
 
 
-# ---------------------------------------------------------------------------
-# CSV parsers
-# ---------------------------------------------------------------------------
 
 
 def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
-    """
-    Parse CSVs with Sentence + Label columns (SQLiV3, sqli, sqliv2, XSS_dataset).
-    Label=1 → attack, Label=0 → benign.
-    Yields (record_dict, skipped_bool).
-    """
+    
     df = None
     for enc in ("utf-8", "utf-16", "latin-1"):
         try:
@@ -221,7 +192,6 @@ def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
         return
 
     for row_index, row in df.iterrows():
-        # Validate Sentence
         if "Sentence" not in df.columns:
             logger.warning(
                 "WARNING: Skipping row %s in %s: missing 'Sentence' column",
@@ -241,7 +211,6 @@ def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
             yield None, True
             continue
 
-        # Validate Label
         if "Label" not in df.columns:
             logger.warning(
                 "WARNING: Skipping row %s in %s: missing 'Label' column",
@@ -290,24 +259,7 @@ def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
 
 
 def parse_cicids_csv(filepath: str, filename: str):
-    """
-    Parse CICIDS2017 network flow CSVs (all 8 files share the same 78-feature schema).
-    The ' Label' column (note leading space) contains the attack class.
-
-    Since CICIDS rows are network flow statistics rather than raw HTTP payloads,
-    we synthesise an HTTP request whose structure reflects the attack type:
-      - DDoS / DoS variants  → high-volume GET flood to /
-      - PortScan             → GET to a port-derived URI
-      - Bot                  → POST with encoded payload
-      - FTP-Patator          → POST /ftp/login brute-force pattern
-      - SSH-Patator           → POST /ssh/login brute-force pattern
-      - Web Attack (SQLi/XSS/BruteForce) → appropriate injection wrapper
-      - Infiltration         → POST with binary-like body
-      - Heartbleed           → GET with oversized Accept header
-      - BENIGN               → REST/static/form template
-
-    Yields (record_dict, skipped_bool).
-    """
+    
     try:
         df = pd.read_csv(filepath, on_bad_lines="skip", encoding="utf-8")
     except UnicodeDecodeError:
@@ -324,13 +276,11 @@ def parse_cicids_csv(filepath: str, filename: str):
         )
         return
 
-    # The label column has a leading space in the CICIDS headers
     label_col = " Label" if " Label" in df.columns else "Label"
     if label_col not in df.columns:
         logger.warning("WARNING: Skipping file %s: no Label column found", filename)
         return
 
-    # CICIDS label → (attack_family, HTTP synthesis strategy)
     LABEL_MAP = {
         "ddos": ("ddos", "flood"),
         "dos goldeneye": ("dos", "flood"),
@@ -358,7 +308,7 @@ def parse_cicids_csv(filepath: str, filename: str):
     ]
 
     def _synthesise(strategy: str, row: pd.Series) -> tuple[str, str, dict, str]:
-        """Return (method, uri, headers, body) for the given strategy."""
+        
         dst_port = int(row.get("Destination Port", 80) or 80)
         pkt_len = int(row.get("Max Packet Length", 0) or 0)
 
@@ -372,7 +322,6 @@ def parse_cicids_csv(filepath: str, filename: str):
             return ("POST", "/", hdrs, "")
 
         if strategy == "heartbleed":
-            # Oversized Accept header simulates the Heartbleed padding pattern
             hdrs = _base_headers({"Accept": "A" * min(pkt_len or 512, 2048)})
             return ("GET", "/", hdrs, "")
 
@@ -409,7 +358,6 @@ def parse_cicids_csv(filepath: str, filename: str):
             hdrs = _base_headers({"Content-Type": "application/octet-stream"})
             return ("POST", "/upload", hdrs, "\\x00\\x01\\x02\\x03" * 16)
 
-        # fallback
         return ("GET", "/", _base_headers(), "")
 
     for row_index, row in df.iterrows():
@@ -427,7 +375,6 @@ def parse_cicids_csv(filepath: str, filename: str):
         is_benign = label_lower == "benign"
 
         if is_benign:
-            # Emit a synthetic benign record
             method, uri_tpl = random.choice(_REST_ENDPOINTS)
             uri = _expand_uri(uri_tpl)
             body = ""
@@ -447,7 +394,6 @@ def parse_cicids_csv(filepath: str, filename: str):
             yield record, False
             continue
 
-        # Map label to family + strategy
         family, strategy = None, None
         for key, (fam, strat) in LABEL_MAP.items():
             if key in label_lower:
@@ -455,7 +401,6 @@ def parse_cicids_csv(filepath: str, filename: str):
                 break
 
         if family is None:
-            # Unknown attack label — treat as generic attack
             family = "unknown_attack"
             strategy = "flood"
             logger.warning(
@@ -479,11 +424,7 @@ def parse_cicids_csv(filepath: str, filename: str):
 
 
 def parse_csic_csv(filepath: str, filename: str):
-    """
-    Parse csic_database.csv using actual HTTP fields from the CSV.
-    classification='Normal' → benign, anything else → attack (unknown_attack).
-    Yields (record_dict, skipped_bool).
-    """
+    
     try:
         df = pd.read_csv(filepath, on_bad_lines="skip")
     except Exception as exc:
@@ -534,7 +475,6 @@ def parse_csic_csv(filepath: str, filename: str):
 
         is_attack = classification.lower() != "normal"
 
-        # Build headers from available CSV columns
         headers = {}
         ua = str(row.get("User-Agent", "")).strip()
         if ua and ua.lower() != "nan":
@@ -559,11 +499,9 @@ def parse_csic_csv(filepath: str, filename: str):
             else ""
         )
 
-        # Strip HTTP version suffix from URL if present (e.g. "http://... HTTP/1.1")
         if " HTTP/" in url:
             url = url.split(" HTTP/")[0].strip()
 
-        # Extract URI path from full URL
         try:
             from urllib.parse import urlparse
 
@@ -586,9 +524,6 @@ def parse_csic_csv(filepath: str, filename: str):
         yield record, False
 
 
-# ---------------------------------------------------------------------------
-# Main pipeline
-# ---------------------------------------------------------------------------
 
 
 def process_datasets():
@@ -605,7 +540,6 @@ def process_datasets():
         open(attack_path, "w", encoding="utf-8") as attack_f,
         open(benign_path, "w", encoding="utf-8") as benign_f,
     ):
-        # --- SQLi CSVs ---
         for filename in ("SQLiV3.csv", "sqli.csv", "sqliv2.csv"):
             filepath = os.path.join(RAW_DATA_DIR, filename)
             if not os.path.exists(filepath):
@@ -622,7 +556,6 @@ def process_datasets():
                     benign_f.write(json.dumps(record) + "\n")
                     benign_count += 1
 
-        # --- XSS CSV ---
         filename = "XSS_dataset.csv"
         filepath = os.path.join(RAW_DATA_DIR, filename)
         if not os.path.exists(filepath):
@@ -639,7 +572,6 @@ def process_datasets():
                     benign_f.write(json.dumps(record) + "\n")
                     benign_count += 1
 
-        # --- CSIC CSV ---
         filename = "csic_database.csv"
         filepath = os.path.join(RAW_DATA_DIR, filename)
         if not os.path.exists(filepath):
@@ -656,7 +588,6 @@ def process_datasets():
                     benign_f.write(json.dumps(record) + "\n")
                     benign_count += 1
 
-        # --- CICIDS2017 CSVs ---
         cicids_files = [
             "Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv",
             "Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv",
@@ -683,7 +614,6 @@ def process_datasets():
                     benign_f.write(json.dumps(record) + "\n")
                     benign_count += 1
 
-        # --- Synthetic benign records ---
         print("Generating synthetic benign requests...")
         for record in generate_synthetic_benign(600):
             benign_f.write(json.dumps(record) + "\n")
