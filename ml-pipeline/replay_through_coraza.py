@@ -1,5 +1,3 @@
-
-
 import os
 import json
 import time
@@ -37,10 +35,8 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-
-
 def _read_audit_log_lines(path: str) -> list:
-    
+
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             return f.readlines()
@@ -49,7 +45,7 @@ def _read_audit_log_lines(path: str) -> list:
 
 
 def _parse_audit_entry(line: str) -> Optional[dict]:
-    
+
     line = line.strip()
     if not line:
         return None
@@ -60,7 +56,7 @@ def _parse_audit_entry(line: str) -> Optional[dict]:
 
 
 def _extract_coraza_fields(entry: dict) -> dict:
-    
+
     rule_ids = []
     severities = []
     messages = []
@@ -119,7 +115,7 @@ def _extract_coraza_fields(entry: dict) -> dict:
 
 
 def _infer_from_response(status_code: int) -> dict:
-    
+
     fired = status_code == 403
     return {
         "coraza_fired_rule_ids": [],
@@ -131,7 +127,7 @@ def _infer_from_response(status_code: int) -> dict:
 
 
 def _empty_coraza_fields() -> dict:
-    
+
     return {
         "coraza_fired_rule_ids": [],
         "coraza_rule_severities": [],
@@ -141,10 +137,8 @@ def _empty_coraza_fields() -> dict:
     }
 
 
-
-
 def _poll_audit_log(uri: str, sent_at: float, audit_log_path: str) -> Optional[dict]:
-    
+
     deadline = time.monotonic() + AUDIT_POLL_TIMEOUT
     seen_lines = set()
 
@@ -191,10 +185,8 @@ def _poll_audit_log(uri: str, sent_at: float, audit_log_path: str) -> Optional[d
     return None
 
 
-
-
 def _send_request(record: dict) -> tuple[int, dict]:
-    
+
     method = record.get("method", "GET").upper()
     uri = record.get("uri", "/")
     headers = dict(record.get("headers") or {})
@@ -213,10 +205,8 @@ def _send_request(record: dict) -> tuple[int, dict]:
     return resp.status_code, dict(resp.headers)
 
 
-
-
 def replay_record(record: dict, audit_log_available: bool) -> dict:
-    
+
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             sent_at = time.time()
@@ -273,8 +263,6 @@ def replay_record(record: dict, audit_log_available: bool) -> dict:
     }
 
     return output, matched
-
-
 
 
 def run_replay():

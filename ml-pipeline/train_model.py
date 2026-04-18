@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import hashlib
@@ -77,8 +75,6 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-
-
 def sha256_file(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -88,7 +84,7 @@ def sha256_file(path: str) -> str:
 
 
 def next_model_version(base_dir: str) -> int:
-    
+
     os.makedirs(base_dir, exist_ok=True)
     existing = [
         d
@@ -105,7 +101,7 @@ def next_model_version(base_dir: str) -> int:
 
 
 def compute_ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> float:
-    
+
     bins = np.linspace(0.0, 1.0, n_bins + 1)
     ece = 0.0
     n = len(y_true)
@@ -123,7 +119,7 @@ def compute_ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> flo
 
 
 def compute_fpr_fnr(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float]:
-    
+
     tn = int(((y_pred == 0) & (y_true == 0)).sum())
     fp = int(((y_pred == 1) & (y_true == 0)).sum())
     fn = int(((y_pred == 0) & (y_true == 1)).sum())
@@ -138,7 +134,7 @@ def per_family_fpr_fnr(
     y_pred: np.ndarray,
     families: np.ndarray,
 ) -> Dict[str, Dict[str, float]]:
-    
+
     result: Dict[str, Dict[str, float]] = {}
     for family in np.unique(families):
         mask = families == family
@@ -155,7 +151,7 @@ def compute_metrics(
     y_prob: np.ndarray,
     families: np.ndarray,
 ) -> Dict[str, Any]:
-    
+
     fpr, fnr = compute_fpr_fnr(y_true, y_pred)
     metrics: Dict[str, Any] = {
         "accuracy": float(accuracy_score(y_true, y_pred)),
@@ -178,7 +174,7 @@ def compute_metrics(
 
 
 def composite_score(metrics: Dict[str, Any]) -> float:
-    
+
     return (
         W_F1 * metrics["f1"]
         + W_ECE * (1.0 - metrics["ece"])
@@ -187,15 +183,13 @@ def composite_score(metrics: Dict[str, Any]) -> float:
     )
 
 
-
-
 def bootstrap_quantiles(
     calibrated_model: Any,
     X_cal: np.ndarray,
     B: int = BOOTSTRAP_B,
     seed: int = BOOTSTRAP_SEED,
 ) -> Dict[str, Any]:
-    
+
     rng = np.random.default_rng(seed)
     n = len(X_cal)
     mean_probs: List[float] = []
@@ -216,10 +210,8 @@ def bootstrap_quantiles(
     }
 
 
-
-
 def build_candidates() -> List[Tuple[str, Any]]:
-    
+
     candidates: List[Tuple[str, Any]] = []
 
     if _HAS_XGB:
@@ -285,8 +277,6 @@ def build_candidates() -> List[Tuple[str, Any]]:
     return candidates
 
 
-
-
 def load_splits(
     parquet_path: str,
 ) -> Tuple[
@@ -301,7 +291,7 @@ def load_splits(
     np.ndarray,
     WAFFeatureExtractor,
 ]:
-    
+
     log.info("Loading dataset from %s", parquet_path)
     df = pd.read_parquet(parquet_path)
 
@@ -349,8 +339,6 @@ def load_splits(
     )
 
 
-
-
 def train_and_evaluate(
     candidates: List[Tuple[str, Any]],
     X_train: np.ndarray,
@@ -361,7 +349,7 @@ def train_and_evaluate(
     y_test: np.ndarray,
     df_test: pd.DataFrame,
 ) -> List[Dict[str, Any]]:
-    
+
     results: List[Dict[str, Any]] = []
 
     for name, base_estimator in candidates:
@@ -411,8 +399,6 @@ def train_and_evaluate(
     return results
 
 
-
-
 def export_artifacts(
     best: Dict[str, Any],
     extractor: WAFFeatureExtractor,
@@ -422,7 +408,7 @@ def export_artifacts(
     training_config: Dict[str, Any],
     all_results: List[Dict[str, Any]],
 ) -> str:
-    
+
     out_dir = os.path.join(MODELS_BASE_DIR, f"v{version}")
     os.makedirs(out_dir, exist_ok=True)
     log.info("Exporting artifacts to %s", out_dir)
@@ -487,7 +473,7 @@ def _load_schema_version() -> str:
 
 
 def _json_default(obj: Any) -> Any:
-    
+
     if isinstance(obj, (np.integer,)):
         return int(obj)
     if isinstance(obj, (np.floating,)):
@@ -495,8 +481,6 @@ def _json_default(obj: Any) -> Any:
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
-
-
 
 
 def main() -> None:

@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import math
@@ -42,10 +40,8 @@ SPECIAL_CHARS = set("%'\"<>{}")
 _ENCODING_PATTERN = re.compile(r"%[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}|\\x[0-9A-Fa-f]{2}")
 
 
-
-
 def _shannon_entropy(text: str) -> float:
-    
+
     if not text:
         return 0.0
     total = len(text)
@@ -60,7 +56,7 @@ def _shannon_entropy(text: str) -> float:
 
 
 def _special_char_ratio(text: str) -> float:
-    
+
     if not text:
         return 0.0
     special_count = sum(1 for ch in text if ch in SPECIAL_CHARS)
@@ -68,18 +64,18 @@ def _special_char_ratio(text: str) -> float:
 
 
 def _has_encoding_artifacts(uri: str, body: str) -> bool:
-    
+
     combined = (uri or "") + (body or "")
     return bool(_ENCODING_PATTERN.search(combined))
 
 
 def _non_printable_count(text: str) -> int:
-    
+
     return sum(1 for ch in text if ord(ch) < 32 or ord(ch) == 127)
 
 
 def _uri_depth(uri: str) -> int:
-    
+
     try:
         path = urlparse(uri).path
         segments = [s for s in path.split("/") if s]
@@ -89,7 +85,7 @@ def _uri_depth(uri: str) -> int:
 
 
 def _query_param_count(uri: str) -> int:
-    
+
     try:
         query = urlparse(uri).query
         if not query:
@@ -100,7 +96,7 @@ def _query_param_count(uri: str) -> int:
 
 
 def _max_param_value_length(uri: str, body: str) -> int:
-    
+
     max_len = 0
     try:
         query = urlparse(uri).query
@@ -121,7 +117,7 @@ def _max_param_value_length(uri: str, body: str) -> int:
 
 
 def _encode_content_type(headers: Any) -> int:
-    
+
     if not headers:
         return -2
     ct = ""
@@ -141,7 +137,7 @@ def _encode_content_type(headers: Any) -> int:
 
 
 def _header_count(headers: Any) -> int:
-    
+
     if not headers:
         return 0
     if isinstance(headers, dict):
@@ -175,18 +171,13 @@ def _is_rce_rule(rule_id: str, message: str) -> bool:
     return "rce" in rid or "932" in rid or "rce" in msg or "932" in msg
 
 
-
-
 class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
-    
-
     def __init__(self) -> None:
         self.rule_ids_: Optional[List[str]] = None
         self.feature_names_: Optional[List[str]] = None
 
-
     def fit(self, X: Union[List[Dict], pd.DataFrame], y=None) -> "WAFFeatureExtractor":
-        
+
         records = self._to_records(X)
         seen_rule_ids: set = set()
         for record in records:
@@ -197,7 +188,7 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X: Union[Dict, List[Dict], pd.DataFrame]) -> np.ndarray:
-        
+
         if self.rule_ids_ is None:
             raise RuntimeError(
                 "WAFFeatureExtractor must be fitted before calling transform()."
@@ -213,35 +204,33 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
     def fit_transform(
         self, X: Union[List[Dict], pd.DataFrame], y=None, **fit_params
     ) -> np.ndarray:
-        
+
         return self.fit(X, y).transform(X)
 
     def get_feature_names_out(self) -> List[str]:
-        
+
         if self.feature_names_ is None:
             raise RuntimeError("WAFFeatureExtractor must be fitted first.")
         return list(self.feature_names_)
 
-
     def save(self, path: str) -> None:
-        
+
         joblib.dump(self, path)
 
     @classmethod
     def load(cls, path: str) -> "WAFFeatureExtractor":
-        
+
         obj = joblib.load(path)
         if not isinstance(obj, cls):
             raise TypeError(f"Expected WAFFeatureExtractor, got {type(obj)}")
         return obj
-
 
     @staticmethod
     def validate_parity(
         training_schema: Dict[str, Any],
         serving_schema: Dict[str, Any],
     ) -> List[str]:
-        
+
         discrepancies: List[str] = []
 
         training_features = training_schema.get("features", {})
@@ -290,9 +279,8 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
 
         return discrepancies
 
-
     def _to_records(self, X: Union[List[Dict], pd.DataFrame]) -> List[Dict]:
-        
+
         if isinstance(X, pd.DataFrame):
             return X.to_dict(orient="records")
         if isinstance(X, list):
@@ -300,7 +288,7 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
         raise TypeError(f"Unsupported input type: {type(X)}")
 
     def _build_feature_names(self) -> List[str]:
-        
+
         names: List[str] = []
 
         for rid in self.rule_ids_:
@@ -343,7 +331,7 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
         return names
 
     def _extract_row(self, record: Dict) -> np.ndarray:
-        
+
         features: List[float] = []
 
         raw_rule_ids = record.get("fired_rule_ids", [])

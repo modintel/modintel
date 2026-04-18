@@ -1,5 +1,3 @@
-
-
 import json
 import os
 
@@ -19,7 +17,7 @@ INPUT_FILES = [
 
 
 def add_empty_coraza_fields(record: dict) -> dict:
-    
+
     return {
         **record,
         "coraza_fired_rule_ids": [],

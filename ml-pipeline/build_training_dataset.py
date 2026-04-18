@@ -1,5 +1,3 @@
-
-
 import os
 import sys
 import json
@@ -47,10 +45,8 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-
-
 def load_jsonl(path: str) -> list[dict]:
-    
+
     records = []
     with open(path, "r", encoding="utf-8") as fh:
         for lineno, line in enumerate(fh, start=1):
@@ -64,10 +60,8 @@ def load_jsonl(path: str) -> list[dict]:
     return records
 
 
-
-
 def gate_missing_fields(df: pd.DataFrame) -> Optional[str]:
-    
+
     missing_mask = df[REQUIRED_FIELDS].isnull().any(axis=1)
     missing_count = int(missing_mask.sum())
     total = len(df)
@@ -81,7 +75,7 @@ def gate_missing_fields(df: pd.DataFrame) -> Optional[str]:
 
 
 def gate_duplicate_ids(df: pd.DataFrame) -> Optional[str]:
-    
+
     dupes = df["request_id"].duplicated(keep=False)
     dupe_count = int(dupes.sum())
     if dupe_count > 0:
@@ -94,7 +88,7 @@ def gate_duplicate_ids(df: pd.DataFrame) -> Optional[str]:
 
 
 def gate_label_conflicts(df: pd.DataFrame) -> Optional[str]:
-    
+
     label_counts = df.groupby("request_id")["label"].nunique()
     conflicts = label_counts[label_counts > 1]
     if len(conflicts) > 0:
@@ -107,7 +101,7 @@ def gate_label_conflicts(df: pd.DataFrame) -> Optional[str]:
 
 
 def run_quality_gates(df: pd.DataFrame) -> list[str]:
-    
+
     failures = []
     for gate_fn in [gate_missing_fields, gate_duplicate_ids, gate_label_conflicts]:
         result = gate_fn(df)
@@ -116,10 +110,8 @@ def run_quality_gates(df: pd.DataFrame) -> list[str]:
     return failures
 
 
-
-
 def stratified_split(df: pd.DataFrame) -> pd.DataFrame:
-    
+
     family_counts = df["attack_family"].value_counts()
     small_families = family_counts[family_counts < 3].index.tolist()
 
@@ -137,7 +129,7 @@ def stratified_split(df: pd.DataFrame) -> pd.DataFrame:
     df_main = df[~small_mask].copy()
 
     def _split_chunk(chunk: pd.DataFrame, stratify_col: Optional[str]) -> pd.DataFrame:
-        
+
         if len(chunk) == 0:
             return chunk
 
@@ -191,10 +183,8 @@ def stratified_split(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-
-
 def sha256_file(path: str) -> str:
-    
+
     h = hashlib.sha256()
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(65536), b""):
@@ -203,7 +193,7 @@ def sha256_file(path: str) -> str:
 
 
 def build_metadata(df: pd.DataFrame, parquet_path: str) -> dict:
-    
+
     row_counts = {
         split: int((df["split"] == split).sum())
         for split in ["train", "validation", "test"]
@@ -229,8 +219,6 @@ def build_metadata(df: pd.DataFrame, parquet_path: str) -> dict:
         "created_at": datetime.now(timezone.utc).isoformat(),
         "total_rows": len(df),
     }
-
-
 
 
 def main() -> None:

@@ -1,5 +1,3 @@
-
-
 import os
 import json
 import random
@@ -40,7 +38,7 @@ def _base_headers(extra: dict = None) -> dict:
 
 
 def wrap_payload(payload: str) -> dict:
-    
+
     mode = random.choice(_INJECTION_MODES)
 
     if mode == "query":
@@ -119,7 +117,7 @@ def _expand_uri(uri: str) -> str:
 
 
 def generate_synthetic_benign(count: int = 600) -> list:
-    
+
     records = []
 
     for _ in range(count // 3):
@@ -174,10 +172,8 @@ def generate_synthetic_benign(count: int = 600) -> list:
     return records
 
 
-
-
 def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
-    
+
     df = None
     for enc in ("utf-8", "utf-16", "latin-1"):
         try:
@@ -259,7 +255,7 @@ def parse_sentence_label_csv(filepath: str, filename: str, attack_family: str):
 
 
 def parse_cicids_csv(filepath: str, filename: str):
-    
+
     try:
         df = pd.read_csv(filepath, on_bad_lines="skip", encoding="utf-8")
     except UnicodeDecodeError:
@@ -308,7 +304,7 @@ def parse_cicids_csv(filepath: str, filename: str):
     ]
 
     def _synthesise(strategy: str, row: pd.Series) -> tuple[str, str, dict, str]:
-        
+
         dst_port = int(row.get("Destination Port", 80) or 80)
         pkt_len = int(row.get("Max Packet Length", 0) or 0)
 
@@ -424,7 +420,7 @@ def parse_cicids_csv(filepath: str, filename: str):
 
 
 def parse_csic_csv(filepath: str, filename: str):
-    
+
     try:
         df = pd.read_csv(filepath, on_bad_lines="skip")
     except Exception as exc:
@@ -522,8 +518,6 @@ def parse_csic_csv(filepath: str, filename: str):
             "attack_family": "unknown_attack" if is_attack else "benign",
         }
         yield record, False
-
-
 
 
 def process_datasets():
