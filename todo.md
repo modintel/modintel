@@ -415,4 +415,66 @@ Close weak frontend access-control behavior so dashboard route protection is enf
 1. Unauthenticated request to `/events`, `/monitor`, `/settings` redirects to `/signin`.
 2. Viewer cannot access admin-only flows in UI (and API still returns 403 if attempted directly).
 3. Invalid/expired token always clears auth and redirects cleanly.
-4. No dashboard login path works when auth-service is down (except explicit maintenance message).
+---
+
+## 7. Graceful Error Handling and Crash Recovery
+
+### What
+Implementing robust error handling patterns to prevent information leakage, ensure logging with context, add recovery mechanisms (retries, fallbacks), and follow code patterns for Go and Python services. This includes sanitizing error responses, structured logging, and crash-safe operations.
+
+### Why for ModIntel
+- **Security**: Prevents exposure of internal details (e.g., stack traces, DB errors) in API responses.
+- **Reliability**: Handles transient failures (network issues, DB timeouts) with retries and fallbacks.
+- **Maintainability**: Structured logging aids debugging; consistent patterns reduce bugs.
+- **User Experience**: Generic error messages for clients; graceful degradation during failures.
+- **Current Gaps**: Some endpoints expose exception details; limited retry logic; basic logging without context.
+
+### Current State
+- Basic error handling exists but inconsistent (e.g., some APIs return full exceptions).
+- Logging is minimal; no structured format or centralized aggregation.
+- No retries or circuit breakers for external calls.
+- ML pipelines lack fallbacks; services may crash without recovery.
+
+### Implementation Steps
+
+#### 7.1 Error Sanitization and Wrapping
+- Update all HTTP responses to return generic messages (e.g., "Internal server error") while logging full details.
+- In Go services: Use `pkg/errors` for wrapping; avoid exposing wrapped errors.
+- In Python services: Use try-except with sanitized responses; log exceptions internally.
+
+#### 7.2 Structured Logging
+- Switch to `logrus` in Go (`sirupsen/logrus`) and `logging` with JSON formatters in Python.
+- Add context (e.g., user ID, request ID) to logs.
+- Centralize logs for aggregation (e.g., to Elasticsearch).
+
+#### 7.3 Recovery Mechanisms
+- Add retries with backoff for network/DB calls (e.g., `backoff` in Go, `tenacity` in Python).
+- Implement fallbacks (e.g., default models in inference-engine).
+- Use circuit breakers to prevent cascade failures.
+- Add health checks and graceful shutdowns.
+
+#### 7.4 Code Patterns
+- Go: Early returns, `defer` for cleanup, custom error types.
+- Python: try-except-else-finally, avoid bare except, raise custom exceptions.
+- Add unit tests for error scenarios.
+
+### Affected Files
+| File | Changes |
+|------|---------|
+| `services/review-api/api/handler.go` | Sanitize errors, add wrapping |
+| `services/log-collector/api/handler.go` | Sanitize errors |
+| `services/inference-engine/main.py` | Sanitize exceptions, add fallbacks |
+| `services/review-api/go.mod` | Add logging/error libraries |
+| `services/inference-engine/requirements.txt` | Add tenacity for retries |
+| `ml-pipeline/train_model.py` | Add error handling with checkpoints |
+
+### Testing
+1. Simulate failures (e.g., DB disconnect) → verify generic responses and logged details.
+2. Test retries → verify backoff on transient errors.
+3. Crash scenarios → verify graceful shutdown and no data loss.
+4. Logging → verify structured output with context.
+
+### Rating of Existing System
+On a scale of 1-10 (10 being fully compliant), the current system scores **5/10**. Strengths: Basic exception handling in Python; some logging in Go services. Weaknesses: Exposed exception details in APIs (fixed partially); no retries or structured logging; inconsistent patterns; ML pipelines lack recovery. Prioritizing sanitization and logging will improve this to 8/10 with moderate effort.
+
+---
