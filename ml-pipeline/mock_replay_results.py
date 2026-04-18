@@ -1,11 +1,4 @@
-"""
-mock_replay_results.py
-Generates a mock replay_results.jsonl from the curated JSONL files,
-adding empty/inferred Coraza fields so the pipeline can run without Coraza.
 
-Usage:
-    python mock_replay_results.py
-"""
 
 import json
 import os
@@ -26,11 +19,7 @@ INPUT_FILES = [
 
 
 def add_empty_coraza_fields(record: dict) -> dict:
-    """
-    Add empty Coraza fields so the pipeline schema is satisfied.
-    The model will train purely on payload/request structure features
-    extracted from the real HTTP request data.
-    """
+    
     return {
         **record,
         "coraza_fired_rule_ids": [],
