@@ -1,39 +1,23 @@
-﻿// Sign In Page JavaScript
-
 (function() {
     'use strict';
 
-    // DOM Elements
     const signinForm = document.getElementById('signin-form');
     const alertBox = document.getElementById('alert');
     const signinBtn = document.getElementById('signin-btn');
 
-    // Configuration
     const AUTH_SERVICE_URL = '/api/v1/auth/login';
     const DASHBOARD_URL = '/events';
 
-    /**
-     * Show alert message
-     * @param {string} type - 'danger' or 'success'
-     * @param {string} message - The message to display
-     */
     function showAlert(type, message) {
         alertBox.className = `signin-alert signin-alert-${type}`;
         alertBox.textContent = message;
         alertBox.style.display = 'block';
     }
 
-    /**
-     * Hide alert message
-     */
     function hideAlert() {
         alertBox.style.display = 'none';
     }
 
-    /**
-     * Set button loading state
-     * @param {boolean} loading - Whether the button is loading
-     */
     function setLoading(loading) {
         if (loading) {
             signinBtn.textContent = 'Signing in...';
@@ -44,11 +28,6 @@
         }
     }
 
-    /**
-     * Store authentication data
-     * @param {string} token - Access token
-     * @param {object} user - User data
-     */
     function storeAuthData(token, user) {
         localStorage.setItem('access_token', token);
         if (user && user.refresh_token) {
@@ -57,27 +36,18 @@
         localStorage.setItem('user', JSON.stringify(user));
     }
 
-    /**
-     * Handle successful login
-     * @param {object} data - Response data from auth service
-     */
     function handleLoginSuccess(data) {
         storeAuthData(data.access_token, {
             ...data.user,
             refresh_token: data.refresh_token,
         });
         showAlert('success', 'Sign in successful! Redirecting...');
-        
+
         setTimeout(() => {
             window.location.href = DASHBOARD_URL;
         }, 500);
     }
 
-    /**
-     * Attempt to authenticate with the auth service
-     * @param {string} email - User email
-     * @param {string} password - User password
-     */
     async function authenticate(email, password) {
         try {
             const response = await fetch(AUTH_SERVICE_URL, {
@@ -103,10 +73,6 @@
         }
     }
 
-    /**
-     * Handle form submission
-     * @param {Event} e - Form submit event
-     */
     function handleFormSubmit(e) {
         e.preventDefault();
 
@@ -119,50 +85,53 @@
         authenticate(email, password);
     }
 
-    /**
-     * Show coming soon notification
-     * @param {Event} e - Click event (optional)
-     */
     window.showComingSoon = function(e) {
         if (e) e.preventDefault();
         showAlert('danger', 'Feature coming soon. Please use email sign in.');
     };
 
-    /**
-     * Check if user is already authenticated
-     */
-    function checkExistingAuth() {
+    async function checkExistingAuth() {
         const token = localStorage.getItem('access_token');
-        if (token) {
-            // User already has a token, redirect to dashboard
-            window.location.href = DASHBOARD_URL;
+        if (!token) {
+            return;
         }
+
+        try {
+            const response = await fetch('/api/v1/auth/me', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+
+            if (response.ok) {
+                window.location.href = DASHBOARD_URL;
+                return;
+            }
+        } catch (_) {
+        }
+
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
     }
 
-    /**
-     * Initialize the sign in page
-     */
-    function init() {
-        // Check for existing authentication
-        checkExistingAuth();
+    async function init() {
+        await checkExistingAuth();
 
-        // Attach form submit handler
         if (signinForm) {
             signinForm.addEventListener('submit', handleFormSubmit);
         }
 
-        // Focus email input on page load
         const emailInput = document.getElementById('email');
         if (emailInput) {
             setTimeout(() => emailInput.focus(), 100);
         }
     }
 
-    // Initialize when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
         init();
     }
 })();
-
