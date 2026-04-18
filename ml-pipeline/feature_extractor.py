@@ -1,11 +1,4 @@
-"""
-WAFFeatureExtractor — scikit-learn compatible transformer for Coraza WAF audit data.
 
-Transforms raw Coraza-enriched request dicts into fixed-length numeric feature vectors
-for model training and inference.
-
-Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7
-"""
 
 from __future__ import annotations
 
@@ -19,9 +12,6 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 
-# ---------------------------------------------------------------------------
-# Fixed encoding maps
-# ---------------------------------------------------------------------------
 
 METHOD_MAP: Dict[str, int] = {
     "GET": 0,
@@ -49,17 +39,13 @@ SEVERITY_WEIGHTS: Dict[str, int] = {
 
 SPECIAL_CHARS = set("%'\"<>{}")
 
-# Patterns for encoding artifacts
 _ENCODING_PATTERN = re.compile(r"%[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}|\\x[0-9A-Fa-f]{2}")
 
 
-# ---------------------------------------------------------------------------
-# Helper functions
-# ---------------------------------------------------------------------------
 
 
 def _shannon_entropy(text: str) -> float:
-    """Compute Shannon entropy of a string."""
+    
     if not text:
         return 0.0
     total = len(text)
@@ -74,7 +60,7 @@ def _shannon_entropy(text: str) -> float:
 
 
 def _special_char_ratio(text: str) -> float:
-    """Ratio of special characters to total characters."""
+    
     if not text:
         return 0.0
     special_count = sum(1 for ch in text if ch in SPECIAL_CHARS)
@@ -82,18 +68,18 @@ def _special_char_ratio(text: str) -> float:
 
 
 def _has_encoding_artifacts(uri: str, body: str) -> bool:
-    """True if URI or body contains %XX, \\uXXXX, or \\xXX patterns."""
+    
     combined = (uri or "") + (body or "")
     return bool(_ENCODING_PATTERN.search(combined))
 
 
 def _non_printable_count(text: str) -> int:
-    """Count non-printable characters (ord < 32 or ord == 127)."""
+    
     return sum(1 for ch in text if ord(ch) < 32 or ord(ch) == 127)
 
 
 def _uri_depth(uri: str) -> int:
-    """Count path segments (depth) of a URI."""
+    
     try:
         path = urlparse(uri).path
         segments = [s for s in path.split("/") if s]
@@ -103,7 +89,7 @@ def _uri_depth(uri: str) -> int:
 
 
 def _query_param_count(uri: str) -> int:
-    """Count query parameters in a URI."""
+    
     try:
         query = urlparse(uri).query
         if not query:
@@ -114,7 +100,7 @@ def _query_param_count(uri: str) -> int:
 
 
 def _max_param_value_length(uri: str, body: str) -> int:
-    """Maximum length of any query or body parameter value."""
+    
     max_len = 0
     try:
         query = urlparse(uri).query
@@ -135,14 +121,13 @@ def _max_param_value_length(uri: str, body: str) -> int:
 
 
 def _encode_content_type(headers: Any) -> int:
-    """Encode content-type header as integer."""
+    
     if not headers:
         return -2
     ct = ""
     if isinstance(headers, dict):
         ct = headers.get("Content-Type", headers.get("content-type", ""))
     elif isinstance(headers, str):
-        # Try to parse "Key: Value\nKey: Value" format
         for line in headers.splitlines():
             if ":" in line:
                 key, _, val = line.partition(":")
@@ -151,13 +136,12 @@ def _encode_content_type(headers: Any) -> int:
                     break
     if not ct:
         return -2
-    # Normalize: strip parameters (e.g. "; charset=utf-8")
     ct_base = ct.split(";")[0].strip().lower()
     return CONTENT_TYPE_MAP.get(ct_base, -1)
 
 
 def _header_count(headers: Any) -> int:
-    """Count the number of headers."""
+    
     if not headers:
         return 0
     if isinstance(headers, dict):
@@ -191,43 +175,18 @@ def _is_rce_rule(rule_id: str, message: str) -> bool:
     return "rce" in rid or "932" in rid or "rce" in msg or "932" in msg
 
 
-# ---------------------------------------------------------------------------
-# WAFFeatureExtractor
-# ---------------------------------------------------------------------------
 
 
 class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
-    """
-    Scikit-learn compatible transformer that converts Coraza-enriched request
-    dicts into fixed-length numeric feature vectors.
-
-    fit() learns the set of CRS rule IDs seen in training data.
-    transform() produces a consistent feature matrix for training and serving.
-    """
+    
 
     def __init__(self) -> None:
-        # Fitted state
         self.rule_ids_: Optional[List[str]] = None
         self.feature_names_: Optional[List[str]] = None
 
-    # ------------------------------------------------------------------
-    # Scikit-learn interface
-    # ------------------------------------------------------------------
 
     def fit(self, X: Union[List[Dict], pd.DataFrame], y=None) -> "WAFFeatureExtractor":
-        """
-        Learn the set of CRS rule IDs present in training data.
-
-        Parameters
-        ----------
-        X : list of dicts or DataFrame
-            Training samples in Coraza-enriched format.
-        y : ignored
-
-        Returns
-        -------
-        self
-        """
+        
         records = self._to_records(X)
         seen_rule_ids: set = set()
         for record in records:
@@ -238,23 +197,12 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X: Union[Dict, List[Dict], pd.DataFrame]) -> np.ndarray:
-        """
-        Transform samples into a numeric feature matrix.
-
-        Parameters
-        ----------
-        X : single dict, list of dicts, or DataFrame
-
-        Returns
-        -------
-        np.ndarray of shape (n_samples, n_features)
-        """
+        
         if self.rule_ids_ is None:
             raise RuntimeError(
                 "WAFFeatureExtractor must be fitted before calling transform()."
             )
 
-        # Handle single dict
         if isinstance(X, dict):
             return self._extract_row(X).reshape(1, -1)
 
@@ -265,46 +213,35 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
     def fit_transform(
         self, X: Union[List[Dict], pd.DataFrame], y=None, **fit_params
     ) -> np.ndarray:
-        """Fit and transform in one step."""
+        
         return self.fit(X, y).transform(X)
 
     def get_feature_names_out(self) -> List[str]:
-        """Return feature names (requires fitted state)."""
+        
         if self.feature_names_ is None:
             raise RuntimeError("WAFFeatureExtractor must be fitted first.")
         return list(self.feature_names_)
 
-    # ------------------------------------------------------------------
-    # Serialization
-    # ------------------------------------------------------------------
 
     def save(self, path: str) -> None:
-        """Serialize fitted extractor to a joblib file."""
+        
         joblib.dump(self, path)
 
     @classmethod
     def load(cls, path: str) -> "WAFFeatureExtractor":
-        """Deserialize a fitted extractor from a joblib file."""
+        
         obj = joblib.load(path)
         if not isinstance(obj, cls):
             raise TypeError(f"Expected WAFFeatureExtractor, got {type(obj)}")
         return obj
 
-    # ------------------------------------------------------------------
-    # Schema parity validation
-    # ------------------------------------------------------------------
 
     @staticmethod
     def validate_parity(
         training_schema: Dict[str, Any],
         serving_schema: Dict[str, Any],
     ) -> List[str]:
-        """
-        Compare two Feature_Schema dicts and return a list of discrepancies.
-        Returns an empty list when schemas are identical.
-
-        Checks: feature names, data types, group membership, value ranges.
-        """
+        
         discrepancies: List[str] = []
 
         training_features = training_schema.get("features", {})
@@ -344,7 +281,6 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
                     f"Feature '{key}' range mismatch: training={t_range!r}, serving={s_range!r}."
                 )
 
-        # Top-level version check
         t_version = training_schema.get("version")
         s_version = serving_schema.get("version")
         if t_version != s_version:
@@ -354,12 +290,9 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
 
         return discrepancies
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
 
     def _to_records(self, X: Union[List[Dict], pd.DataFrame]) -> List[Dict]:
-        """Normalise input to a list of dicts."""
+        
         if isinstance(X, pd.DataFrame):
             return X.to_dict(orient="records")
         if isinstance(X, list):
@@ -367,14 +300,12 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
         raise TypeError(f"Unsupported input type: {type(X)}")
 
     def _build_feature_names(self) -> List[str]:
-        """Build the ordered list of feature names after fitting."""
+        
         names: List[str] = []
 
-        # Rule features — binary indicators
         for rid in self.rule_ids_:
             names.append(f"rule_{rid}")
 
-        # Rule features — family counts + weighted sum + total
         names += [
             "num_sqli_rules",
             "num_xss_rules",
@@ -384,14 +315,12 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
             "total_rule_count",
         ]
 
-        # Anomaly score features
         names += [
             "anomaly_score",
             "anomaly_score_normalized",
             "is_above_threshold",
         ]
 
-        # Request structure features
         names += [
             "method_int",
             "uri_length",
@@ -403,7 +332,6 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
             "header_count",
         ]
 
-        # Payload statistical features
         names += [
             "special_char_ratio",
             "shannon_entropy",
@@ -415,7 +343,7 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
         return names
 
     def _extract_row(self, record: Dict) -> np.ndarray:
-        """Extract all features from a single record dict."""
+        
         features: List[float] = []
 
         raw_rule_ids = record.get("fired_rule_ids", [])
@@ -426,8 +354,6 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
         except TypeError:
             fired_rule_ids = []
 
-        # rule_severities and rule_messages may be dicts (keyed by rule_id)
-        # or lists (parallel to fired_rule_ids) — handle both
         raw_sev = record.get("rule_severities")
         if isinstance(raw_sev, dict):
             rule_severities: Dict[str, str] = raw_sev
@@ -460,11 +386,9 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
 
         fired_set = set(fired_rule_ids)
 
-        # --- Rule features: binary indicators ---
         for rid in self.rule_ids_:
             features.append(1.0 if rid in fired_set else 0.0)
 
-        # --- Rule features: family counts ---
         num_sqli = 0
         num_xss = 0
         num_lfi = 0
@@ -493,7 +417,6 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
             float(len(fired_rule_ids)),
         ]
 
-        # --- Anomaly score features ---
         if inbound_threshold > 0:
             normalized = anomaly_score / inbound_threshold
         else:
@@ -502,7 +425,6 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
 
         features += [anomaly_score, normalized, is_above]
 
-        # --- Request structure features ---
         method_int = float(METHOD_MAP.get(method, -1))
         uri_length = float(len(uri))
         uri_depth = float(_uri_depth(uri))
@@ -523,7 +445,6 @@ class WAFFeatureExtractor(BaseEstimator, TransformerMixin):
             header_count,
         ]
 
-        # --- Payload statistical features ---
         combined = uri + body
         special_ratio = _special_char_ratio(combined)
         entropy = _shannon_entropy(combined)
