@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import argparse
@@ -51,8 +49,6 @@ DEFAULT_PARQUET_PATH = os.path.join(
 ECE_BINS = 10
 COLORS = ["steelblue", "darkorange", "green", "crimson"]
 CANDIDATE_NAMES = ["xgboost", "lightgbm", "random_forest", "logistic_regression"]
-
-
 
 
 def _fig_to_b64(fig: plt.Figure) -> str:
@@ -130,8 +126,6 @@ def evaluate_model(calibrator, X_test, y_test, df_test) -> Dict[str, Any]:
         "brier_score": float(brier_score_loss(y_test, y_prob)),
         "per_family": per_family,
     }
-
-
 
 
 def plot_roc_comparison(results: Dict[str, Dict]) -> str:
@@ -313,8 +307,6 @@ def plot_per_family_heatmap(results: Dict[str, Dict], metric: str = "fnr") -> st
     return _fig_to_b64(fig)
 
 
-
-
 def generate_html(
     version: int,
     metadata: Dict,
@@ -363,7 +355,11 @@ def generate_html(
         row = f"<tr><td>{m}</td>"
         for n in results:
             v = vals[n]
-            style = " style='background:#e8f7ec;font-weight:700'" if abs(v - best_val) < 1e-9 else ""
+            style = (
+                " style='background:#e8f7ec;font-weight:700'"
+                if abs(v - best_val) < 1e-9
+                else ""
+            )
             row += f"<td{style}>{v:.4f}</td>"
         rows += row + "</tr>"
     comparison_table = f"<table>{header}{rows}</table>"
@@ -444,8 +440,6 @@ def generate_html(
 </html>
 """
     return html
-
-
 
 
 def main():
