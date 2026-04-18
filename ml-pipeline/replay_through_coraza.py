@@ -1,19 +1,4 @@
-"""
-replay_through_coraza.py
-Replays curated HTTP requests through the Coraza WAF proxy and captures audit log entries.
 
-Input:
-  ../data/curated/attack_requests.jsonl
-  ../data/curated/benign_requests.jsonl
-
-Output:
-  ../data/coraza_enriched/replay_results.jsonl
-
-Environment variables:
-  CORAZA_PROXY_URL        — proxy base URL (default: http://localhost:8080)
-  CORAZA_AUDIT_LOG        — path to Coraza audit log file (default: ../proxy-waf/coraza_audit.log)
-  REQUEST_DELAY_SECONDS   — inter-request delay in seconds (default: 0.05)
-"""
 
 import os
 import json
@@ -24,9 +9,6 @@ from datetime import datetime
 import requests
 from typing import Optional
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 DATA_BASE_DIR = os.path.abspath(
@@ -48,23 +30,17 @@ OUTPUT_DIR = os.path.join(DATA_BASE_DIR, "coraza_enriched")
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, "replay_results.jsonl")
 
 MAX_RETRIES = 3
-AUDIT_POLL_TIMEOUT = 5.0  # seconds to wait for a matching audit log entry
-AUDIT_POLL_INTERVAL = 0.1  # seconds between polls
+AUDIT_POLL_TIMEOUT = 5.0
+AUDIT_POLL_INTERVAL = 0.1
 
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Audit log helpers
-# ---------------------------------------------------------------------------
 
 
 def _read_audit_log_lines(path: str) -> list:
-    """Return all lines from the audit log file, or empty list if unavailable."""
+    
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             return f.readlines()
@@ -73,7 +49,7 @@ def _read_audit_log_lines(path: str) -> list:
 
 
 def _parse_audit_entry(line: str) -> Optional[dict]:
-    """Parse a single JSON audit log line. Returns None on parse failure."""
+    
     line = line.strip()
     if not line:
         return None
@@ -84,20 +60,14 @@ def _parse_audit_entry(line: str) -> Optional[dict]:
 
 
 def _extract_coraza_fields(entry: dict) -> dict:
-    """
-    Extract Coraza audit fields from a parsed audit log entry.
-    Handles both flat and nested Coraza JSON audit formats.
-    """
+    
     rule_ids = []
     severities = []
     messages = []
     anomaly_score = 0
 
-    # Coraza JSON audit log format (SecAuditLogFormat JSON)
-    # Top-level keys vary by Coraza version; try common structures.
     transaction = entry.get("transaction", entry)
 
-    # Rules may be under "messages" or "matched_rules" or "rules"
     matched = (
         transaction.get("messages")
         or transaction.get("matched_rules")
@@ -108,7 +78,6 @@ def _extract_coraza_fields(entry: dict) -> dict:
     for rule_entry in matched:
         if not isinstance(rule_entry, dict):
             continue
-        # Rule ID
         rule_id = (
             rule_entry.get("rule_id")
             or rule_entry.get("id")
@@ -117,7 +86,6 @@ def _extract_coraza_fields(entry: dict) -> dict:
         if rule_id is not None:
             rule_ids.append(int(rule_id))
 
-        # Severity
         severity = (
             rule_entry.get("severity")
             or (rule_entry.get("rule", {}) or {}).get("severity")
@@ -125,7 +93,6 @@ def _extract_coraza_fields(entry: dict) -> dict:
         )
         severities.append(str(severity))
 
-        # Message
         message = (
             rule_entry.get("message")
             or rule_entry.get("msg")
@@ -134,7 +101,6 @@ def _extract_coraza_fields(entry: dict) -> dict:
         )
         messages.append(str(message))
 
-    # Anomaly score — may be in producer section or top-level
     producer = transaction.get("producer", {}) or {}
     anomaly_score = int(
         producer.get("anomaly_score")
@@ -153,10 +119,7 @@ def _extract_coraza_fields(entry: dict) -> dict:
 
 
 def _infer_from_response(status_code: int) -> dict:
-    """
-    Fallback: infer Coraza fields from HTTP response status when no audit log
-    entry is available.
-    """
+    
     fired = status_code == 403
     return {
         "coraza_fired_rule_ids": [],
@@ -168,7 +131,7 @@ def _infer_from_response(status_code: int) -> dict:
 
 
 def _empty_coraza_fields() -> dict:
-    """Return empty/zero Coraza fields for unmatched requests."""
+    
     return {
         "coraza_fired_rule_ids": [],
         "coraza_rule_severities": [],
@@ -178,22 +141,13 @@ def _empty_coraza_fields() -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Audit log polling
-# ---------------------------------------------------------------------------
 
 
 def _poll_audit_log(uri: str, sent_at: float, audit_log_path: str) -> Optional[dict]:
-    """
-    Poll the audit log file for a new entry matching `uri` with a timestamp
-    within AUDIT_POLL_TIMEOUT seconds of `sent_at`.
-
-    Returns the parsed Coraza fields dict, or None if no match found.
-    """
+    
     deadline = time.monotonic() + AUDIT_POLL_TIMEOUT
     seen_lines = set()
 
-    # Seed with lines already in the file before we start polling
     initial_lines = _read_audit_log_lines(audit_log_path)
     for line in initial_lines:
         seen_lines.add(line)
@@ -208,7 +162,6 @@ def _poll_audit_log(uri: str, sent_at: float, audit_log_path: str) -> Optional[d
             if entry is None:
                 continue
 
-            # Check URI match
             transaction = entry.get("transaction", entry)
             req_section = transaction.get("request", {}) or {}
             entry_uri = (
@@ -218,21 +171,18 @@ def _poll_audit_log(uri: str, sent_at: float, audit_log_path: str) -> Optional[d
                 or ""
             )
 
-            # Normalise: strip query string for matching if needed
             if uri.split("?")[0] not in entry_uri and uri not in entry_uri:
                 continue
 
-            # Check timestamp proximity
             ts_str = transaction.get("timestamp") or entry.get("timestamp") or ""
             if ts_str:
                 try:
-                    # Coraza timestamps are ISO-8601; parse and compare
                     ts_str_clean = ts_str.replace("Z", "+00:00")
                     entry_ts = datetime.fromisoformat(ts_str_clean).timestamp()
                     if abs(entry_ts - sent_at) > AUDIT_POLL_TIMEOUT:
                         continue
                 except (ValueError, TypeError):
-                    pass  # If we can't parse the timestamp, accept the URI match
+                    pass
 
             return _extract_coraza_fields(entry)
 
@@ -241,17 +191,10 @@ def _poll_audit_log(uri: str, sent_at: float, audit_log_path: str) -> Optional[d
     return None
 
 
-# ---------------------------------------------------------------------------
-# Request sending
-# ---------------------------------------------------------------------------
 
 
 def _send_request(record: dict) -> tuple[int, dict]:
-    """
-    Send a single HTTP request to the Coraza proxy.
-    Returns (status_code, response_headers).
-    Raises requests.RequestException on network failure.
-    """
+    
     method = record.get("method", "GET").upper()
     uri = record.get("uri", "/")
     headers = dict(record.get("headers") or {})
@@ -270,16 +213,10 @@ def _send_request(record: dict) -> tuple[int, dict]:
     return resp.status_code, dict(resp.headers)
 
 
-# ---------------------------------------------------------------------------
-# Core replay logic
-# ---------------------------------------------------------------------------
 
 
 def replay_record(record: dict, audit_log_available: bool) -> dict:
-    """
-    Replay a single request record through Coraza with up to MAX_RETRIES attempts.
-    Returns the enriched output dict.
-    """
+    
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             sent_at = time.time()
@@ -291,7 +228,6 @@ def replay_record(record: dict, audit_log_available: bool) -> dict:
                 )
                 if coraza_fields is not None:
                     break
-                # No match yet — retry
                 logger.debug(
                     "Attempt %d/%d: no audit log match for %s %s",
                     attempt,
@@ -300,7 +236,6 @@ def replay_record(record: dict, audit_log_available: bool) -> dict:
                     record["uri"],
                 )
             else:
-                # No audit log — infer from response immediately
                 coraza_fields = _infer_from_response(status_code)
                 break
 
@@ -318,7 +253,6 @@ def replay_record(record: dict, audit_log_available: bool) -> dict:
                 time.sleep(REQUEST_DELAY_SECONDS * 2)
 
     else:
-        # Exhausted retries without a match
         coraza_fields = None
 
     if coraza_fields is None:
@@ -341,15 +275,11 @@ def replay_record(record: dict, audit_log_available: bool) -> dict:
     return output, matched
 
 
-# ---------------------------------------------------------------------------
-# Main pipeline
-# ---------------------------------------------------------------------------
 
 
 def run_replay():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # Determine if audit log file is accessible
     audit_log_path = os.path.normpath(CORAZA_AUDIT_LOG)
     audit_log_available = os.path.isfile(audit_log_path)
     if audit_log_available:
@@ -393,7 +323,6 @@ def run_replay():
                         out_f.write(json.dumps(output) + "\n")
                     else:
                         unmatched_count += 1
-                        # Per Req 2.5: exclude unmatched from output
                         logger.debug(
                             "Unmatched (excluded): request_id=%s uri=%s",
                             record.get("request_id"),
