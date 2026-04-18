@@ -31,13 +31,11 @@ type AlertDocument struct {
 	HumanLabel     *string                `bson:"human_label" json:"human_label"`
 	RawLog         map[string]interface{} `bson:"raw_log" json:"raw_log"`
 
-	// Inference input fields
 	BodyLength  int               `bson:"body_length" json:"body_length"`
 	HeaderCount int               `bson:"header_count" json:"header_count"`
 	QueryParams map[string]string `bson:"query_params" json:"query_params"`
 	RuleDetails []RuleDetail      `bson:"rule_details" json:"rule_details"`
 
-	// AI enrichment fields
 	AIStatus             string                 `bson:"ai_status" json:"ai_status"`
 	AIScore              *float64               `bson:"ai_score" json:"ai_score"`
 	AIConfidence         *float64               `bson:"ai_confidence" json:"ai_confidence"`
@@ -94,7 +92,6 @@ func ParseCorazaLog(raw []byte) (*AlertDocument, error) {
 		doc.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	}
 
-	// Parse query params from URI
 	doc.QueryParams = make(map[string]string)
 	if doc.URI != "" {
 		if parsed, err := url.Parse(doc.URI); err == nil {
@@ -134,7 +131,6 @@ func ParseCorazaLog(raw []byte) (*AlertDocument, error) {
 							}
 						}
 
-						// Collect rule detail for every rule
 						severity, _ := mData["severity"].(string)
 						detail := RuleDetail{
 							RuleID:   ruleIdStr,
