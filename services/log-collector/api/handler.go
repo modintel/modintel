@@ -36,19 +36,19 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 	opts := options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}).SetLimit(100)
 	cursor, err := collection.Find(ctx, bson.M{}, opts)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	defer cursor.Close(ctx)
 
 	var alerts []parsers.AlertDocument
 	if err = cursor.All(ctx, &alerts); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	if err := json.NewEncoder(w).Encode(bson.M{"alerts": alerts}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
 
@@ -76,7 +76,7 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 		"latest_rule":  lastRule,
 		"status":       "protected",
 	}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
 
@@ -102,7 +102,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":  status,
 		"service": "log-collector",
 	}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
 
@@ -122,6 +122,6 @@ modintel_logs_enriched_total %d
 `, logsProcessedTotal, logsEnrichedTotal)
 
 	if _, err := w.Write([]byte(metrics)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
