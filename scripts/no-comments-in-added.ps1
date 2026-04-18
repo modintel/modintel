@@ -33,7 +33,7 @@ function Get-FileKind {
         ".go" { return "slash" }
         ".css" { return "css" }
         ".scss" { return "css" }
-        ".py" { return "hash" }
+        ".py" { return "python" }
         ".yml" { return "hash" }
         ".yaml" { return "hash" }
         ".ps1" { return "hash" }
@@ -62,6 +62,11 @@ function Test-LineHasComment {
         }
         "css" {
             if ($line -match "//" -or $line -match "/\*" -or $line -match "\*/") {
+                return $true
+            }
+        }
+        "python" {
+            if ($trimmed.StartsWith("#")) {
                 return $true
             }
         }
@@ -112,22 +117,39 @@ foreach ($file in $files) {
         continue
     }
 
-    $diff = git diff --cached --no-color -- "$file" 2>$null
-    if ($LASTEXITCODE -ne 0 -or $null -eq $diff) {
+    $stagedContent = git show --no-color ":$file" 2>$null
+    if ($LASTEXITCODE -ne 0 -or $null -eq $stagedContent) {
         continue
     }
 
+    $hasMultiLineComment = $false
+    if ($kind -eq "python") {
+        if ($stagedContent -match '"""[\s\S]*?"""' -or $stagedContent -match "'''[\s\S]*?'''") {
+            $hasMultiLineComment = $true
+        }
+    }
+    elseif ($kind -eq "slash" -or $kind -eq "css") {
+        if ($stagedContent -match "/\*[\s\S]*?\*/") {
+            $hasMultiLineComment = $true
+        }
+    }
+
+    if ($hasMultiLineComment) {
+        $violations += [PSCustomObject]@{
+            File = $file
+            Line = "multi-line"
+            Text = "Multi-line comment detected"
+        }
+    }
+
     $lineNumber = 0
-    foreach ($line in ($diff -split "`r?`n")) {
+    foreach ($line in ($stagedContent -split "`r?`n")) {
         $lineNumber++
-        if ($line.StartsWith("+") -and -not $line.StartsWith("+++")) {
-            $contentLine = $line.Substring(1)
-            if (Test-LineHasComment -line $contentLine -kind $kind -lineNumber $lineNumber) {
-                $violations += [PSCustomObject]@{
-                    File = $file
-                    Line = $lineNumber
-                    Text = $contentLine.Trim()
-                }
+        if (Test-LineHasComment -line $line -kind $kind -lineNumber $lineNumber) {
+            $violations += [PSCustomObject]@{
+                File = $file
+                Line = $lineNumber
+                Text = $line.Trim()
             }
         }
     }
