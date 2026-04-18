@@ -1,15 +1,4 @@
-"""
-evaluate_model.py
-Multi-model evaluation script — generates a self-contained HTML comparison report.
 
-Usage:
-    python evaluate_model.py ../models/v2
-
-Outputs:
-    reports/model_evaluation_v{N}.html
-
-Requirements: 6.1, 6.2, 6.3
-"""
 
 from __future__ import annotations
 
@@ -64,9 +53,6 @@ COLORS = ["steelblue", "darkorange", "green", "crimson"]
 CANDIDATE_NAMES = ["xgboost", "lightgbm", "random_forest", "logistic_regression"]
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _fig_to_b64(fig: plt.Figure) -> str:
@@ -146,9 +132,6 @@ def evaluate_model(calibrator, X_test, y_test, df_test) -> Dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Multi-model plots
-# ---------------------------------------------------------------------------
 
 
 def plot_roc_comparison(results: Dict[str, Dict]) -> str:
@@ -330,9 +313,6 @@ def plot_per_family_heatmap(results: Dict[str, Dict], metric: str = "fnr") -> st
     return _fig_to_b64(fig)
 
 
-# ---------------------------------------------------------------------------
-# HTML generation
-# ---------------------------------------------------------------------------
 
 
 def generate_html(
@@ -353,22 +333,8 @@ def generate_html(
     trained_at = metadata.get("trained_at", "unknown")
     composite = metadata.get("composite_score", 0.0)
 
-    css = """
-    body{font-family:Arial,sans-serif;margin:40px;background:#f9f9f9;color:#222}
-    h1{color:#2c3e50}h2{color:#34495e;border-bottom:1px solid #ccc;padding-bottom:4px}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-    .grid4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px}
-    .card{background:#fff;border-radius:8px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.1)}
-    .full{grid-column:1/-1}
-    table{border-collapse:collapse;width:100%}
-    th,td{border:1px solid #ddd;padding:7px 10px;text-align:left;font-size:13px}
-    th{background:#2c3e50;color:#fff}tr:nth-child(even){background:#f2f2f2}
-    .meta{font-size:.9em;color:#555;margin-bottom:20px}
-    .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold}
-    .best{background:#27ae60;color:#fff}
-    """
+    css = 
 
-    # Summary comparison table
     metric_keys = [
         "accuracy",
         "precision",
@@ -401,7 +367,7 @@ def generate_html(
         for n in results:
             v = vals[n]
             style = (
-                " style='background:#d5f5e3;font-weight:bold'"
+                " style='background:
                 if abs(v - best_val) < 1e-9
                 else ""
             )
@@ -409,7 +375,6 @@ def generate_html(
         rows += row + "</tr>"
     comparison_table = f"<table>{header}{rows}</table>"
 
-    # Per-family tables per model
     family_sections = ""
     for name, r in results.items():
         fam_header = "<tr><th>Family</th><th>FPR</th><th>FNR</th><th>Count</th></tr>"
@@ -417,68 +382,17 @@ def generate_html(
             f"<tr><td>{f}</td><td>{d['fpr']:.4f}</td><td>{d['fnr']:.4f}</td><td>{d['count']}</td></tr>"
             for f, d in sorted(r["per_family"].items())
         )
-        family_sections += f"""
-        <div class="card">
-          <h3>{name}</h3>
-          <table>{fam_header}{fam_rows}</table>
-        </div>"""
+        family_sections += f
 
     cm_section = "".join(
         f'<div class="card"><h3>{n}</h3>{_img_tag(img, f"CM {n}")}</div>'
         for n, img in cm_images.items()
     )
 
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"/>
-<title>Model Evaluation Report — v{version}</title>
-<style>{css}</style>
-</head>
-<body>
-<h1>Model Evaluation Report — v{version}</h1>
-<div class="meta">
-  <strong>Best model:</strong> {best_name} &nbsp;|&nbsp;
-  <strong>Trained at:</strong> {trained_at} &nbsp;|&nbsp;
-  <strong>Composite score:</strong> {composite:.4f}
-</div>
-
-<h2>Metric Comparison — All Models</h2>
-<div class="card">{comparison_table}</div>
-
-<h2>Metric Bar Chart</h2>
-<div class="card">{_img_tag(img_metrics_bar, "Metrics Bar")}</div>
-
-<h2>ROC &amp; Precision-Recall Curves</h2>
-<div class="grid">
-  <div class="card">{_img_tag(img_roc, "ROC")}</div>
-  <div class="card">{_img_tag(img_pr, "PR")}</div>
-</div>
-
-<h2>Reliability Curves</h2>
-<div class="card">{_img_tag(img_reliability, "Reliability")}</div>
-
-<h2>Confidence Distributions</h2>
-<div class="card">{_img_tag(img_conf_dist, "Confidence")}</div>
-
-<h2>Confusion Matrices</h2>
-<div class="grid4">{cm_section}</div>
-
-<h2>Per-Family FPR Heatmap</h2>
-<div class="card">{_img_tag(img_fpr_heatmap, "FPR Heatmap")}</div>
-
-<h2>Per-Family FNR Heatmap</h2>
-<div class="card">{_img_tag(img_fnr_heatmap, "FNR Heatmap")}</div>
-
-<h2>Per-Family Breakdown — All Models</h2>
-<div class="grid">{family_sections}</div>
-
-</body></html>"""
+    html = f
     return html
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 def main():
@@ -498,12 +412,10 @@ def main():
         int(dir_name[1:]) if dir_name.startswith("v") and dir_name[1:].isdigit() else 0
     )
 
-    # Load metadata and feature extractor
     with open(os.path.join(model_dir, "model_metadata.json")) as f:
         metadata = json.load(f)
     feature_extractor = joblib.load(os.path.join(model_dir, "feature_extractor.joblib"))
 
-    # Load test split
     parquet_path = os.path.abspath(
         os.environ.get("ML_PIPELINE_PARQUET_PATH", DEFAULT_PARQUET_PATH)
     )
@@ -527,12 +439,10 @@ def main():
     X_test = feature_extractor.transform(df_test)
     y_test = (df_test["label"] == "attack").astype(int).values
 
-    # Load all available candidate calibrators
     results: Dict[str, Dict] = {}
     for name in CANDIDATE_NAMES:
         path = os.path.join(model_dir, f"calibrator_{name}.joblib")
         if not os.path.exists(path):
-            # fallback to default calibrator.joblib for best model
             if name == metadata.get("model_name"):
                 path = os.path.join(model_dir, "calibrator.joblib")
             else:
@@ -551,7 +461,6 @@ def main():
         log.error("No models could be evaluated.")
         sys.exit(1)
 
-    # Generate plots
     log.info("Generating plots...")
     img_roc = plot_roc_comparison(results)
     img_pr = plot_pr_comparison(results)
@@ -565,7 +474,6 @@ def main():
         for name, r in results.items()
     }
 
-    # Generate report
     html = generate_html(
         version,
         metadata,
