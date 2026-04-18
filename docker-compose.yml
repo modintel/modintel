@@ -44,8 +44,8 @@ services:
       - modintel_waf-logs:/var/log/coraza:ro
     environment:
       - LOG_FILE_PATH=/var/log/coraza/audit.json
-      - MONGO_URI=mongodb://mongodb:27017/modintel
-      - INFERENCE_ENGINE_URL=http://inference-engine:8083
+      - MONGO_URI=${MONGO_URI}
+      - INFERENCE_ENGINE_URL=${INFERENCE_ENGINE_URL}
     networks:
       - modintel-net
     ports:
@@ -73,16 +73,17 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./proxy-waf/overrides:/waf-overrides
     environment:
-      - MONGO_URI=mongodb://mongodb:27017/modintel
+      - MONGO_URI=${MONGO_URI}
       - JWT_SECRET=${JWT_SECRET}
-      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-joab}
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}
       - WAF_ENGINE=Coraza (Caddy edge)
-      - BACKEND_TARGET=juice-shop:3000
-      - INFERENCE_ENGINE_URL=http://inference-engine:8083
+      - BACKEND_TARGET=${BACKEND_TARGET}
+      - INFERENCE_ENGINE_URL=${INFERENCE_ENGINE_URL}
       - WAF_OVERRIDES_FILE=/waf-overrides/managed-overrides.conf
     networks:
       - modintel-net
     restart: always
+    user: root
 
   health-aggregator:
     build: ./services/health-aggregator
@@ -92,24 +93,25 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - HEALTH_AGG_ADDR=:8090
-      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-joab}
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}
     networks:
       - modintel-net
     restart: always
+    user: root
 
   auth-service:
     build: ./services/auth-service
     ports:
       - "8084:8084"
     environment:
-      - AUTH_PORT=8084
-      - MONGO_URI=mongodb://mongodb:27017/modintel
-      - MONGO_DB_NAME=modintel
+      - AUTH_PORT=${AUTH_PORT}
+      - MONGO_URI=${MONGO_URI}
+      - MONGO_DB_NAME=${MONGO_DB_NAME}
       - JWT_SECRET=${JWT_SECRET}
-      - JWT_ACCESS_EXPIRY=15m
-      - JWT_REFRESH_EXPIRY=168h
-      - BCRYPT_COST=12
-      - RATE_LIMIT_AUTH=5
+      - JWT_ACCESS_EXPIRY=${JWT_ACCESS_EXPIRY}
+      - JWT_REFRESH_EXPIRY=${JWT_REFRESH_EXPIRY}
+      - BCRYPT_COST=${BCRYPT_COST}
+      - RATE_LIMIT_AUTH=${RATE_LIMIT_AUTH}
       - AUTH_BOOTSTRAP_ADMIN_EMAIL=${AUTH_BOOTSTRAP_ADMIN_EMAIL}
       - AUTH_BOOTSTRAP_ADMIN_PASSWORD=${AUTH_BOOTSTRAP_ADMIN_PASSWORD}
       - AUTH_BOOTSTRAP_ADMIN_ROLE=${AUTH_BOOTSTRAP_ADMIN_ROLE}
