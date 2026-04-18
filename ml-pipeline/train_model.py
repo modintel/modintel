@@ -1,20 +1,4 @@
-"""
-train_model.py
-Multi-candidate model training with probability calibration and artifact export.
 
-Usage:
-    python train_model.py
-
-Outputs:
-    models/v{N}/model.joblib
-    models/v{N}/calibrator.joblib
-    models/v{N}/feature_extractor.joblib
-    models/v{N}/feature_schema.json
-    models/v{N}/bootstrap_quantiles.json
-    models/v{N}/model_metadata.json
-
-Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6
-"""
 
 from __future__ import annotations
 
@@ -58,9 +42,6 @@ except ImportError:
 
 from feature_extractor import WAFFeatureExtractor
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 DATA_BASE_DIR = os.path.abspath(
@@ -83,15 +64,11 @@ BOOTSTRAP_SEED = 42
 ECE_BINS = 10
 RANDOM_STATE = 42
 
-# Composite score weights
 W_F1 = 0.4
 W_ECE = 0.3
 W_AUROC = 0.2
 W_FPR = 0.1
 
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -100,9 +77,6 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def sha256_file(path: str) -> str:
@@ -114,7 +88,7 @@ def sha256_file(path: str) -> str:
 
 
 def next_model_version(base_dir: str) -> int:
-    """Return the next version number N by scanning existing models/v{N}/ dirs."""
+    
     os.makedirs(base_dir, exist_ok=True)
     existing = [
         d
@@ -131,7 +105,7 @@ def next_model_version(base_dir: str) -> int:
 
 
 def compute_ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> float:
-    """Expected Calibration Error with equal-width bins."""
+    
     bins = np.linspace(0.0, 1.0, n_bins + 1)
     ece = 0.0
     n = len(y_true)
@@ -149,7 +123,7 @@ def compute_ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> flo
 
 
 def compute_fpr_fnr(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float]:
-    """Compute overall FPR and FNR from binary predictions."""
+    
     tn = int(((y_pred == 0) & (y_true == 0)).sum())
     fp = int(((y_pred == 1) & (y_true == 0)).sum())
     fn = int(((y_pred == 0) & (y_true == 1)).sum())
@@ -164,7 +138,7 @@ def per_family_fpr_fnr(
     y_pred: np.ndarray,
     families: np.ndarray,
 ) -> Dict[str, Dict[str, float]]:
-    """Compute per-attack-family FPR and FNR."""
+    
     result: Dict[str, Dict[str, float]] = {}
     for family in np.unique(families):
         mask = families == family
@@ -181,7 +155,7 @@ def compute_metrics(
     y_prob: np.ndarray,
     families: np.ndarray,
 ) -> Dict[str, Any]:
-    """Compute all required metrics for a candidate on the test split."""
+    
     fpr, fnr = compute_fpr_fnr(y_true, y_pred)
     metrics: Dict[str, Any] = {
         "accuracy": float(accuracy_score(y_true, y_pred)),
@@ -204,7 +178,7 @@ def compute_metrics(
 
 
 def composite_score(metrics: Dict[str, Any]) -> float:
-    """Compute composite selection score: 0.4×F1 + 0.3×(1-ECE) + 0.2×AUROC + 0.1×(1-FPR)."""
+    
     return (
         W_F1 * metrics["f1"]
         + W_ECE * (1.0 - metrics["ece"])
@@ -213,9 +187,6 @@ def composite_score(metrics: Dict[str, Any]) -> float:
     )
 
 
-# ---------------------------------------------------------------------------
-# Bootstrap CI
-# ---------------------------------------------------------------------------
 
 
 def bootstrap_quantiles(
@@ -224,20 +195,7 @@ def bootstrap_quantiles(
     B: int = BOOTSTRAP_B,
     seed: int = BOOTSTRAP_SEED,
 ) -> Dict[str, Any]:
-    """
-    Estimate 95% CI via bootstrap resampling (B iterations) on the calibration set.
-
-    For each bootstrap iteration, resample X_cal with replacement and collect
-    predicted probabilities. Across all B iterations, compute the 2.5th and
-    97.5th percentiles of the bootstrap distribution of mean predicted probability.
-
-    Returns a dict with:
-      - "b": number of bootstrap iterations
-      - "ci_level": 0.95
-      - "quantile_low": 2.5th percentile of bootstrap mean probs
-      - "quantile_high": 97.5th percentile of bootstrap mean probs
-      - "bootstrap_mean_probs": list of B mean predicted probabilities
-    """
+    
     rng = np.random.default_rng(seed)
     n = len(X_cal)
     mean_probs: List[float] = []
@@ -258,13 +216,10 @@ def bootstrap_quantiles(
     }
 
 
-# ---------------------------------------------------------------------------
-# Candidate classifiers
-# ---------------------------------------------------------------------------
 
 
 def build_candidates() -> List[Tuple[str, Any]]:
-    """Return list of (name, unfitted_estimator) tuples."""
+    
     candidates: List[Tuple[str, Any]] = []
 
     if _HAS_XGB:
@@ -330,9 +285,6 @@ def build_candidates() -> List[Tuple[str, Any]]:
     return candidates
 
 
-# ---------------------------------------------------------------------------
-# Data loading and feature extraction
-# ---------------------------------------------------------------------------
 
 
 def load_splits(
@@ -349,18 +301,10 @@ def load_splits(
     np.ndarray,
     WAFFeatureExtractor,
 ]:
-    """
-    Load parquet, fit WAFFeatureExtractor on train split, transform all splits.
-
-    Returns:
-        df_train, df_val, df_test,
-        X_train, X_val, X_test,
-        y_train, y_val, y_test
-    """
+    
     log.info("Loading dataset from %s", parquet_path)
     df = pd.read_parquet(parquet_path)
 
-    # Rename coraza_ prefixed columns to match WAFFeatureExtractor expectations
     rename_map = {
         "coraza_fired_rule_ids": "fired_rule_ids",
         "coraza_rule_severities": "rule_severities",
@@ -405,9 +349,6 @@ def load_splits(
     )
 
 
-# ---------------------------------------------------------------------------
-# Training loop
-# ---------------------------------------------------------------------------
 
 
 def train_and_evaluate(
@@ -420,21 +361,14 @@ def train_and_evaluate(
     y_test: np.ndarray,
     df_test: pd.DataFrame,
 ) -> List[Dict[str, Any]]:
-    """
-    Train each candidate, calibrate on validation split, evaluate on test split.
-    Returns list of result dicts sorted by composite score descending.
-    """
+    
     results: List[Dict[str, Any]] = []
 
-    # Combine train+val for calibration fitting (val is the calibration set)
-    # CalibratedClassifierCV with cv="prefit" fits calibrator on provided data
     for name, base_estimator in candidates:
         log.info("Training candidate: %s", name)
 
-        # 1. Fit base estimator on training split
         base_estimator.fit(X_train, y_train)
 
-        # 2. Apply post-hoc calibration fitted on validation split
         log.info("Calibrating %s on validation split...", name)
         calibrated = CalibratedClassifierCV(
             estimator=base_estimator,
@@ -443,16 +377,13 @@ def train_and_evaluate(
         )
         calibrated.fit(X_val, y_val)
 
-        # 3. Predict on test split
         y_pred = calibrated.predict(X_test)
         y_prob = calibrated.predict_proba(X_test)[:, 1]
 
-        # 4. Get attack families for per-family breakdown
         families = df_test.get(
             "attack_family", pd.Series(["unknown"] * len(df_test))
         ).values
 
-        # 5. Compute metrics
         metrics = compute_metrics(y_test, y_pred, y_prob, families)
         score = composite_score(metrics)
 
@@ -476,14 +407,10 @@ def train_and_evaluate(
             }
         )
 
-    # Sort by composite score descending
     results.sort(key=lambda r: r["composite_score"], reverse=True)
     return results
 
 
-# ---------------------------------------------------------------------------
-# Artifact export
-# ---------------------------------------------------------------------------
 
 
 def export_artifacts(
@@ -495,35 +422,28 @@ def export_artifacts(
     training_config: Dict[str, Any],
     all_results: List[Dict[str, Any]],
 ) -> str:
-    """Export all artifacts to models/v{N}/ and return the output directory path."""
+    
     out_dir = os.path.join(MODELS_BASE_DIR, f"v{version}")
     os.makedirs(out_dir, exist_ok=True)
     log.info("Exporting artifacts to %s", out_dir)
 
-    # model.joblib — the base (uncalibrated) estimator
     joblib.dump(best["base_estimator"], os.path.join(out_dir, "model.joblib"))
 
-    # calibrator.joblib — the CalibratedClassifierCV wrapper
     joblib.dump(best["calibrated_model"], os.path.join(out_dir, "calibrator.joblib"))
 
-    # Save all candidate calibrated models for comparison reporting
     for r in all_results:
         joblib.dump(
             r["calibrated_model"],
             os.path.join(out_dir, f"calibrator_{r['name']}.joblib"),
         )
 
-    # feature_extractor.joblib
     joblib.dump(extractor, os.path.join(out_dir, "feature_extractor.joblib"))
 
-    # feature_schema.json — copy from ml-pipeline
     shutil.copy2(FEATURE_SCHEMA_SRC, os.path.join(out_dir, "feature_schema.json"))
 
-    # bootstrap_quantiles.json
     with open(os.path.join(out_dir, "bootstrap_quantiles.json"), "w") as fh:
         json.dump(bootstrap_q, fh, indent=2)
 
-    # model_metadata.json
     all_candidate_metrics = [
         {
             "name": r["name"],
@@ -567,7 +487,7 @@ def _load_schema_version() -> str:
 
 
 def _json_default(obj: Any) -> Any:
-    """JSON serializer for numpy types."""
+    
     if isinstance(obj, (np.integer,)):
         return int(obj)
     if isinstance(obj, (np.floating,)):
@@ -577,13 +497,9 @@ def _json_default(obj: Any) -> Any:
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:
-    # --- Load data and extract features ---
     (
         df_train,
         df_val,
@@ -597,7 +513,6 @@ def main() -> None:
         extractor,
     ) = load_splits(PARQUET_PATH)
 
-    # --- Build and train candidates ---
     candidates = build_candidates()
     if not candidates:
         log.error(
@@ -623,7 +538,6 @@ def main() -> None:
         best["composite_score"],
     )
 
-    # --- Bootstrap CI on calibration (validation) set ---
     log.info("Computing bootstrap CI (B=%d) on validation set...", BOOTSTRAP_B)
     bootstrap_q = bootstrap_quantiles(best["calibrated_model"], X_val, B=BOOTSTRAP_B)
     log.info(
@@ -632,10 +546,8 @@ def main() -> None:
         bootstrap_q["quantile_high"],
     )
 
-    # --- Determine version ---
     version = next_model_version(MODELS_BASE_DIR)
 
-    # --- Training config for metadata ---
     training_config = {
         "bootstrap_b": BOOTSTRAP_B,
         "ece_bins": ECE_BINS,
@@ -650,7 +562,6 @@ def main() -> None:
         "candidates_trained": [r["name"] for r in results],
     }
 
-    # --- Export artifacts ---
     out_dir = export_artifacts(
         best=best,
         extractor=extractor,
@@ -661,7 +572,6 @@ def main() -> None:
         all_results=results,
     )
 
-    # --- Summary ---
     print("\n=== Training Summary ===")
     print(f"  Best model     : {best['name']}")
     print(f"  Version        : v{version}")
