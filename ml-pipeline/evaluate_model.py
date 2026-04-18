@@ -328,12 +328,9 @@ def generate_html(
     img_fnr_heatmap,
     cm_images: Dict[str, str],
 ) -> str:
-
     best_name = metadata.get("model_name", "unknown")
     trained_at = metadata.get("trained_at", "unknown")
     composite = metadata.get("composite_score", 0.0)
-
-    css = 
 
     metric_keys = [
         "accuracy",
@@ -366,11 +363,7 @@ def generate_html(
         row = f"<tr><td>{m}</td>"
         for n in results:
             v = vals[n]
-            style = (
-                " style='background:
-                if abs(v - best_val) < 1e-9
-                else ""
-            )
+            style = " style='background:#e8f7ec;font-weight:700'" if abs(v - best_val) < 1e-9 else ""
             row += f"<td{style}>{v:.4f}</td>"
         rows += row + "</tr>"
     comparison_table = f"<table>{header}{rows}</table>"
@@ -382,14 +375,74 @@ def generate_html(
             f"<tr><td>{f}</td><td>{d['fpr']:.4f}</td><td>{d['fnr']:.4f}</td><td>{d['count']}</td></tr>"
             for f, d in sorted(r["per_family"].items())
         )
-        family_sections += f
+        family_sections += (
+            f'<div class="card"><h3>Per-family errors: {name}</h3>'
+            f"<table>{fam_header}{fam_rows}</table></div>"
+        )
 
     cm_section = "".join(
         f'<div class="card"><h3>{n}</h3>{_img_tag(img, f"CM {n}")}</div>'
         for n, img in cm_images.items()
     )
 
-    html = f
+    html = f"""
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Model Evaluation v{version}</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 20px; background: #f7f8fa; color: #111; }}
+    .row {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 16px; }}
+    .card {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }}
+    h1, h2, h3 {{ margin: 0 0 10px 0; }}
+    .muted {{ color: #4b5563; }}
+    table {{ border-collapse: collapse; width: 100%; font-size: 14px; }}
+    th, td {{ border: 1px solid #e5e7eb; padding: 8px; text-align: left; }}
+    th {{ background: #f3f4f6; }}
+    .badge {{ display: inline-block; background: #dbeafe; color: #1e3a8a; border-radius: 999px; padding: 2px 8px; font-size: 12px; margin-left: 6px; }}
+    .best {{ background: #dcfce7; color: #166534; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Model Evaluation Report v{version}</h1>
+    <p class="muted">Best model: <b>{best_name}</b> | Trained at: <b>{trained_at}</b> | Composite score: <b>{composite:.4f}</b></p>
+  </div>
+
+  <div class="card">
+    <h2>Metric Comparison</h2>
+    {comparison_table}
+  </div>
+
+  <div class="row">
+    <div class="card"><h3>ROC</h3>{_img_tag(img_roc, "ROC")}</div>
+    <div class="card"><h3>Precision-Recall</h3>{_img_tag(img_pr, "PR")}</div>
+  </div>
+
+  <div class="row">
+    <div class="card"><h3>Reliability</h3>{_img_tag(img_reliability, "Reliability")}</div>
+    <div class="card"><h3>Metrics Bar</h3>{_img_tag(img_metrics_bar, "Metrics")}</div>
+  </div>
+
+  <div class="row">
+    <div class="card"><h3>Confidence Distribution</h3>{_img_tag(img_conf_dist, "Confidence")}</div>
+    <div class="card"><h3>Per-family FPR Heatmap</h3>{_img_tag(img_fpr_heatmap, "FPR Heatmap")}</div>
+    <div class="card"><h3>Per-family FNR Heatmap</h3>{_img_tag(img_fnr_heatmap, "FNR Heatmap")}</div>
+  </div>
+
+  <div class="card">
+    <h2>Confusion Matrices</h2>
+    <div class="row">{cm_section}</div>
+  </div>
+
+  <div class="row">
+    {family_sections}
+  </div>
+</body>
+</html>
+"""
     return html
 
 
