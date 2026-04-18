@@ -219,7 +219,7 @@ func RestartProxyWAF(c *gin.Context) {
 
 	containerID, err := dockerFindComposeServiceContainer(ctx, "proxy-waf")
 	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "proxy-waf container not found", "details": err.Error()})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "proxy-waf container not found"})
 		return
 	}
 
