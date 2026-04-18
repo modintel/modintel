@@ -47,7 +47,7 @@ modintel/
 ├── landing-site/              # Public marketing site (React/Vite)
 ├── dashboard/                 # Admin review dashboard for human triage
 ├── docs/                      # Extensive project documentation
-├── script/                    # Commit hooks and automation scripts
+├── scripts/                   # Commit hooks and automation scripts
 ├── docker-compose.yml         # Dev/Prod orchestration
 ```
 
