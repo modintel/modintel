@@ -1,16 +1,4 @@
-"""
-build_training_dataset.py
-Assembles a validated, versioned training dataset with stratified splits.
 
-Input:
-  ../data/coraza_enriched/replay_results.jsonl
-
-Output:
-  ../data/processed/waf_dataset_v1.parquet
-  ../data/processed/dataset_metadata.json
-
-Requirements: 3.1, 3.2, 3.3, 3.4, 3.5
-"""
 
 import os
 import sys
@@ -23,9 +11,6 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from typing import Optional
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 DATA_BASE_DIR = os.path.abspath(
@@ -51,12 +36,9 @@ REQUIRED_FIELDS = [
     "coraza_anomaly_score",
 ]
 
-MISSING_FIELDS_THRESHOLD = 0.05  # 5%
+MISSING_FIELDS_THRESHOLD = 0.05
 RANDOM_STATE = 42
 
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -65,13 +47,10 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
 
 
 def load_jsonl(path: str) -> list[dict]:
-    """Load a JSONL file and return a list of dicts."""
+    
     records = []
     with open(path, "r", encoding="utf-8") as fh:
         for lineno, line in enumerate(fh, start=1):
@@ -85,16 +64,10 @@ def load_jsonl(path: str) -> list[dict]:
     return records
 
 
-# ---------------------------------------------------------------------------
-# Quality gates
-# ---------------------------------------------------------------------------
 
 
 def gate_missing_fields(df: pd.DataFrame) -> Optional[str]:
-    """
-    Gate: rows missing any required field must not exceed 5% of total rows.
-    Returns a failure message string, or None if the gate passes.
-    """
+    
     missing_mask = df[REQUIRED_FIELDS].isnull().any(axis=1)
     missing_count = int(missing_mask.sum())
     total = len(df)
@@ -108,10 +81,7 @@ def gate_missing_fields(df: pd.DataFrame) -> Optional[str]:
 
 
 def gate_duplicate_ids(df: pd.DataFrame) -> Optional[str]:
-    """
-    Gate: no duplicate request_id values allowed.
-    Returns a failure message string, or None if the gate passes.
-    """
+    
     dupes = df["request_id"].duplicated(keep=False)
     dupe_count = int(dupes.sum())
     if dupe_count > 0:
@@ -124,10 +94,7 @@ def gate_duplicate_ids(df: pd.DataFrame) -> Optional[str]:
 
 
 def gate_label_conflicts(df: pd.DataFrame) -> Optional[str]:
-    """
-    Gate: no request_id should appear with conflicting label values.
-    Returns a failure message string, or None if the gate passes.
-    """
+    
     label_counts = df.groupby("request_id")["label"].nunique()
     conflicts = label_counts[label_counts > 1]
     if len(conflicts) > 0:
@@ -140,7 +107,7 @@ def gate_label_conflicts(df: pd.DataFrame) -> Optional[str]:
 
 
 def run_quality_gates(df: pd.DataFrame) -> list[str]:
-    """Run all quality gates and return a list of failure messages."""
+    
     failures = []
     for gate_fn in [gate_missing_fields, gate_duplicate_ids, gate_label_conflicts]:
         result = gate_fn(df)
@@ -149,17 +116,10 @@ def run_quality_gates(df: pd.DataFrame) -> list[str]:
     return failures
 
 
-# ---------------------------------------------------------------------------
-# Stratified splitting
-# ---------------------------------------------------------------------------
 
 
 def stratified_split(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Split df into 70/15/15 train/validation/test, stratified by attack_family.
-    Families with fewer than 3 samples fall back to random split.
-    Returns df with a new 'split' column.
-    """
+    
     family_counts = df["attack_family"].value_counts()
     small_families = family_counts[family_counts < 3].index.tolist()
 
@@ -172,19 +132,17 @@ def stratified_split(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["split"] = ""
 
-    # Separate small-family rows from stratifiable rows
     small_mask = df["attack_family"].isin(small_families)
     df_small = df[small_mask].copy()
     df_main = df[~small_mask].copy()
 
     def _split_chunk(chunk: pd.DataFrame, stratify_col: Optional[str]) -> pd.DataFrame:
-        """Apply 70/15/15 split to a chunk, returning it with 'split' set."""
+        
         if len(chunk) == 0:
             return chunk
 
         stratify = chunk[stratify_col] if stratify_col else None
 
-        # First split: 70% train, 30% temp
         try:
             train_idx, temp_idx = train_test_split(
                 chunk.index,
@@ -193,7 +151,6 @@ def stratified_split(df: pd.DataFrame) -> pd.DataFrame:
                 stratify=stratify,
             )
         except ValueError:
-            # Fallback if stratification still fails (e.g. single sample)
             train_idx, temp_idx = train_test_split(
                 chunk.index,
                 test_size=0.30,
@@ -203,11 +160,9 @@ def stratified_split(df: pd.DataFrame) -> pd.DataFrame:
         temp = chunk.loc[temp_idx]
         stratify_temp = temp[stratify_col] if stratify_col else None
 
-        # Second split: 50/50 val/test from the 30% temp
-        # Guard: if temp has only 1 sample, assign it to validation
         if len(temp) < 2:
             val_idx = temp.index
-            test_idx = temp.index[:0]  # empty
+            test_idx = temp.index[:0]
         else:
             try:
                 val_idx, test_idx = train_test_split(
@@ -236,13 +191,10 @@ def stratified_split(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-# ---------------------------------------------------------------------------
-# Metadata helpers
-# ---------------------------------------------------------------------------
 
 
 def sha256_file(path: str) -> str:
-    """Return the SHA-256 hex digest of a file."""
+    
     h = hashlib.sha256()
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(65536), b""):
@@ -251,7 +203,7 @@ def sha256_file(path: str) -> str:
 
 
 def build_metadata(df: pd.DataFrame, parquet_path: str) -> dict:
-    """Build the dataset_metadata.json payload."""
+    
     row_counts = {
         split: int((df["split"] == split).sum())
         for split in ["train", "validation", "test"]
@@ -261,7 +213,6 @@ def build_metadata(df: pd.DataFrame, parquet_path: str) -> dict:
     for split in ["train", "validation", "test"]:
         split_df = df[df["split"] == split]
         label_distribution[split] = split_df["label"].value_counts().to_dict()
-        # Ensure values are plain Python ints
         label_distribution[split] = {
             k: int(v) for k, v in label_distribution[split].items()
         }
@@ -280,9 +231,6 @@ def build_metadata(df: pd.DataFrame, parquet_path: str) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:
@@ -294,14 +242,12 @@ def main() -> None:
 
     df = pd.DataFrame(records)
 
-    # Ensure all required columns exist (missing ones become NaN)
     for col in REQUIRED_FIELDS:
         if col not in df.columns:
             df[col] = None
 
     log.info("Loaded %d records", len(df))
 
-    # --- Quality gates ---
     log.info("Running quality gates...")
     failures = run_quality_gates(df)
     if failures:
@@ -313,22 +259,18 @@ def main() -> None:
         sys.exit(1)
     log.info("All quality gates passed.")
 
-    # --- Stratified split ---
     log.info("Generating stratified 70/15/15 splits by attack_family...")
     df = stratified_split(df)
 
-    # --- Write parquet ---
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     log.info("Writing parquet to %s", PARQUET_FILE)
     df.to_parquet(PARQUET_FILE, index=False, engine="pyarrow")
 
-    # --- Write metadata ---
     metadata = build_metadata(df, PARQUET_FILE)
     log.info("Writing metadata to %s", METADATA_FILE)
     with open(METADATA_FILE, "w", encoding="utf-8") as fh:
         json.dump(metadata, fh, indent=2)
 
-    # --- Summary ---
     print("\n=== Dataset Build Summary ===")
     print(f"  Total rows   : {metadata['total_rows']}")
     print(f"  Train        : {metadata['row_counts']['train']}")
