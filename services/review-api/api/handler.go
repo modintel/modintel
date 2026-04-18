@@ -224,8 +224,6 @@ func RestartProxyWAF(c *gin.Context) {
 	}
 
 	go func(id string) {
-		// Give the API response a moment to leave before restarting proxy-waf,
-		// otherwise the user can get a dropped connection from the edge restart.
 		time.Sleep(750 * time.Millisecond)
 		bgCtx, cancelBg := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancelBg()
