@@ -12,3 +12,8 @@ async function generateDataset() {
         setTimeout(() => btn.textContent = 'Generate', 2000);
     }, 2000);
 }
+
+const generateDatasetBtn = document.getElementById('generate-dataset-btn');
+if (generateDatasetBtn) {
+    generateDatasetBtn.addEventListener('click', generateDataset);
+}
