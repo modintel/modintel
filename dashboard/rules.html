@@ -65,8 +65,8 @@
                         placeholder="SecRule ARGS &quot;@rx pattern&quot; &quot;id:990100,phase:2,pass,log,msg:'Rule description'&quot;"></textarea>
                 </div>
                 <div class="form-actions">
-                    <button class="btn btn-primary" onclick="saveRule()">Add Rule</button>
-                    <button class="btn btn-secondary" onclick="clearRuleForm()">Clear</button>
+                    <button class="btn btn-primary" id="save-rule-btn" type="button">Add Rule</button>
+                    <button class="btn btn-secondary" id="clear-rule-btn" type="button">Clear</button>
                 </div>
             </div>
         </div>
@@ -77,8 +77,7 @@
                     Security Signatures</div>
                 <div class="restart-notice-wrap">
                     <div class="restart-notice">Changes require WAF restart to take effect.</div>
-                    <button class="btn btn-secondary restart-btn" id="restart-waf-btn" type="button"
-                        onclick="restartWAF()">Restart WAF</button>
+                    <button class="btn btn-secondary restart-btn" id="restart-waf-btn" type="button">Restart WAF</button>
                 </div>
             </div>
             <div class="log-scroll">
