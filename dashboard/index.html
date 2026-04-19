@@ -31,7 +31,7 @@
             <a href="/settings">Settings</a>
         </div>
         <div class="nav-actions">
-            <button class="btn btn-primary" id="sync-btn" onclick="handleSync()">
+            <button class="btn btn-primary" id="sync-btn">
                 <svg id="sync-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                     stroke-width="2.5">
                     <path d="M21 2v6h-6" />
@@ -51,8 +51,8 @@
                         and
                         Coraza audit logs.</p>
                     <div class="hero-actions">
-                        <button class="btn btn-primary" onclick="location.reload()">Refresh</button>
-                        <button class="btn btn-danger" onclick="showClearModal()">Clear Logs</button>
+                        <button class="btn btn-primary" id="refresh-btn">Refresh</button>
+                        <button class="btn btn-danger" id="clear-logs-btn">Clear Logs</button>
                     </div>
 
                     <div id="clear-modal" class="modal">
@@ -61,8 +61,8 @@
                             <h3>Clear All Logs?</h3>
                             <p>This will permanently delete all alerts from the database.</p>
                             <div class="modal-actions">
-                                <button class="btn btn-secondary" onclick="hideClearModal()">Cancel</button>
-                                <button class="btn btn-danger" onclick="confirmClearLogs()">Delete All</button>
+                                <button class="btn btn-secondary" id="clear-modal-cancel">Cancel</button>
+                                <button class="btn btn-danger" id="clear-modal-confirm">Delete All</button>
                             </div>
                         </div>
                     </div>
@@ -116,7 +116,6 @@
                     style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
                     Real-time Detection Stream</div>
                 <input type="text" id="stream-search" placeholder="Search logs..."
-                    oninput="handleStreamSearch(this.value)"
                     style="padding: 0.4rem 0.8rem; font-size: 0.8rem; border: 0.8px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg-subtle); outline: none; width: 260px;">
             </div>
             <div class="log-scroll">
