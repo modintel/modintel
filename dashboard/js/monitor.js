@@ -13,16 +13,26 @@ const HEALTH_ENDPOINTS = {
 };
 
 function generateChartPoints(data, width, height, padding) {
-    if (!data || data.length === 0) {
-        data = new Array(20).fill(0);
+    let values = Array.isArray(data)
+        ? data.map((value) => {
+            const n = Number(value);
+            return Number.isFinite(n) ? n : 0;
+        })
+        : [];
+
+    if (values.length === 0) {
+        values = new Array(20).fill(0);
+    } else if (values.length === 1) {
+        values = [values[0], values[0]];
     }
-    const max = Math.max(...data, 1);
-    const min = Math.min(...data, 0);
+
+    const max = Math.max(...values, 1);
+    const min = Math.min(...values, 0);
     const range = max - min || 1;
 
-    const step = (width - padding * 2) / (data.length - 1);
+    const step = (width - padding * 2) / (values.length - 1);
 
-    const points = data.map((val, i) => {
+    const points = values.map((val, i) => {
         const x = padding + i * step;
         const y = height - padding - ((val - min) / range) * (height - padding * 2);
         return `${x},${y}`;
