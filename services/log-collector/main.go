@@ -10,18 +10,25 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/nxadm/tail"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"modintel.local/log-collector/api"
 	"modintel.local/log-collector/db"
 	"modintel.local/log-collector/parsers"
 )
+
+type writeModel struct {
+	alertKey string
+	docMap   map[string]interface{}
+}
 
 func inferenceEngineURL() string {
 	if u := os.Getenv("INFERENCE_ENGINE_URL"); u != "" {
@@ -152,7 +159,7 @@ func enrichWithAI(doc *parsers.AlertDocument) bool {
 func main() {
 	_ = godotenv.Load("../../.env")
 
-	db.Connect()
+	// db.Connect()
 
 	go api.Serve()
 
@@ -185,72 +192,98 @@ func main() {
 		Poll:      false,
 		Location:  &tail.SeekInfo{Offset: 0, Whence: 2},
 	})
-
 	if err != nil {
-		log.Fatalf("Failed to tail log file: %v", err)
+		log.Printf("failed to tail log file: %v", err)
+		return
 	}
 
 	collection := db.GetCollection("modintel", "alerts")
 
-	for line := range t.Lines {
-		if line.Err != nil {
-			log.Printf("Error reading tail line: %v", line.Err)
-			continue
+	writeCh := make(chan writeModel, 256)
+
+	var closeOnce sync.Once
+	closeWrite := func() { closeOnce.Do(func() { close(writeCh) }) }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+		select {
+		case <-sigCh:
+			log.Println("Shutting down...")
+			cancel()
+		case <-ctx.Done():
 		}
+	}()
 
-		if line.Text == "" {
-			continue
-		}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		bulkWriter(ctx, collection, writeCh)
+	}()
 
-		doc, err := parsers.ParseCorazaLog([]byte(line.Text))
-		if err != nil {
-			log.Printf("Failed to parse log line: %v (line: %s)", err, line.Text)
-			continue
-		}
-
-		alertKey := uniqueAlertKey(doc)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		var existing bson.M
-		err = collection.FindOne(ctx, bson.M{"alert_key": alertKey}).Decode(&existing)
-		cancel()
-
-		if err == nil && existing["ai_status"] == "enriched" {
-			log.Printf("Skipping already-enriched alert (key=%s, uri=%s)", alertKey, doc.URI)
-			continue
-		}
-
-		if err == nil {
-			log.Printf("Alert exists but not enriched (key=%s), re-enriching...", alertKey)
-		}
-
-		enriched := enrichWithAI(doc)
-
-		docJSON, err := json.Marshal(doc)
-		if err != nil {
-			log.Printf("Failed to marshal doc: %v", err)
+	for {
+		select {
+		case <-ctx.Done():
+			closeWrite()
+			wg.Wait()
 			return
-		}
-		var docMap map[string]interface{}
-		if err := json.Unmarshal(docJSON, &docMap); err != nil {
-			log.Printf("Failed to unmarshal doc: %v", err)
-			return
-		}
-		docMap["alert_key"] = alertKey
+		case line, ok := <-t.Lines:
+			if !ok {
+				closeWrite()
+				wg.Wait()
+				return
+			}
+			if line.Err != nil {
+				log.Printf("Error reading tail line: %v", line.Err)
+				continue
+			}
+			if line.Text == "" {
+				continue
+			}
 
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		_, err = collection.UpdateOne(
-			ctx,
-			bson.M{"alert_key": alertKey},
-			bson.M{"$set": docMap},
-			options.Update().SetUpsert(true),
-		)
-		cancel()
+			doc, err := parsers.ParseCorazaLog([]byte(line.Text))
+			if err != nil {
+				log.Printf("Failed to parse log line: %v (line: %s)", err, line.Text)
+				continue
+			}
 
-		if err != nil {
-			log.Printf("Failed to upsert alert to MongoDB: %v", err)
-		} else if enriched {
-			log.Printf("Successfully ingested WAF log: %s", doc.URI)
+			alertKey := uniqueAlertKey(doc)
+			dedupCtx, dedupCancel := context.WithTimeout(ctx, 5*time.Second)
+			var existing bson.M
+			err = collection.FindOne(dedupCtx, bson.M{"alert_key": alertKey}).Decode(&existing)
+			dedupCancel()
+			if err == nil && existing["ai_status"] == "enriched" {
+				log.Printf("Skipping already-enriched alert (key=%s, uri=%s)", alertKey, doc.URI)
+				continue
+			}
+			if err == nil {
+				log.Printf("Alert exists but not enriched (key=%s), re-enriching...", alertKey)
+			}
+
+			enrichWithAI(doc)
+
+			raw, err := bson.Marshal(doc)
+			if err != nil {
+				log.Printf("Failed to marshal doc: %v", err)
+				continue
+			}
+
+			var docMap bson.M
+			if err := bson.Unmarshal(raw, &docMap); err != nil {
+				log.Printf("Failed to unmarshal doc: %v", err)
+				continue
+			}
+			docMap["alert_key"] = alertKey
+
+			select {
+			case writeCh <- writeModel{alertKey: alertKey, docMap: docMap}:
+			default:
+				log.Printf("Write channel full, dropping alert key=%s", alertKey)
+			}
 		}
 	}
 }
