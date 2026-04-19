@@ -13,7 +13,7 @@
 
 <b>Modintel</b> is a hybrid Web Application Firewall (WAF) research system designed to reduce false positives in rule-based WAFs using Machine Learning. 
 
-It functions as an intelligence layer that sits alongside the OWASP Core Rule Set (CRS) running on Coraza (The modern ModSecurity). 
+It functions as an intelligence layer that sits alongside the OWASP Core Rule Set (CRS) running on Coraza. 
 
   <br/>
 
@@ -28,63 +28,140 @@ Rule-based systems are excellent at catching known attacks, but struggle with nu
 ModIntel combines both:
 **Rules detect (catch known attacks) → ML judges (handles nuance) → Humans verify (edge cases).**
 
-## Core Architecture
 
-Incoming traffic passes through a Caddy reverse proxy into the Coraza WAF engine. When Coraza flags a request based on the OWASP CRS, the extracted features are sent to a local ML inference engine. 
+### Traffic Flow
 
-- High-confidence attacks are blocked instantly.
-- Verified safe anomalies are allowed through.
-- Edge cases are routed to a human-review dashboard. 
-  - **Security Analysts** use the dashboard to triage alerts and verify false positives.
-  - **Administrators** use the dashboard to manage users, Monitor system health, and oversee model performance.
+1. Incoming requests hit Caddy then pass through Coraza WAF with OWASP CRS + 31 custom rules
+2. Coraza writes audit events to `/var/log/coraza/audit.json`
+3. **Log Collector** tails the audit log, extracts features, and sends them to the **Inference Engine**
+4. Inference Engine returns an advisory prediction (attack probability, confidence, SHAP explanations, priority band)
+5. Log Collector enriches the alert document and upserts it into **MongoDB**
+6. **Review API** serves alerts, rules, stats, and WAF management endpoints to the **Dashboard**
+7. **Auth Service** handles login, JWT tokens, sessions, and RBAC
+8. **Health Aggregator** continuously probes all services and streams Docker events
+
+
+## Dashboard
+
+A 10-page interface served statically via Caddy:
+
+| Route | Purpose |
+|-------|---------|
+| `/signin` | JWT-based authentication |
+| `/events` | Alert list with AI enrichment data |
+| `/rules` | WAF rule browser and management |
+| `/monitor` | Real-time service health monitoring |
+| `/training` | ML model training interface |
+| `/datasets` | Dataset management |
+| `/reports` | Evaluation report viewer |
+| `/settings` | System configuration |
+| `/help` | Documentation |
+
 ## Directory Structure
 
 ```text
 modintel/
-├── proxy-waf/                 # Caddy reverse proxy & Coraza WAF config
-├── services/                  # Backend microservices (log-collector, inference-engine)
-├── ml-pipeline/               # Python ML models, datasets, and notebooks
-├── landing-site/              # Public marketing site (React/Vite)
-├── dashboard/                 # Admin review dashboard for human triage
-├── docs/                      # Extensive project documentation
-├── scripts/                   # Commit hooks and automation scripts
-├── docker-compose.yml         # Dev/Prod orchestration
+├── proxy-waf/                 # Caddy + Coraza WAF configuration
+│   ├── Caddyfile              # Reverse proxy, routing, dashboard hosting
+│   ├── coraza.conf            # Coraza WAF base config
+│   ├── custom_rules.conf      # 31 custom SecRules
+│   └── overrides/             # Managed overrides (runtime rule disabling)
+├── services/
+│   ├── auth-service/          # Go — JWT auth, RBAC, session management
+│   ├── review-api/            # Go — Alert/rule/stats CRUD API
+│   ├── log-collector/         # Go — Coraza log tailing + AI enrichment
+│   ├── inference-engine/      # Python/FastAPI — ML inference serving
+│   ├── health-aggregator/     # Go — Service health aggregation
+│   └── proxy-waf-custom/      # Custom Caddy Docker build
+├── ml-pipeline/               # Python — Training, evaluation, datasets
+│   ├── feature_extractor.py   # WAFFeatureExtractor (sklearn transformer)
+│   ├── train_model.py         # Multi-model training + calibration
+│   ├── evaluate_model.py      # Evaluation report generator (HTML)
+│   ├── feature_schema.json    # Feature contract (v1.0.0)
+│   └── tests/                 # pytest test suite
+├── models/
+│   ├── v1/                    # Model version 1
+│   ├── v2/                    # Model version 2
+│   └── v3/                    # Model version 3 (current)
+├── dashboard/                 # Static HTML/CSS/JS admin dashboard
+├── scripts/                   # Commit hooks and attack testing suite
+├── docs/                      # SRS, SDS, AI plan, auth guide
+├── .github/workflows/         # CI/CD pipelines (lint, test, e2e, docker, codeql)
+├── docker-compose.yml         # Full 8-service orchestration
+├── lefthook.yml               # Git commit hooks
+├── todo.md                    # Scalability roadmap
+└── .env.example               # Environment variable template
 ```
 
 ## Technology Stack
 
 - **Reverse Proxy**: Caddy
 - **WAF Engine**: Coraza (OWASP CRS)
-- **Log Ingestion & Edge APIs**: Go
-- **ML Infrastructure**: Python (Random Forest/XGBoost exported to ONNX)
+- **Backend Services**: Go (Gin framework)
+- **ML Inference**: Python (FastAPI, scikit-learn, SHAP)
+- **ML Training**: XGBoost, LightGBM, Random Forest, Logistic Regression
 - **Database**: MongoDB
-- **Dashboard**: HTML/CSS/JS
+- **Dashboard**: HTML/CSS/JS (static, served via Caddy)
+- **Orchestration**: Docker Compose (8 services)
+
+## CI/CD
+
+7 GitHub Actions workflows on the `modintel-base` branch:
+
+| Workflow | Description |
+|----------|-------------|
+| **Lint** | Go lint (golangci-lint), Python lint (ruff), YAML lint, format checks |
+| **Test** | Go tests (race detector, Go 1.22/1.23/1.26), Python tests (3.11/3.12), build verification |
+| **E2E** | Docker Compose build, start, health check, integration test |
+| **Docker** | Docker image builds |
+| **CodeQL** | Security analysis |
+| **Link Check** | Documentation link validation |
 
 ## Development Setup
 
 ### Prerequisites
-- Node.js & npm
-- Go
-- Python 3.x
+- Go 1.22+
+- Python 3.11+
 - Docker & Docker Compose
+- Node.js & npm (for commit hooks)
+
+### Quick Start
+
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+The WAF proxy will be available at `http://localhost:8080` and the dashboard at `http://localhost:3000`.
 
 ### Commit Hooks
 This project uses [lefthook](https://github.com/evilmartians/lefthook) for commit validation.
 
-To install hooks:
 ```bash
 npm install
 npx lefthook install
 ```
 
-Hooks enforce:
-- **Commit message format**: `type(scope): message` (e.g., `feat: add new feature`)
-- **No comments in new code**: Added files must not contain comments
+### Attack Testing
 
-## Auth & Deployment Docs
+Run the 47-payload attack suite against the WAF:
 
-- `docs/AUTHENTICATION_GUIDE.md` - auth flow, RBAC, sessions, and quick verification commands
-- `docs/DEPLOYMENT_CHECKLIST.md` - operational checklist before production deployment
+```powershell
+.\scripts\attack_suite.ps1 -RunCount 1
+```
+
+## Roadmap
+
+See [todo.md](todo.md) and open GitHub issues (#14–#21):
+
+- **#14** Connection Pooling & Timeouts
+- **#15** Cursor and Offset-based Pagination
+- **#16** Distributed Caching with Redis
+- **#17** Asynchronous Buffered Logging
+- **#18** Dashboard Access Control Hardening
+- **#19** Unified Error Handling & Crash Recovery
+- **#20** Rule Management Refactor
+- **#21** Real-Time Alerts with WebSocket
 
 ## License
 
