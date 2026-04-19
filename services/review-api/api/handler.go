@@ -56,10 +56,21 @@ var (
 			Help: "Total inference requests through review-api",
 		},
 	)
-	totalRequests atomic.Uint64
-	totalErrors   atomic.Uint64
-	requestStats  = newRequestWindowStats()
-	ruleIDPattern = regexp.MustCompile(`^[0-9]+$`)
+	totalRequests    atomic.Uint64
+	totalErrors      atomic.Uint64
+	requestStats     = newRequestWindowStats()
+	ruleIDPattern    = regexp.MustCompile(`^[0-9]+$`)
+	restartInFlight  atomic.Bool
+	dockerHTTPClient = &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				dialer := &net.Dialer{}
+				return dialer.DialContext(ctx, "unix", "/var/run/docker.sock")
+			},
+			DisableKeepAlives: true,
+		},
+		Timeout: 15 * time.Second,
+	}
 )
 
 type requestMinuteBucket struct {
@@ -214,17 +225,23 @@ type dockerContainerInfo struct {
 }
 
 func RestartProxyWAF(c *gin.Context) {
+	if !restartInFlight.CompareAndSwap(false, true) {
+		c.JSON(http.StatusAccepted, gin.H{"success": true, "service": "proxy-waf", "status": "restart_already_queued"})
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
 	defer cancel()
 
 	containerID, err := dockerFindComposeServiceContainer(ctx, "proxy-waf")
 	if err != nil {
+		restartInFlight.Store(false)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "proxy-waf container not found"})
 		return
 	}
 
 	go func(id string) {
-		time.Sleep(750 * time.Millisecond)
+		defer restartInFlight.Store(false)
 		bgCtx, cancelBg := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancelBg()
 		if restartErr := dockerRestartContainer(bgCtx, id); restartErr != nil {
@@ -233,17 +250,6 @@ func RestartProxyWAF(c *gin.Context) {
 	}(containerID)
 
 	c.JSON(http.StatusAccepted, gin.H{"success": true, "service": "proxy-waf", "status": "restart_queued"})
-}
-
-func dockerClient(timeout time.Duration) *http.Client {
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			dialer := &net.Dialer{}
-			return dialer.DialContext(ctx, "unix", "/var/run/docker.sock")
-		},
-	}
-
-	return &http.Client{Transport: transport, Timeout: timeout}
 }
 
 func dockerFindComposeServiceContainer(ctx context.Context, service string) (string, error) {
@@ -270,7 +276,7 @@ func dockerFindComposeServiceContainer(ctx context.Context, service string) (str
 		return "", err
 	}
 
-	resp, err := dockerClient(10 * time.Second).Do(req)
+	resp, err := dockerHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -299,7 +305,7 @@ func dockerRestartContainer(ctx context.Context, containerID string) error {
 		return err
 	}
 
-	resp, err := dockerClient(12 * time.Second).Do(req)
+	resp, err := dockerHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
