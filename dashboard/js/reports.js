@@ -190,5 +190,10 @@ function generateReport() {
     URL.revokeObjectURL(url);
 }
 
+const generateReportBtn = document.getElementById('generate-report-btn');
+if (generateReportBtn) {
+    generateReportBtn.addEventListener('click', generateReport);
+}
+
 setInterval(refreshReports, 5000);
 refreshReports();
