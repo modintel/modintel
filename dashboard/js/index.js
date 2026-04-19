@@ -149,6 +149,36 @@ function handleSync() {
     }, 1000);
 }
 
+const syncBtn = document.getElementById('sync-btn');
+if (syncBtn) {
+    syncBtn.addEventListener('click', handleSync);
+}
+
+const refreshBtn = document.getElementById('refresh-btn');
+if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => window.location.reload());
+}
+
+const clearLogsBtn = document.getElementById('clear-logs-btn');
+if (clearLogsBtn) {
+    clearLogsBtn.addEventListener('click', showClearModal);
+}
+
+const clearCancelBtn = document.getElementById('clear-modal-cancel');
+if (clearCancelBtn) {
+    clearCancelBtn.addEventListener('click', hideClearModal);
+}
+
+const clearConfirmBtn = document.getElementById('clear-modal-confirm');
+if (clearConfirmBtn) {
+    clearConfirmBtn.addEventListener('click', confirmClearLogs);
+}
+
+const streamSearchInput = document.getElementById('stream-search');
+if (streamSearchInput) {
+    streamSearchInput.addEventListener('input', (e) => handleStreamSearch(e.target.value));
+}
+
 function generateGraphPoints(data) {
     const max = Math.max(...data, 1);
     const width = 300;
