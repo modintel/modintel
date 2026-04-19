@@ -1010,6 +1010,23 @@ type systemMetricsData struct {
 	MongoDBAlertCount   int64   `json:"mongodb_alert_count"`
 }
 
+func toInt64(v interface{}) (int64, bool) {
+	switch n := v.(type) {
+	case int:
+		return int64(n), true
+	case int32:
+		return int64(n), true
+	case int64:
+		return n, true
+	case float32:
+		return int64(n), true
+	case float64:
+		return int64(n), true
+	default:
+		return 0, false
+	}
+}
+
 var serviceStartTime = time.Now()
 
 func getSystemMetrics(ctx context.Context) systemMetricsData {
@@ -1058,12 +1075,14 @@ func getSystemMetrics(ctx context.Context) systemMetricsData {
 			metrics.MongoDBAlertCount = count
 		}
 
-		var result bson.M
-		collStatsCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		var dbStats bson.M
+		dbStatsCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
-		err = alertColl.Database().RunCommand(collStatsCtx, bson.D{{Key: "collStats", Value: "alerts"}}).Decode(&result)
+		err = db.Client.Database(dbName).RunCommand(dbStatsCtx, bson.D{{Key: "dbStats", Value: 1}}).Decode(&dbStats)
 		if err == nil {
-			if size, ok := result["size"].(int64); ok {
+			if size, ok := toInt64(dbStats["storageSize"]); ok && size > 0 {
+				metrics.MongoDBDatabaseSize = size
+			} else if size, ok := toInt64(dbStats["dataSize"]); ok {
 				metrics.MongoDBDatabaseSize = size
 			}
 		}
