@@ -4,6 +4,11 @@ function saveProfile() {
     showModal('Profile Saved', 'Profile updated: ' + name + ' (' + email + ')');
 }
 
+const saveProfileBtn = document.getElementById('save-profile-btn');
+if (saveProfileBtn) {
+    saveProfileBtn.addEventListener('click', saveProfile);
+}
+
 function formatSessionDate(value) {
     if (!value) return '-';
     const d = new Date(value);
