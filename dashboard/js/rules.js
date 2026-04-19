@@ -438,6 +438,21 @@
         showModal('Not implemented', 'Custom rule creation UI is not wired yet. Use API-backed managed overrides for now.');
     };
 
+    const saveRuleBtn = document.getElementById('save-rule-btn');
+    if (saveRuleBtn) {
+        saveRuleBtn.addEventListener('click', window.saveRule);
+    }
+
+    const clearRuleBtn = document.getElementById('clear-rule-btn');
+    if (clearRuleBtn) {
+        clearRuleBtn.addEventListener('click', window.clearRuleForm);
+    }
+
+    const restartWafBtn = document.getElementById('restart-waf-btn');
+    if (restartWafBtn) {
+        restartWafBtn.addEventListener('click', window.restartWAF);
+    }
+
     loadRules();
     updateRestartButtonState();
 })();
