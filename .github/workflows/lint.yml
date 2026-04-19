@@ -20,6 +20,9 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: '1.26'
+          cache-dependency-path: |
+            services/log-collector/go.mod
+            services/review-api/go.mod
 
       - name: Install golangci-lint
         run: |
@@ -87,6 +90,9 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: '1.26'
+          cache-dependency-path: |
+            services/log-collector/go.mod
+            services/review-api/go.mod
 
       - name: Check log-collector formatting
         run: cd services/log-collector && gofmt -l .
