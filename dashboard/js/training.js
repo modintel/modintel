@@ -19,3 +19,8 @@ async function trainModel() {
         setTimeout(() => btn.textContent = 'Start Training', 2000);
     }, 3000);
 }
+
+const trainModelBtn = document.getElementById('train-model-btn');
+if (trainModelBtn) {
+    trainModelBtn.addEventListener('click', trainModel);
+}
