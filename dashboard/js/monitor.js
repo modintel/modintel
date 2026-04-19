@@ -246,7 +246,7 @@ function updateChartLabels(range) {
 }
 
 async function handleSync() {
-    const btn = event.target.closest('button');
+    const btn = document.getElementById('sync-btn');
     const icon = document.getElementById('sync-icon');
     btn.classList.add('syncing');
     requestRateHistory = [];
@@ -256,6 +256,11 @@ async function handleSync() {
     setTimeout(() => {
         btn.classList.remove('syncing');
     }, 500);
+}
+
+const syncBtn = document.getElementById('sync-btn');
+if (syncBtn) {
+    syncBtn.addEventListener('click', handleSync);
 }
 
 document.querySelectorAll('.time-range-buttons .graph-btn').forEach(btn => {
