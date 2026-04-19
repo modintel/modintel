@@ -90,6 +90,18 @@
         showAlert('danger', 'Feature coming soon. Please use email sign in.');
     };
 
+    function bindComingSoonLinks() {
+        const forgotPasswordLink = document.getElementById('forgot-password-link');
+        if (forgotPasswordLink) {
+            forgotPasswordLink.addEventListener('click', window.showComingSoon);
+        }
+
+        const requestAccessLink = document.getElementById('request-access-link');
+        if (requestAccessLink) {
+            requestAccessLink.addEventListener('click', window.showComingSoon);
+        }
+    }
+
     async function checkExistingAuth() {
         const token = localStorage.getItem('access_token');
         if (!token) {
@@ -127,6 +139,8 @@
         if (emailInput) {
             setTimeout(() => emailInput.focus(), 100);
         }
+
+        bindComingSoonLinks();
     }
 
     if (document.readyState === 'loading') {
