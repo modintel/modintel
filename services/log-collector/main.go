@@ -159,7 +159,7 @@ func enrichWithAI(doc *parsers.AlertDocument) bool {
 func main() {
 	_ = godotenv.Load("../../.env")
 
-	// db.Connect()
+	db.Connect()
 
 	go api.Serve()
 
