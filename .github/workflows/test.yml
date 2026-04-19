@@ -26,6 +26,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
+          cache-dependency-path: services/${{ matrix.service }}/go.mod
 
       - name: Test log-collector
         if: matrix.service == 'log-collector'
@@ -83,6 +84,9 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: '1.26'
+          cache-dependency-path: |
+            services/log-collector/go.mod
+            services/review-api/go.mod
 
       - name: Build log-collector
         run: cd services/log-collector && go build -o /tmp/log-collector .
