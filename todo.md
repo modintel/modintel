@@ -1174,3 +1174,118 @@ Add structured logs for connect/disconnect/reconnect/fallback transitions.
 - Automatic reconnect and polling fallback behavior is reliable.
 - WS channel enforces authentication/authorization and does not bypass §5 controls.
 - Real-time path remains operational when change streams are unavailable (fallback mode).
+
+---
+
+## 9. Production Security Hardening (Runtime + Plane Separation)
+
+### Goal
+Harden runtime security and strictly separate public traffic handling (data plane) from administrative surfaces (management plane), so one edge compromise cannot cascade into full environment takeover.
+
+### Scope
+- Container runtime hardening (non-root, capabilities, filesystem, privileges)
+- Compose/network boundary design (public vs internal services)
+- Dashboard serving path moved away from `proxy-waf`
+- Management API exposure controls (allowlist/reverse proxy/auth gates)
+- Secrets and config hygiene for deployment
+
+### Current Risks
+- Some services still run with root privileges.
+- Dashboard static assets are served from the traffic-facing stack.
+- Management services may be reachable too broadly.
+- Secret handling relies on local discipline without strong guardrails.
+- Startup ordering may allow partial boot with unavailable dependencies.
+
+### Target Architecture
+
+#### Data Plane
+- `proxy-waf` is public-facing and handles only protected app traffic.
+- No dashboard/admin static assets mounted into `proxy-waf`.
+- Minimal runtime privileges and read-only filesystem where possible.
+
+#### Management Plane
+- Dashboard + management APIs served by `review-api` (or dedicated admin-web service).
+- Exposed via separate host/path and strict access controls.
+- Internal services stay on private Docker network by default.
+
+### Implementation Steps
+
+#### 9.1 Run Services as Non-Root
+- Update Dockerfiles with explicit non-root `USER`.
+- In Compose, enforce `user: "<uid>:<gid>"` for runtime.
+- Ensure writable paths use explicit owned volumes only.
+
+#### 9.2 Harden Container Runtime
+- Add `read_only: true` where service allows.
+- Add `cap_drop: ["ALL"]` and selectively add only required caps.
+- Set `security_opt: ["no-new-privileges:true"]`.
+- Avoid `privileged: true` and avoid mounting `docker.sock`.
+
+#### 9.3 Separate Dashboard from proxy-waf
+- Remove dashboard volume mount from `proxy-waf`.
+- Serve dashboard static build from `review-api` (or dedicated admin-web).
+- Keep `proxy-waf` focused on WAF + reverse proxy only.
+
+#### 9.4 Lock Down Management Exposure
+- Publish only required public ports.
+- Put management endpoints behind dedicated reverse-proxy route/host.
+- Restrict management ingress with IP allowlist/VPN where applicable.
+- Enforce authenticated access and deny-by-default route policy.
+
+#### 9.5 Network Segmentation in Compose
+- Create distinct networks:
+  - `public_net` for edge-facing services only
+  - `private_net` for internal APIs/datastores
+- Attach MongoDB/auth/internal services only to `private_net` unless explicitly required.
+
+#### 9.6 Secrets and Env Hygiene
+- Move secrets to runtime env injection or secret manager.
+- Keep `.env.example` in repo; keep real `.env` out of git.
+- Add secret scanning in CI and pre-commit checks.
+
+#### 9.7 Health-Gated Startup
+- Add `healthcheck` to critical services.
+- Use `depends_on` with `condition: service_healthy` where supported.
+- Fail fast when dependencies are unavailable instead of silent degraded boot.
+
+#### 9.8 Observability + Audit Controls
+- Log and metric events for auth failures, denied management access, and config drift.
+- Add startup logs showing effective hardening config (uid/gid, readonly, caps).
+- Alert on unexpected privileged settings in deployed manifests.
+
+### Affected Files
+| File | Changes |
+|------|---------|
+| `docker-compose.yml` | Add users, security opts, caps, read-only fs, network segmentation, health-gated dependencies |
+| `proxy-waf/Dockerfile` | Create non-root runtime user and permissions |
+| `services/review-api/Dockerfile` | Ensure non-root user and minimal writable paths |
+| `services/auth-service/Dockerfile` | Ensure non-root user and reduced privileges |
+| `proxy-waf/Caddyfile` | Keep only edge/public routing; remove dashboard serving concerns |
+| `services/review-api/main.go` | Serve dashboard static assets securely (or route to admin-web) |
+| `.env.example` | Document non-secret runtime config values |
+| `.gitignore` | Ensure `.env` and secret files are excluded |
+| `.github/workflows/*.yml` | Add secret scanning and deployment hardening checks |
+
+### Verification
+1. `docker compose ps` confirms all app services run as non-root UID/GID.
+2. Container inspection confirms `no-new-privileges`, dropped caps, and read-only fs where configured.
+3. `proxy-waf` container no longer contains dashboard mount/path.
+4. Dashboard is reachable only through management route/service, not edge WAF path.
+5. Internal services are not reachable from public interface/ports.
+6. Secrets are absent from git history and excluded from future commits.
+7. Service startup waits for healthy dependencies and fails clearly when dependencies are down.
+8. Authz-denied and access-control logs/metrics appear in monitoring.
+
+### Rollout Plan
+- Phase 1: Non-root + runtime hardening in staging.
+- Phase 2: Dashboard serving migration and network split.
+- Phase 3: Management exposure restrictions and allowlists.
+- Phase 4: CI enforcement (secret scan + hardening policy checks).
+- Phase 5: Production cutover with rollback plan and smoke tests.
+
+### Acceptance Criteria
+- No critical service runs as root in production.
+- Public-facing `proxy-waf` does not serve or mount dashboard/admin assets.
+- Management plane is isolated and access-controlled.
+- Secrets are not committed and are managed via secure runtime injection.
+- Startup and runtime guardrails prevent insecure drift.
