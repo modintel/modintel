@@ -81,7 +81,7 @@ body::before {
     pointer-events: none;
     z-index: 9999;
     opacity: 0.035;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http:%2F%2Fwww.w3.org%2F2000%2Fsvg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
     background-repeat: repeat;
     background-size: 256px 256px;
 }
@@ -508,4 +508,46 @@ td {
 
 .modal-title-error {
     color: var(--danger);
+}
+
+@media (max-width: 1265px) {
+    body > * {
+        display: none !important;
+    }
+
+    body::before {
+        display: none;
+    }
+
+    html::before {
+        content: "";
+        position: fixed;
+        left: 50%;
+        top: calc(50% - 110px);
+        transform: translateX(-50%);
+        z-index: 100000;
+        width: 80px;
+        height: 80px;
+        background-image: url("../favicon.svg");
+        background-size: contain;
+        background-repeat: no-repeat;
+        background-position: center;
+        pointer-events: none;
+    }
+
+    body::after {
+        content: "Open on wider screen for best experience";
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        background: var(--bg);
+        display: grid;
+        place-items: center;
+        padding: 2rem;
+        text-align: center;
+        color: var(--accent);
+        font-size: clamp(1.1rem, 2vw, 1.55rem);
+        font-weight: 700;
+        line-height: 1.25;
+    }
 }
