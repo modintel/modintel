@@ -34,3 +34,6 @@ ml-pipeline/notebooks/.ipynb_checkpoints/
 
 # Generated WAF overrides
 proxy-waf/overrides/managed-overrides.conf
+
+#md files
+dist-plan.md
