@@ -1,6 +1,3 @@
-/* Sign In Page Styles */
-
-/* Override main.css body styles - must use body.signin-page to target body with class */
 body.signin-page {
     --bg-signin: #ffffff;
     
@@ -17,7 +14,6 @@ body.signin-page {
     position: static;
 }
 
-/* Remove noise overlay for signin page */
 body.signin-page::before {
     display: none;
 }
@@ -33,7 +29,6 @@ body.signin-page::before {
     border: 1.5px solid rgba(0, 0, 0, 0.15);
 }
 
-/* Left Side - Full Orange Brand Section */
 .brand-section-orange {
     flex: 1;
     background: var(--accent);
@@ -52,10 +47,17 @@ body.signin-page::before {
     margin-bottom: 32px;
 }
 
+.form-section .brand-logo-top {
+    color: var(--accent);
+    position: absolute;
+    top: 40px;
+    left: 56px;
+}
+
 .brand-logo-top svg {
     width: 100%;
     height: 100%;
-    stroke: #ffffff;
+    stroke: currentColor;
 }
 
 .brand-content {
@@ -116,7 +118,6 @@ body.signin-page::before {
     padding-top: 40px;
 }
 
-/* Right Side - Form */
 .form-section {
     flex: 1;
     display: flex;
@@ -125,15 +126,18 @@ body.signin-page::before {
     align-items: center;
     background: var(--bg-signin);
     padding: 40px 56px;
+    position: relative;
 }
 
 .form-wrapper {
     width: 100%;
     max-width: 360px;
+    margin-top: 40px;
 }
 
 .form-header {
     margin-bottom: 40px;
+    text-align: center;
 }
 
 .form-title {
@@ -289,7 +293,6 @@ body.signin-page::before {
     color: var(--success);
 }
 
-/* Responsive */
 @media (max-width: 900px) {
     body.signin-page {
         padding: 0;
