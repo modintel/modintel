@@ -204,6 +204,9 @@
 
     const PENDING_RESTART_KEY = 'rules_pending_restart';
     let hasPendingRestart = localStorage.getItem(PENDING_RESTART_KEY) === '1';
+    let currentPage = 1;
+    let totalPages = 1;
+    const pageSize = 50;
 
     function applyRuleDeepLink() {
         const params = new URLSearchParams(window.location.search);
@@ -328,20 +331,35 @@
         return row;
     }
 
-    async function loadRules() {
+    async function loadRules(page = 1) {
         const tbody = document.getElementById('rules-tbody');
         if (!tbody) {
             return;
         }
-        tbody.innerHTML = '';
+        tbody.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
 
         try {
-            const response = await apiFetch('/api/rules');
+            const response = await apiFetch(`/api/rules?page=${page}&limit=${pageSize}`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
             const payload = await response.json();
-            const rules = Array.isArray(payload) ? payload : (payload?.data?.rules || []);
+            
+            let rules;
+            if (payload.data) {
+                rules = payload.data;
+                currentPage = payload.page || 1;
+                totalPages = payload.total_pages || 1;
+            } else if (Array.isArray(payload)) {
+                rules = payload;
+                currentPage = 1;
+                totalPages = 1;
+            } else {
+                rules = [];
+            }
+
+            tbody.innerHTML = '';
+            
             if (rules.length === 0) {
                 const row = document.createElement('tr');
                 row.innerHTML = '<td colspan="4">No rules returned by API.</td>';
@@ -353,14 +371,48 @@
                     attachRuleRowBehavior(row);
                 });
             }
+            
+            renderPaginationControls();
         } catch (error) {
             console.error('Failed to load rules from API:', error);
-            const row = document.createElement('tr');
-            row.innerHTML = '<td colspan="4">Failed to load rules from API.</td>';
-            tbody.appendChild(row);
+            tbody.innerHTML = '<td colspan="4">Failed to load rules from API.</td>';
         }
 
         applyRuleDeepLink();
+    }
+
+    function renderPaginationControls() {
+        const container = document.getElementById('pagination-controls');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        if (totalPages <= 1) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'flex';
+
+        const prevBtn = document.createElement('button');
+        prevBtn.textContent = 'Previous';
+        prevBtn.className = 'btn btn-secondary';
+        prevBtn.disabled = currentPage === 1;
+        prevBtn.addEventListener('click', () => loadRules(currentPage - 1));
+        container.appendChild(prevBtn);
+
+        const pageInfo = document.createElement('span');
+        pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+        pageInfo.style.margin = '0 1rem';
+        pageInfo.style.alignSelf = 'center';
+        container.appendChild(pageInfo);
+
+        const nextBtn = document.createElement('button');
+        nextBtn.textContent = 'Next';
+        nextBtn.className = 'btn btn-secondary';
+        nextBtn.disabled = currentPage === totalPages;
+        nextBtn.addEventListener('click', () => loadRules(currentPage + 1));
+        container.appendChild(nextBtn);
     }
 
     function toggleRuleDetails(row) {

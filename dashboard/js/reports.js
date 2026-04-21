@@ -152,7 +152,8 @@ async function refreshReports() {
         const res = await apiFetch(`${apiBase}/logs`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        const alerts = data.alerts || [];
+        // Support both old format (data.alerts) and new pagination format (data.data)
+        const alerts = data.data || data.alerts || [];
 
         renderStats(alerts);
         renderVectors(alerts);

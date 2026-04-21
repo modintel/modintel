@@ -1,5 +1,5 @@
 package api
-
+  
 import (
 	"context"
 	"encoding/json"
@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -208,6 +209,7 @@ func SetupRouter() *gin.Engine {
 	{
 		api.GET("/rules", RequireRoles("admin", "analyst", "viewer"), GetRules)
 		api.PUT("/rules/:id", RequireRoles("admin"), UpdateRuleStatus)
+		api.GET("/alerts", RequireRoles("admin", "analyst", "viewer"), GetAlerts)
 		api.GET("/logs", RequireRoles("admin", "analyst", "viewer"), GetLogs)
 		api.GET("/stats", RequireRoles("admin", "analyst", "viewer"), GetStats)
 		api.GET("/trend", RequireRoles("admin", "analyst", "viewer"), GetTrend)
@@ -333,6 +335,12 @@ func requestTracker() gin.HandlerFunc {
 }
 
 func GetRules(c *gin.Context) {
+	params, err := parseOffsetParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
@@ -359,7 +367,29 @@ func GetRules(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, rules)
+	totalCount := int64(len(rules))
+	totalPages := int((totalCount + int64(params.Limit) - 1) / int64(params.Limit))
+	skip := (params.Page - 1) * params.Limit
+
+	start := skip
+	end := skip + params.Limit
+	if start > len(rules) {
+		start = len(rules)
+	}
+	if end > len(rules) {
+		end = len(rules)
+	}
+	paginatedRules := rules[start:end]
+
+	response := OffsetResponse{
+		Data:       paginatedRules,
+		Page:       params.Page,
+		PageSize:   params.Limit,
+		TotalCount: totalCount,
+		TotalPages: totalPages,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func UpdateRuleStatus(c *gin.Context) {
@@ -624,14 +654,27 @@ func GetTrend(c *gin.Context) {
 }
 
 func GetLogs(c *gin.Context) {
+	params, err := parseCursorParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	filter, err := buildCursorFilter(params.Cursor)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	collection := db.GetCollection("modintel", "alerts")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	opts := options.Find().
-		SetSort(bson.D{{Key: "timestamp", Value: -1}}).
-		SetLimit(500).
+		SetSort(bson.D{{Key: "_id", Value: 1}}).
+		SetLimit(int64(params.Limit + 1)).
 		SetProjection(bson.M{
+			"_id":                    1,
 			"timestamp":              1,
 			"client_ip":              1,
 			"uri":                    1,
@@ -646,7 +689,7 @@ func GetLogs(c *gin.Context) {
 			"ai_entropy":             1,
 			"ai_confidence_interval": 1,
 		})
-	cursor, err := collection.Find(ctx, bson.M{}, opts)
+	cursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
 		log.Println("Error finding logs:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
@@ -659,6 +702,15 @@ func GetLogs(c *gin.Context) {
 		log.Println("Error decoding logs:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 		return
+	}
+
+	var nextCursor *string
+	if len(results) > params.Limit {
+		results = results[:params.Limit]
+		if lastID, ok := results[len(results)-1]["_id"].(primitive.ObjectID); ok {
+			cursorStr := lastID.Hex()
+			nextCursor = &cursorStr
+		}
 	}
 
 	type AlertResponse struct {
@@ -733,7 +785,154 @@ func GetLogs(c *gin.Context) {
 		alerts = append(alerts, alert)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"alerts": alerts})
+	response := CursorResponse{
+		Data:       alerts,
+		NextCursor: nextCursor,
+		Limit:      params.Limit,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+func GetAlerts(c *gin.Context) {
+	params, err := parseCursorParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	filter, err := buildCursorFilter(params.Cursor)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	collection := db.GetCollection("modintel", "alerts")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	opts := options.Find().
+		SetSort(bson.D{{Key: "_id", Value: 1}}).
+		SetLimit(int64(params.Limit + 1)).
+		SetProjection(bson.M{
+			"_id":                    1,
+			"timestamp":              1,
+			"client_ip":              1,
+			"uri":                    1,
+			"anomaly_score":          1,
+			"triggered_rules":        1,
+			"ai_status":              1,
+			"ai_score":               1,
+			"ai_confidence":          1,
+			"ai_priority":            1,
+			"ai_explanation":         1,
+			"ai_model_version":       1,
+			"ai_entropy":             1,
+			"ai_confidence_interval": 1,
+		})
+	cursor, err := collection.Find(ctx, filter, opts)
+	if err != nil {
+		log.Println("Error finding alerts:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var results []map[string]interface{}
+	if err := cursor.All(ctx, &results); err != nil {
+		log.Println("Error decoding alerts:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
+		return
+	}
+
+	var nextCursor *string
+	if len(results) > params.Limit {
+		results = results[:params.Limit]
+		if lastID, ok := results[len(results)-1]["_id"].(primitive.ObjectID); ok {
+			cursorStr := lastID.Hex()
+			nextCursor = &cursorStr
+		}
+	}
+
+	type AlertResponse struct {
+		Timestamp            string                 `json:"timestamp"`
+		ClientIP             string                 `json:"client_ip"`
+		URI                  string                 `json:"uri"`
+		AnomalyScore         float64                `json:"anomaly_score"`
+		TriggeredRules       []string               `json:"triggered_rules"`
+		AIStatus             string                 `json:"ai_status"`
+		AIScore              *float64               `json:"ai_score"`
+		AIConfidence         *float64               `json:"ai_confidence"`
+		AIPriority           *string                `json:"ai_priority"`
+		AIExplanation        map[string]interface{} `json:"ai_explanation"`
+		AIModelVersion       *string                `json:"ai_model_version"`
+		AIEntropy            *float64               `json:"ai_entropy"`
+		AIConfidenceInterval *map[string]float64    `json:"ai_confidence_interval"`
+	}
+
+	alerts := make([]AlertResponse, 0, len(results))
+	for _, r := range results {
+		alert := AlertResponse{
+			Timestamp:      r["timestamp"].(string),
+			ClientIP:       r["client_ip"].(string),
+			URI:            r["uri"].(string),
+			TriggeredRules: []string{},
+		}
+
+		if score, ok := r["anomaly_score"].(float64); ok {
+			alert.AnomalyScore = score
+		}
+
+		if rules, ok := r["triggered_rules"].(bson.A); ok {
+			for _, r := range rules {
+				alert.TriggeredRules = append(alert.TriggeredRules, r.(string))
+			}
+		}
+
+		if status, ok := r["ai_status"].(string); ok {
+			alert.AIStatus = status
+		}
+		if score, ok := r["ai_score"].(float64); ok {
+			alert.AIScore = &score
+		}
+		if conf, ok := r["ai_confidence"].(float64); ok {
+			alert.AIConfidence = &conf
+		}
+		if priority, ok := r["ai_priority"].(string); ok {
+			alert.AIPriority = &priority
+		}
+		if expl, ok := r["ai_explanation"].(map[string]interface{}); ok {
+			alert.AIExplanation = expl
+		}
+		if modelVer, ok := r["ai_model_version"].(string); ok {
+			alert.AIModelVersion = &modelVer
+		}
+		if entropy, ok := r["ai_entropy"].(float64); ok {
+			alert.AIEntropy = &entropy
+		}
+		if ci, ok := r["ai_confidence_interval"].(map[string]interface{}); ok {
+			interval := make(map[string]float64)
+			if low, ok := ci["low"].(float64); ok {
+				interval["low"] = low
+			}
+			if high, ok := ci["high"].(float64); ok {
+				interval["high"] = high
+			}
+			if len(interval) > 0 {
+				alert.AIConfidenceInterval = &interval
+			}
+		}
+
+		alerts = append(alerts, alert)
+	}
+
+	response := CursorResponse{
+		Data:       alerts,
+		NextCursor: nextCursor,
+		Limit:      params.Limit,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func GetStats(c *gin.Context) {

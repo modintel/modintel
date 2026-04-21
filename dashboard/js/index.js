@@ -1,6 +1,9 @@
 const API_BASE = '/api';
 let currentGraphRange = 'day';
 const MAX_VISIBLE_RULES = 5;
+let logsCursor = null;
+let logsHasMore = true;
+let logsLoading = false;
 
 function formatRules(rules) {
     if (!rules || rules.length === 0) return '-';
@@ -50,18 +53,31 @@ async function updateStats() {
     } catch (e) { }
 }
 
-async function updateLogs() {
+async function updateLogs(append = false) {
+    if (logsLoading) return;
+    logsLoading = true;
+
     try {
-        const res = await apiFetch(`${API_BASE}/logs`);
+        const url = logsCursor 
+            ? `${API_BASE}/logs?cursor=${logsCursor}&limit=50`
+            : `${API_BASE}/logs?limit=50`;
+        
+        const res = await apiFetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (!data.alerts) {
+        
+        if (!data.data) {
+            logsLoading = false;
             return;
         }
+
         const tbody = document.getElementById('logs-body');
-        tbody.innerHTML = '';
-        const maxRows = 500;
-        data.alerts.slice(0, maxRows).forEach((alert, i) => {
+        if (!append) {
+            tbody.innerHTML = '';
+            logsCursor = null;
+        }
+
+        data.data.forEach((alert, i) => {
             const row = document.createElement('tr');
             const ts = alert.timestamp ? alert.timestamp.replace(/\//g, '-').replace(' ', 'T') + 'Z' : '-';
             const rules = formatRules(alert.triggered_rules);
@@ -89,12 +105,38 @@ async function updateLogs() {
             `;
             tbody.appendChild(row);
         });
+
+        logsCursor = data.next_cursor || null;
+        logsHasMore = !!data.next_cursor;
+        
+        const loadMoreBtn = document.getElementById('load-more-logs');
+        if (loadMoreBtn) {
+            loadMoreBtn.style.display = logsHasMore ? 'block' : 'none';
+            loadMoreBtn.disabled = false;
+            loadMoreBtn.textContent = 'Load More';
+        }
+
         if (streamSearchQuery) applyStreamSearch();
     } catch (e) {
         console.error('Error in updateLogs:', e);
+    } finally {
+        logsLoading = false;
     }
 }
-setInterval(() => { updateStats(); updateLogs(); }, 2000);
+
+async function loadMoreLogs() {
+    if (!logsHasMore || logsLoading) return;
+    
+    const loadMoreBtn = document.getElementById('load-more-logs');
+    if (loadMoreBtn) {
+        loadMoreBtn.disabled = true;
+        loadMoreBtn.textContent = 'Loading...';
+    }
+    
+    await updateLogs(true);
+}
+
+setInterval(() => { updateStats(); }, 2000);
 updateStats();
 updateLogs();
 
@@ -102,6 +144,8 @@ async function clearLogs() {
     try {
         const res = await apiFetch(`${API_BASE}/logs`, { method: 'DELETE' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        logsCursor = null;
+        logsHasMore = true;
         updateStats();
         updateLogs();
     } catch (e) {
@@ -141,6 +185,8 @@ function handleSync() {
     const btn = document.getElementById('sync-btn');
     const icon = document.getElementById('sync-icon');
     btn.classList.add('syncing');
+    logsCursor = null;
+    logsHasMore = true;
     updateStats();
     updateLogs();
     updateGraph(currentGraphRange);
@@ -172,6 +218,11 @@ if (clearCancelBtn) {
 const clearConfirmBtn = document.getElementById('clear-modal-confirm');
 if (clearConfirmBtn) {
     clearConfirmBtn.addEventListener('click', confirmClearLogs);
+}
+
+const loadMoreLogsBtn = document.getElementById('load-more-logs');
+if (loadMoreLogsBtn) {
+    loadMoreLogsBtn.addEventListener('click', loadMoreLogs);
 }
 
 const streamSearchInput = document.getElementById('stream-search');
