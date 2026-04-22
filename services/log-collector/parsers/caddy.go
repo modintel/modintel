@@ -22,10 +22,10 @@ type CaddyAccessLog struct {
 		URI        string              `json:"uri"`
 		Headers    map[string][]string `json:"headers"`
 	} `json:"request"`
-	BytesRead   int     `json:"bytes_read"`
-	Duration    float64 `json:"duration"`
-	Size        int     `json:"size"`
-	Status      int     `json:"status"`
+	BytesRead   int                 `json:"bytes_read"`
+	Duration    float64             `json:"duration"`
+	Size        int                 `json:"size"`
+	Status      int                 `json:"status"`
 	RespHeaders map[string][]string `json:"resp_headers"`
 }
 
@@ -35,18 +35,18 @@ func ParseCaddyAccessLog(data []byte) (*AlertDocument, error) {
 		return nil, fmt.Errorf("unmarshal caddy log: %w", err)
 	}
 
-		doc := &AlertDocument{
-		Timestamp:       time.Unix(int64(caddy.TS), 0).UTC().Format(time.RFC3339),
-		ClientIP:        caddy.Request.ClientIP,
-		Method:          caddy.Request.Method,
-		URI:             caddy.Request.URI,
-		Headers:         flattenHeaders(caddy.Request.Headers),
-		HTTPStatus:      caddy.Status,
-		TriggeredRules:  []string{},
-		AnomalyScore:    0,
-		RuleDetails:     []RuleDetail{},
-		AIStatus:        "pending",
-		Source:          "unknown",
+	doc := &AlertDocument{
+		Timestamp:      time.Unix(int64(caddy.TS), 0).UTC().Format(time.RFC3339),
+		ClientIP:       caddy.Request.ClientIP,
+		Method:         caddy.Request.Method,
+		URI:            caddy.Request.URI,
+		Headers:        flattenHeaders(caddy.Request.Headers),
+		HTTPStatus:     caddy.Status,
+		TriggeredRules: []string{},
+		AnomalyScore:   0,
+		RuleDetails:    []RuleDetail{},
+		AIStatus:       "pending",
+		Source:         "unknown",
 	}
 
 	if caddy.Request.Method == "GET" || caddy.Request.Method == "HEAD" {
