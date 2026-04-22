@@ -153,10 +153,53 @@ do {
 
 } while ($RunCount -eq 0 -or $iteration -lt $RunCount)
 
+function Get-DashboardStats {
+    try {
+        $loginBody = @{ email = "admin@modintel.local"; password = "ChangeMe123!" } | ConvertTo-Json
+        $loginResp = Invoke-RestMethod -Uri "http://localhost:3000/api/v1/auth/login" -Method POST -Body $loginBody -ContentType "application/json" -UseBasicParsing
+        $token = $loginResp.data.access_token
+
+        $stats = Invoke-RestMethod -Uri "http://localhost:8082/api/stats" -Headers @{ Authorization = "Bearer $token" } -UseBasicParsing
+        return $stats
+    }
+    catch {
+        return $null
+    }
+}
+
 Write-Host ""
 Write-Host "  ========== FINAL SUMMARY ==========" -ForegroundColor Cyan
 Write-Host "  Total Iterations: $iteration" -ForegroundColor DarkGray
 Write-Host "  Total Blocked:    $totalBlocked" -ForegroundColor Red
 Write-Host "  Total Passed:     $totalPassed" -ForegroundColor Yellow
+Write-Host "  Malicious reqs:   $($attacks.Count * $iteration)" -ForegroundColor DarkGray
+Write-Host ""
+
+$dashStats = Get-DashboardStats
+if ($dashStats) {
+    Write-Host "  ========== DASHBOARD SYNC =========" -ForegroundColor Cyan
+    Write-Host "  Total alerts:     $($dashStats.total_alerts)" -ForegroundColor DarkGray
+    Write-Host "  WAF alerts:       $($dashStats.total_alerts - $dashStats.ml_miss_count)" -ForegroundColor Red
+    Write-Host "  Miss detections:  $($dashStats.ml_miss_count)" -ForegroundColor Yellow
+    Write-Host "  AI enriched:      $($dashStats.ai_enriched_count)" -ForegroundColor DarkGray
+    Write-Host ""
+
+    $expected = $attacks.Count * $iteration
+    $actual = $dashStats.total_alerts
+    if ($actual -eq $expected) {
+        Write-Host "  MATCH: $actual / $expected alerts logged" -ForegroundColor Green
+    }
+    elseif ($actual -gt $expected) {
+        Write-Host "  WARNING: $actual logged, expected $expected (possible false positives)" -ForegroundColor Yellow
+    }
+    else {
+        $deduped = $expected - $actual
+        Write-Host "  NOTE: $actual unique alerts from $expected requests ($deduped duplicates deduplicated)" -ForegroundColor Green
+    }
+}
+else {
+    Write-Host "  Dashboard stats unavailable (review-api may not be running)" -ForegroundColor DarkGray
+}
+
 Write-Host ""
 Write-Host "  Attack suite completed." -ForegroundColor Green

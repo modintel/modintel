@@ -3,19 +3,59 @@
     padding: 0 !important;
 }
 
-.syncing #sync-icon {
-    animation: sync-spin-once 0.45s linear 1;
+.search-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    transition: width 0.25s ease;
 }
 
-@keyframes sync-spin-once {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+.search-wrap.expanded {
+    width: 260px;
+    cursor: text;
 }
 
-.syncing {
-    opacity: 0.7;
+.search-wrap input {
+    width: 0;
+    padding: 0.4rem 0;
+    font-size: 0.8rem;
+    border: 0.8px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--fg);
+    outline: none;
+    transition: all 0.25s ease;
+}
+
+.search-wrap.expanded input {
+    width: 100%;
+    padding: 0.4rem 0.8rem 0.4rem 2rem;
+    border-color: var(--border);
+    background: var(--bg);
+}
+
+.search-wrap input::placeholder {
+    color: var(--fg-subtle);
+}
+
+.search-icon {
+    position: absolute;
+    left: 9px;
+    width: 14px;
+    height: 14px;
+    color: var(--fg-subtle);
     pointer-events: none;
+    transition: left 0.25s ease;
 }
+
+.search-wrap.expanded .search-icon {
+    left: 0.55rem;
+}
+
+
 
 .panel-default {
     flex: 0 0 auto;
@@ -494,12 +534,4 @@ thead th:first-child[data-tooltip]::after {
     vertical-align: middle;
 }
 
-.miss-score {
-    display: inline-block;
-    padding: 2px 8px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    background: #ff570a;
-    color: #fff;
-    border-radius: 4px;
-}
+

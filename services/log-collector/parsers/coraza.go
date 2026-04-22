@@ -31,6 +31,7 @@ type AlertDocument struct {
 	TriggeredRules            []string               `bson:"triggered_rules" json:"triggered_rules"`
 	AnomalyScore              float64                `bson:"anomaly_score" json:"anomaly_score"`
 	Status                    string                 `bson:"status" json:"status"`
+	HTTPStatus                int                    `bson:"http_status" json:"http_status"`
 	Source                    string                 `bson:"source" json:"source"`
 	RequestFingerprint        string                 `bson:"request_fingerprint" json:"request_fingerprint"`
 	RequestFingerprintVersion string                 `bson:"request_fingerprint_version" json:"request_fingerprint_version"`
@@ -68,7 +69,11 @@ func ParseCorazaLog(raw []byte) (*AlertDocument, error) {
 
 	if transaction, ok := rawData["transaction"].(map[string]interface{}); ok {
 		if ts, ok := transaction["timestamp"].(string); ok {
-			doc.Timestamp = ts
+			if parsed, err := time.Parse("2006/01/02 15:04:05", ts); err == nil {
+				doc.Timestamp = parsed.UTC().Format(time.RFC3339)
+			} else {
+				doc.Timestamp = ts
+			}
 		} else {
 			doc.Timestamp = time.Now().UTC().Format(time.RFC3339)
 		}

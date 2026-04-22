@@ -3,9 +3,9 @@
     --bg: #ffffff;
     --bg-panel: #fafafa;
     --fg: #121212;
-    --fg-muted: #555555;
+    --fg-muted: #4a4a4a;
     --fg-subtle: rgba(0, 0, 0, 0.35);
-    --border: rgba(0, 0, 0, 0.06);
+    --border: rgba(0, 0, 0, 0.08);
     --border-active: rgba(0, 0, 0, 0.6);
     --accent: #ff570a;
     --accent-fg: #ffffff;
@@ -172,7 +172,7 @@ nav {
 }
 
 .btn:hover {
-    border-color: var(--border-active);
+    /* silent hover, no border change */
 }
 
 .btn-primary {
@@ -184,7 +184,47 @@ nav {
 .btn-secondary {
     background: transparent;
     color: var(--fg);
-    border-color: var(--border-active);
+    border-color: var(--border);
+}
+
+.btn-review {
+    background: var(--bg);
+    color: var(--fg-muted);
+    border-color: var(--border);
+}
+
+.btn-review svg {
+    width: 9px;
+    height: 9px;
+}
+
+.btn-review:hover {
+    color: var(--fg);
+    /* silent hover */
+}
+
+.btn-review.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+}
+
+.btn-lock {
+    background: var(--bg);
+    color: var(--fg);
+    border-color: var(--border);
+    padding: 0.45rem 0.6rem;
+}
+
+.btn-lock:hover {
+    color: var(--accent);
+    /* silent hover */
+}
+
+.btn-lock.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
 }
 
 .btn-secondary:hover {

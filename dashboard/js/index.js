@@ -65,12 +65,13 @@ async function updateLogs() {
         const maxRows = 500;
         data.alerts.slice(0, maxRows).forEach((alert, i) => {
             const row = document.createElement('tr');
-            const ts = alert.timestamp ? alert.timestamp.split('/').join('-').replace(' ', 'T') + 'Z' : '-';
+            let ts = alert.timestamp || '-';
+            if (ts.includes('/')) {
+                ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
+            }
             const source = alert.source || 'coraza';
             const isMiss = source === 'ml_miss_detector';
-            const rules = isMiss
-                ? '<span class="miss-badge">MISS</span>'
-                : formatRules(alert.triggered_rules);
+            const rules = formatRules(alert.triggered_rules);
 
             const aiScoreVal = alert.ai_score;
             const aiScore = aiScoreVal !== null && aiScoreVal !== undefined
@@ -84,7 +85,7 @@ async function updateLogs() {
                 : '-';
 
             const scoreDisplay = isMiss && aiScoreVal !== null && aiScoreVal !== undefined
-                ? `<span class="miss-score">${(aiScoreVal * 100).toFixed(1)}%</span>`
+                ? `<span class="ai-score">*${(aiScoreVal * 100).toFixed(1)}%</span>`
                 : `<span class="anomaly-badge">${alert.anomaly_score}</span>`;
 
             row.innerHTML = `
@@ -147,21 +148,38 @@ function applyStreamSearch() {
     });
 }
 
-function handleSync() {
+let isReviewing = false;
+
+function toggleReview() {
     const btn = document.getElementById('sync-btn');
-    const icon = document.getElementById('sync-icon');
-    btn.classList.add('syncing');
-    updateStats();
-    updateLogs();
-    updateGraph(currentGraphRange);
-    setTimeout(() => {
-        btn.classList.remove('syncing');
-    }, 1000);
+    const icon = document.getElementById('review-icon');
+    isReviewing = !isReviewing;
+
+    if (isReviewing) {
+        btn.classList.add('active');
+        icon.innerHTML = '<rect x="6" y="6" width="12" height="12"></rect>';
+        updateStats();
+        updateLogs();
+        updateGraph(currentGraphRange);
+    } else {
+        btn.classList.remove('active');
+        icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+    }
 }
 
 const syncBtn = document.getElementById('sync-btn');
 if (syncBtn) {
-    syncBtn.addEventListener('click', handleSync);
+    syncBtn.addEventListener('click', toggleReview);
+}
+
+const lockBtn = document.getElementById('lock-btn');
+if (lockBtn) {
+    lockBtn.addEventListener('click', () => {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        window.location.href = '/signin';
+    });
 }
 
 const refreshBtn = document.getElementById('refresh-btn');
@@ -185,7 +203,21 @@ if (clearConfirmBtn) {
 }
 
 const streamSearchInput = document.getElementById('stream-search');
-if (streamSearchInput) {
+const searchWrap = document.querySelector('.search-wrap');
+if (searchWrap && streamSearchInput) {
+    searchWrap.addEventListener('click', (e) => {
+        if (!searchWrap.classList.contains('expanded')) {
+            searchWrap.classList.add('expanded');
+            streamSearchInput.focus();
+        }
+    });
+    streamSearchInput.addEventListener('blur', () => {
+        if (streamSearchInput.value.trim() === '') {
+            searchWrap.classList.remove('expanded');
+            streamSearchQuery = '';
+            applyStreamSearch();
+        }
+    });
     streamSearchInput.addEventListener('input', (e) => handleStreamSearch(e.target.value));
 }
 

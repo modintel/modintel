@@ -31,12 +31,34 @@ func inferenceEngineURL() string {
 	return "http://localhost:8083"
 }
 
+func hashHeaders(headers map[string]string) string {
+	h := sha256.New()
+	keys := make([]string, 0, len(headers))
+	for k := range headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		h.Write([]byte(k + "=" + headers[k] + "\n"))
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
 func uniqueAlertKey(doc *parsers.AlertDocument) string {
 	rules := make([]string, len(doc.TriggeredRules))
 	copy(rules, doc.TriggeredRules)
 	sort.Strings(rules)
 	h := sha256.New()
-	h.Write([]byte(doc.URI + "|" + doc.Timestamp + "|" + doc.ClientIP + "|" + strings.Join(rules, ",")))
+	h.Write([]byte(doc.Method + "|" + doc.URI + "|" + doc.Body + "|" + doc.ClientIP + "|" + doc.Timestamp + "|" + strings.Join(rules, ",") + "|" + hashHeaders(doc.Headers)))
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+func uniqueMissKey(doc *parsers.AlertDocument) string {
+	rules := make([]string, len(doc.TriggeredRules))
+	copy(rules, doc.TriggeredRules)
+	sort.Strings(rules)
+	h := sha256.New()
+	h.Write([]byte(doc.Method + "|" + doc.URI + "|" + doc.Body + "|" + doc.ClientIP + "|" + doc.Timestamp + "|" + strings.Join(rules, ",") + "|" + hashHeaders(doc.Headers)))
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
@@ -223,6 +245,215 @@ func enrichMiss(doc *parsers.AlertDocument) bool {
 	return true
 }
 
+func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
+	logFile := "/var/log/coraza/audit.json"
+	if envLog := os.Getenv("CORAZA_LOG_PATH"); envLog != "" {
+		logFile = envLog
+	}
+
+	log.Printf("Starting Coraza audit log processor, reading from %s", logFile)
+
+	for {
+		if _, err := os.Stat(logFile); os.IsNotExist(err) {
+			log.Printf("Waiting for Coraza log file %s to be created...", logFile)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		break
+	}
+
+	if err := os.Truncate(logFile, 0); err != nil {
+		log.Printf("Warning: failed to truncate Coraza audit log: %v", err)
+	} else {
+		log.Printf("Coraza audit log truncated")
+	}
+
+	t, err := tail.TailFile(logFile, tail.Config{
+		Follow:    true,
+		ReOpen:    true,
+		MustExist: false,
+		Poll:      false,
+		Location:  &tail.SeekInfo{Offset: 0, Whence: 2},
+	})
+	if err != nil {
+		log.Fatalf("Failed to tail Coraza log file: %v", err)
+	}
+
+	collection := db.GetCollection("modintel", "alerts")
+
+	for line := range t.Lines {
+		if line.Err != nil {
+			log.Printf("Error reading Coraza tail line: %v", line.Err)
+			continue
+		}
+		if line.Text == "" {
+			continue
+		}
+
+		doc, err := parsers.ParseCorazaLog([]byte(line.Text))
+		if err != nil {
+			log.Printf("Failed to parse Coraza log line: %v", err)
+			continue
+		}
+
+		alertKey := uniqueAlertKey(doc)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		var existing bson.M
+		err = collection.FindOne(ctx, bson.M{"alert_key": alertKey}).Decode(&existing)
+		cancel()
+
+		if err == nil && existing["ai_status"] == "enriched" {
+			log.Printf("Skipping already-enriched alert (key=%s, uri=%s)", alertKey, doc.URI)
+			continue
+		}
+		if err == nil {
+			log.Printf("Alert exists but not enriched (key=%s), re-enriching...", alertKey)
+		}
+
+		blocked := isBlocked(doc) || len(doc.TriggeredRules) > 0
+		if !blocked {
+			continue
+		}
+		doc.Source = "coraza"
+		enrichWithAI(doc)
+
+		docJSON, err := json.Marshal(doc)
+		if err != nil {
+			log.Printf("Failed to marshal doc: %v", err)
+			continue
+		}
+		var docMap map[string]interface{}
+		if err := json.Unmarshal(docJSON, &docMap); err != nil {
+			log.Printf("Failed to unmarshal doc: %v", err)
+			continue
+		}
+		docMap["alert_key"] = alertKey
+		docMap["coraza_flagged"] = true
+
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		_, err = collection.UpdateOne(
+			ctx,
+			bson.M{"alert_key": alertKey},
+			bson.M{"$set": docMap},
+			options.Update().SetUpsert(true),
+		)
+		cancel()
+
+		if err != nil {
+			log.Printf("Failed to upsert Coraza alert to MongoDB: %v", err)
+		} else {
+			log.Printf("Coraza alert ingested: %s", doc.URI)
+		}
+	}
+}
+
+func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
+	logFile := "/var/log/caddy/access.json"
+	if envLog := os.Getenv("CADDY_LOG_PATH"); envLog != "" {
+		logFile = envLog
+	}
+
+	log.Printf("Starting Caddy access log processor, reading from %s", logFile)
+
+	for {
+		if _, err := os.Stat(logFile); os.IsNotExist(err) {
+			log.Printf("Waiting for Caddy log file %s to be created...", logFile)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		break
+	}
+
+	if err := os.Truncate(logFile, 0); err != nil {
+		log.Printf("Warning: failed to truncate Caddy access log: %v", err)
+	} else {
+		log.Printf("Caddy access log truncated")
+	}
+
+	t, err := tail.TailFile(logFile, tail.Config{
+		Follow:    true,
+		ReOpen:    true,
+		MustExist: false,
+		Poll:      false,
+		Location:  &tail.SeekInfo{Offset: 0, Whence: 2},
+	})
+	if err != nil {
+		log.Fatalf("Failed to tail Caddy log file: %v", err)
+	}
+
+	collection := db.GetCollection("modintel", "alerts")
+
+	for line := range t.Lines {
+		if line.Err != nil {
+			log.Printf("Error reading Caddy tail line: %v", line.Err)
+			continue
+		}
+		if line.Text == "" {
+			continue
+		}
+
+		doc, err := parsers.ParseCaddyAccessLog([]byte(line.Text))
+		if err != nil {
+			log.Printf("Failed to parse Caddy log line: %v", err)
+			continue
+		}
+
+		if sigPrefilter == nil {
+			continue
+		}
+
+		sigHit, matchedSigs := sigPrefilter.Evaluate(doc.Method, doc.URI, doc.Body, doc.Headers)
+		if !sigHit {
+			continue
+		}
+
+		alertKey := uniqueMissKey(doc)
+
+		wafBlocked := parsers.IsBlockedByWAF(doc.HTTPStatus)
+		wafPassed := parsers.IsWAFPassed(doc.HTTPStatus)
+
+		if wafBlocked {
+			log.Printf("Signature matched but WAF blocked (status=%d, uri=%s)", doc.HTTPStatus, doc.URI)
+			continue
+		}
+
+		if wafPassed {
+			doc.Source = "ml_miss_detector"
+			doc.TriggeredRules = matchedSigs
+			enrichMiss(doc)
+
+			docJSON, err := json.Marshal(doc)
+			if err != nil {
+				log.Printf("Failed to marshal miss doc: %v", err)
+				continue
+			}
+			var docMap map[string]interface{}
+			if err := json.Unmarshal(docJSON, &docMap); err != nil {
+				log.Printf("Failed to unmarshal miss doc: %v", err)
+				continue
+			}
+			docMap["alert_key"] = alertKey
+			docMap["matched_signatures"] = matchedSigs
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_, err = collection.UpdateOne(
+				ctx,
+				bson.M{"alert_key": alertKey},
+				bson.M{"$set": docMap},
+				options.Update().SetUpsert(true),
+			)
+			cancel()
+
+			if err != nil {
+				log.Printf("Failed to upsert miss alert to MongoDB: %v", err)
+			} else {
+				log.Printf("MISS DETECTED: %s (status=%d, ai_score=%v)", doc.URI, doc.HTTPStatus, doc.AIScore)
+			}
+		}
+	}
+}
+
 func main() {
 	_ = godotenv.Load("../../.env")
 
@@ -240,124 +471,6 @@ func main() {
 	}
 
 	go api.Serve()
-
-	logFile := "/var/log/coraza/audit.json"
-	if envLog := os.Getenv("LOG_FILE_PATH"); envLog != "" {
-		logFile = envLog
-	}
-
-	log.Printf("Starting Log Collector, reading from %s", logFile)
-
-	for {
-		if _, err := os.Stat(logFile); os.IsNotExist(err) {
-			log.Printf("Waiting for log file %s to be created...", logFile)
-			time.Sleep(2 * time.Second)
-			continue
-		}
-		break
-	}
-
-	if err := os.Truncate(logFile, 0); err != nil {
-		log.Printf("Warning: failed to truncate audit log: %v", err)
-	} else {
-		log.Printf("Audit log truncated — will process only new entries from this point")
-	}
-
-	t, err := tail.TailFile(logFile, tail.Config{
-		Follow:    true,
-		ReOpen:    true,
-		MustExist: false,
-		Poll:      false,
-		Location:  &tail.SeekInfo{Offset: 0, Whence: 2},
-	})
-
-	if err != nil {
-		log.Fatalf("Failed to tail log file: %v", err)
-	}
-
-	collection := db.GetCollection("modintel", "alerts")
-
-	for line := range t.Lines {
-		if line.Err != nil {
-			log.Printf("Error reading tail line: %v", line.Err)
-			continue
-		}
-
-		if line.Text == "" {
-			continue
-		}
-
-		doc, err := parsers.ParseCorazaLog([]byte(line.Text))
-		if err != nil {
-			log.Printf("Failed to parse log line: %v (line: %s)", err, line.Text)
-			continue
-		}
-
-		alertKey := uniqueAlertKey(doc)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		var existing bson.M
-		err = collection.FindOne(ctx, bson.M{"alert_key": alertKey}).Decode(&existing)
-		cancel()
-
-		if err == nil && existing["ai_status"] == "enriched" {
-			log.Printf("Skipping already-enriched alert (key=%s, uri=%s)", alertKey, doc.URI)
-			continue
-		}
-
-		if err == nil {
-			log.Printf("Alert exists but not enriched (key=%s), re-enriching...", alertKey)
-		}
-
-		blocked := isBlocked(doc)
-		corazaFlagged := blocked
-
-		if blocked {
-			doc.Source = "coraza"
-			enrichWithAI(doc)
-		} else {
-			miss := len(doc.TriggeredRules) > 0
-			if !miss && sigPrefilter != nil {
-				sigHit, _ := sigPrefilter.Evaluate(doc.Method, doc.URI, doc.Body, doc.Headers)
-				if sigHit {
-					miss = true
-				}
-			}
-
-			if miss {
-				doc.Source = "ml_miss_detector"
-				enrichMiss(doc)
-			} else {
-				doc.Source = "coraza"
-			}
-		}
-
-		docJSON, err := json.Marshal(doc)
-		if err != nil {
-			log.Printf("Failed to marshal doc: %v", err)
-			return
-		}
-		var docMap map[string]interface{}
-		if err := json.Unmarshal(docJSON, &docMap); err != nil {
-			log.Printf("Failed to unmarshal doc: %v", err)
-			return
-		}
-		docMap["alert_key"] = alertKey
-		docMap["coraza_flagged"] = corazaFlagged
-
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		_, err = collection.UpdateOne(
-			ctx,
-			bson.M{"alert_key": alertKey},
-			bson.M{"$set": docMap},
-			options.Update().SetUpsert(true),
-		)
-		cancel()
-
-		if err != nil {
-			log.Printf("Failed to upsert alert to MongoDB: %v", err)
-		} else {
-			log.Printf("Successfully ingested WAF log: %s", doc.URI)
-		}
-	}
+	go processCorazaAuditLogs(sigPrefilter)
+	processCaddyAccessLogs(sigPrefilter)
 }

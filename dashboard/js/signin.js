@@ -4,6 +4,7 @@
     const signinForm = document.getElementById('signin-form');
     const alertBox = document.getElementById('alert');
     const signinBtn = document.getElementById('signin-btn');
+    const loadingDots = document.getElementById('loading-dots');
 
     const AUTH_SERVICE_URL = '/api/v1/auth/login';
     const DASHBOARD_URL = '/events';
@@ -41,7 +42,9 @@
             ...data.user,
             refresh_token: data.refresh_token,
         });
-        showAlert('success', 'Sign in successful! Redirecting...');
+        hideAlert();
+        signinForm.style.display = 'none';
+        if (loadingDots) loadingDots.style.display = 'flex';
 
         setTimeout(() => {
             window.location.href = DASHBOARD_URL;

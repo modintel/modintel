@@ -1,19 +1,9 @@
-FROM golang:1.21-alpine AS build
+FROM caddy:2-builder AS build
 
-RUN apk add --no-cache git
+RUN xcaddy build \
+    --with github.com/dotvezz/caddy-mirror@v0.0.8
 
-ENV HOME=/root
-RUN git clone https://github.com/caddyserver/xcaddy.git /tmp/xcaddy && \
-    cd /tmp/xcaddy && \
-    go build -o xcaddy . && \
-    chmod +x xcaddy && \
-    mv xcaddy /usr/local/bin/ && \
-    xcaddy build v2.11.2 \
-        --with github.com/dotvezz/caddy-mirror@v0.0.8
-
-FROM alpine:3.20
-
-RUN apk add --no-cache ca-certificates
+FROM caddy:2-alpine
 
 COPY --from=build /usr/bin/caddy /usr/bin/caddy
 

@@ -255,22 +255,39 @@ function updateChartLabels(range) {
     });
 }
 
-async function handleSync() {
+let isReviewing = false;
+
+async function toggleReview() {
     const btn = document.getElementById('sync-btn');
-    const icon = document.getElementById('sync-icon');
-    btn.classList.add('syncing');
-    requestRateHistory = [];
-    errorRateHistory = [];
-    await updateServiceHealth();
-    await updateMetrics();
-    setTimeout(() => {
-        btn.classList.remove('syncing');
-    }, 500);
+    const icon = document.getElementById('review-icon');
+    isReviewing = !isReviewing;
+
+    if (isReviewing) {
+        btn.classList.add('active');
+        icon.innerHTML = '<rect x="6" y="6" width="12" height="12"></rect>';
+        requestRateHistory = [];
+        errorRateHistory = [];
+        await updateServiceHealth();
+        await updateMetrics();
+    } else {
+        btn.classList.remove('active');
+        icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+    }
 }
 
 const syncBtn = document.getElementById('sync-btn');
 if (syncBtn) {
-    syncBtn.addEventListener('click', handleSync);
+    syncBtn.addEventListener('click', toggleReview);
+}
+
+const lockBtn = document.getElementById('lock-btn');
+if (lockBtn) {
+    lockBtn.addEventListener('click', () => {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        window.location.href = '/signin';
+    });
 }
 
 document.querySelectorAll('.time-range-buttons .graph-btn').forEach(btn => {
@@ -292,4 +309,4 @@ updateChartLabels(currentRange);
 setInterval(() => {
     updateServiceHealth();
     updateMetrics();
-}, 5000);
+}, 2000);
