@@ -296,27 +296,11 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 		}
 
 		blocked := isBlocked(doc)
-		corazaFlagged := blocked
-
-		if blocked {
-			doc.Source = "coraza"
-			enrichWithAI(doc)
-		} else {
-			miss := len(doc.TriggeredRules) > 0
-			if !miss && sigPrefilter != nil {
-				sigHit, _ := sigPrefilter.Evaluate(doc.Method, doc.URI, doc.Body, doc.Headers)
-				if sigHit {
-					miss = true
-				}
-			}
-
-			if miss {
-				doc.Source = "ml_miss_detector"
-				enrichMiss(doc)
-			} else {
-				doc.Source = "coraza"
-			}
+		if !blocked {
+			continue
 		}
+		doc.Source = "coraza"
+		enrichWithAI(doc)
 
 		docJSON, err := json.Marshal(doc)
 		if err != nil {
@@ -329,7 +313,7 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 			continue
 		}
 		docMap["alert_key"] = alertKey
-		docMap["coraza_flagged"] = corazaFlagged
+		docMap["coraza_flagged"] = true
 
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 		_, err = collection.UpdateOne(
@@ -346,6 +330,43 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 			log.Printf("Coraza alert ingested: %s", doc.URI)
 		}
 	}
+}
+
+func isStaticAsset(uri string) bool {
+	lower := strings.ToLower(uri)
+	staticExts := []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".map"}
+	for _, ext := range staticExts {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func isHealthCheck(uri string) bool {
+	lower := strings.ToLower(uri)
+	healthPaths := []string{"/api/health", "/api/monitor", "/api/stats", "/api/trend", "/api/logs", "/api/rules", "/api/system", "/aggregate/health", "/api/v1/auth", "/api/v1/users", "/inference"}
+	for _, path := range healthPaths {
+		if strings.HasPrefix(lower, path) {
+			return true
+		}
+	}
+	return false
+}
+
+func isDashboardPage(uri string) bool {
+	lower := strings.ToLower(uri)
+	pages := []string{"/signin", "/events", "/rules", "/training", "/datasets", "/reports", "/monitor", "/settings", "/help"}
+	for _, page := range pages {
+		if lower == page || strings.HasPrefix(lower, page+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldSkip(uri string) bool {
+	return isStaticAsset(uri) || isHealthCheck(uri) || isDashboardPage(uri)
 }
 
 func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
@@ -396,6 +417,10 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 		doc, err := parsers.ParseCaddyAccessLog([]byte(line.Text))
 		if err != nil {
 			log.Printf("Failed to parse Caddy log line: %v", err)
+			continue
+		}
+
+		if shouldSkip(doc.URI) {
 			continue
 		}
 
