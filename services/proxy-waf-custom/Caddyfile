@@ -1,6 +1,6 @@
 :8080 {
 	log {
-		output file /var/log/caddy/access.json
+		output file /var/log/caddy/waf-access.json
 		format json
 	}
 
@@ -11,7 +11,7 @@
 
 :3000 {
 	log {
-		output file /var/log/caddy/access.json
+		output file /var/log/caddy/dashboard-access.json
 		format json
 	}
 
