@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 import os
 import re
-from collections import Counter
 from typing import Dict, List, Tuple
 from urllib.parse import parse_qs, urlparse
 
