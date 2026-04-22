@@ -181,6 +181,27 @@ nav {
     border-color: var(--accent);
 }
 
+.btn-secondary {
+    background: transparent;
+    color: var(--fg);
+    border-color: var(--border-active);
+}
+
+.btn-secondary:hover {
+    background: var(--bg-subtle);
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--fg-subtle);
+    border-color: transparent;
+}
+
+.btn-ghost:hover {
+    color: var(--fg);
+    background: var(--bg-subtle);
+}
+
 .btn-danger {
     background: var(--danger-subtle);
     color: var(--danger);
