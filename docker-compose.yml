@@ -20,7 +20,13 @@ services:
       - "8080:8080"
       - "3000:3000"
     restart: always
-    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    command:
+      - caddy
+      - run
+      - --config
+      - /etc/caddy/Caddyfile
+      - --adapter
+      - caddyfile
 
   proxy-waf:
     image: ghcr.io/coreruleset/coraza-crs:caddy-alpine
@@ -92,11 +98,10 @@ services:
       - MONGO_URI=${MONGO_URI}
       - JWT_SECRET=${JWT_SECRET}
       - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}
-      - WAF_ENGINE=Coraza (Caddy edge)
+      - WAF_ENGINE=Coraza
       - BACKEND_TARGET=${BACKEND_TARGET}
       - INFERENCE_ENGINE_URL=${INFERENCE_ENGINE_URL}
-      - WAF_OVERRIDES_FILE=/waf-overrides/managed-
-        overrides.conf
+      - WAF_OVERRIDES_FILE=/waf-overrides/managed-overrides.conf
     networks:
       - modintel-net
     restart: always
