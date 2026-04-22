@@ -12,7 +12,7 @@ services:
   proxy-waf-custom:
     build: ./services/proxy-waf-custom
     volumes:
-      - ./services/proxy-waf-custom/Caddyfile:/config/caddy/Caddyfile
+      - ./services/proxy-waf-custom/Caddyfile:/etc/caddy/Caddyfile
       - modintel_caddy_logs:/var/log/caddy
     networks:
       - modintel-net
@@ -20,6 +20,7 @@ services:
       - "8080:8080"
       - "3000:3000"
     restart: always
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
 
   proxy-waf:
     image: ghcr.io/coreruleset/coraza-crs:caddy-alpine
@@ -51,9 +52,11 @@ services:
     build: ./services/log-collector
     volumes:
       - modintel_caddy_logs:/var/log/caddy:ro
+      - modintel_waf-logs:/var/log/coraza:ro
       - ./services/log-collector/signatures:/app/signatures:ro
     environment:
       - LOG_FILE_PATH=/var/log/caddy/access.json
+      - CORAZA_LOG_PATH=/var/log/coraza/audit.json
       - MONGO_URI=${MONGO_URI}
       - INFERENCE_ENGINE_URL=${INFERENCE_ENGINE_URL}
       - MODINTEL_SIGNATURES_FILE=/app/signatures/modintel_regex.signatures
