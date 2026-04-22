@@ -95,7 +95,8 @@ services:
       - WAF_ENGINE=Coraza (Caddy edge)
       - BACKEND_TARGET=${BACKEND_TARGET}
       - INFERENCE_ENGINE_URL=${INFERENCE_ENGINE_URL}
-      - WAF_OVERRIDES_FILE=/waf-overrides/managed-overrides.conf
+      - WAF_OVERRIDES_FILE=/waf-overrides/managed-
+        overrides.conf
     networks:
       - modintel-net
     restart: always
