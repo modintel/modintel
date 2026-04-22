@@ -95,6 +95,7 @@ func SetupRouter(cfg config.Config, database *db.Database) *gin.Engine {
 	}
 
 	v1.GET("/auth/me", h.authMiddleware(), h.me)
+	v1.PATCH("/auth/profile", h.authMiddleware(), h.updateProfile)
 
 	users := v1.Group("/users", h.authMiddleware())
 	{
@@ -376,6 +377,66 @@ func (h *Handler) me(c *gin.Context) {
 			"email_verified": user.EmailVerified,
 		},
 	})
+}
+
+type UpdateProfileRequest struct {
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+}
+
+func (h *Handler) updateProfile(c *gin.Context) {
+	claims, ok := getAccessClaims(c)
+	if !ok {
+		return
+	}
+
+	var req UpdateProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errResp("Invalid request payload", "AUTH_400"))
+		return
+	}
+
+	updates := bson.M{}
+	if req.FirstName != "" {
+		updates["first_name"] = strings.TrimSpace(req.FirstName)
+	}
+	if req.LastName != "" {
+		updates["last_name"] = strings.TrimSpace(req.LastName)
+	}
+
+	if len(updates) == 0 {
+		c.JSON(http.StatusBadRequest, errResp("no updates provided", "AUTH_400"))
+		return
+	}
+	updates["updated_at"] = time.Now().UTC()
+
+	userOID, err := primitive.ObjectIDFromHex(claims.UserID)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, errResp("User not found", "AUTH_003"))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	res, err := h.users.UpdateOne(ctx, bson.M{"_id": userOID}, bson.M{"$set": updates})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errResp("failed updating profile", "AUTH_500"))
+		return
+	}
+	if res.MatchedCount == 0 {
+		c.JSON(http.StatusNotFound, errResp("User not found", "AUTH_404"))
+		return
+	}
+
+	var user models.User
+	err = h.users.FindOne(ctx, bson.M{"_id": userOID}, options.FindOne().SetProjection(bson.M{"password_hash": 0})).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": true})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": userDTO(user)})
 }
 
 func (h *Handler) authMiddleware() gin.HandlerFunc {
