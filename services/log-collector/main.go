@@ -311,7 +311,7 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 			log.Printf("Alert exists but not enriched (key=%s), re-enriching...", alertKey)
 		}
 
-		blocked := isBlocked(doc)
+		blocked := isBlocked(doc) || len(doc.TriggeredRules) > 0
 		if !blocked {
 			continue
 		}
