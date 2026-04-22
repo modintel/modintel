@@ -3,6 +3,37 @@
     padding: 0 !important;
 }
 
+.search-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 260px;
+}
+
+.search-wrap input {
+    width: 100%;
+    padding: 0.4rem 0.8rem 0.4rem 2rem;
+    font-size: 0.8rem;
+    border: 0.8px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--fg);
+    outline: none;
+}
+
+.search-wrap input::placeholder {
+    color: var(--fg-subtle);
+}
+
+.search-icon {
+    position: absolute;
+    left: 0.55rem;
+    width: 14px;
+    height: 14px;
+    color: var(--fg-subtle);
+    pointer-events: none;
+}
+
 .syncing #sync-icon {
     animation: sync-spin-once 0.45s linear 1;
 }

@@ -292,4 +292,4 @@ updateChartLabels(currentRange);
 setInterval(() => {
     updateServiceHealth();
     updateMetrics();
-}, 5000);
+}, 2000);
