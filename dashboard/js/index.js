@@ -85,7 +85,7 @@ async function updateLogs() {
                 : '-';
 
             const scoreDisplay = isMiss && aiScoreVal !== null && aiScoreVal !== undefined
-                ? `<span class="miss-score">${(aiScoreVal * 100).toFixed(1)}%</span>`
+                ? `<span class="ai-score">*${(aiScoreVal * 100).toFixed(1)}%</span>`
                 : `<span class="anomaly-badge">${alert.anomaly_score}</span>`;
 
             row.innerHTML = `
