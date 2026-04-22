@@ -69,7 +69,11 @@ func ParseCorazaLog(raw []byte) (*AlertDocument, error) {
 
 	if transaction, ok := rawData["transaction"].(map[string]interface{}); ok {
 		if ts, ok := transaction["timestamp"].(string); ok {
-			doc.Timestamp = ts
+			if parsed, err := time.Parse("2006/01/02 15:04:05", ts); err == nil {
+				doc.Timestamp = parsed.UTC().Format(time.RFC3339)
+			} else {
+				doc.Timestamp = ts
+			}
 		} else {
 			doc.Timestamp = time.Now().UTC().Format(time.RFC3339)
 		}
