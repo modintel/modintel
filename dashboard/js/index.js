@@ -148,21 +148,38 @@ function applyStreamSearch() {
     });
 }
 
-function handleSync() {
+let isReviewing = false;
+
+function toggleReview() {
     const btn = document.getElementById('sync-btn');
-    const icon = document.getElementById('sync-icon');
-    btn.classList.add('syncing');
-    updateStats();
-    updateLogs();
-    updateGraph(currentGraphRange);
-    setTimeout(() => {
-        btn.classList.remove('syncing');
-    }, 1000);
+    const icon = document.getElementById('review-icon');
+    isReviewing = !isReviewing;
+
+    if (isReviewing) {
+        btn.classList.add('active');
+        icon.innerHTML = '<rect x="6" y="6" width="12" height="12"></rect>';
+        updateStats();
+        updateLogs();
+        updateGraph(currentGraphRange);
+    } else {
+        btn.classList.remove('active');
+        icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+    }
 }
 
 const syncBtn = document.getElementById('sync-btn');
 if (syncBtn) {
-    syncBtn.addEventListener('click', handleSync);
+    syncBtn.addEventListener('click', toggleReview);
+}
+
+const lockBtn = document.getElementById('lock-btn');
+if (lockBtn) {
+    lockBtn.addEventListener('click', () => {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        window.location.href = '/signin';
+    });
 }
 
 const refreshBtn = document.getElementById('refresh-btn');
@@ -186,7 +203,21 @@ if (clearConfirmBtn) {
 }
 
 const streamSearchInput = document.getElementById('stream-search');
-if (streamSearchInput) {
+const searchWrap = document.querySelector('.search-wrap');
+if (searchWrap && streamSearchInput) {
+    searchWrap.addEventListener('click', (e) => {
+        if (!searchWrap.classList.contains('expanded')) {
+            searchWrap.classList.add('expanded');
+            streamSearchInput.focus();
+        }
+    });
+    streamSearchInput.addEventListener('blur', () => {
+        if (streamSearchInput.value.trim() === '') {
+            searchWrap.classList.remove('expanded');
+            streamSearchQuery = '';
+            applyStreamSearch();
+        }
+    });
     streamSearchInput.addEventListener('input', (e) => handleStreamSearch(e.target.value));
 }
 

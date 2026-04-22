@@ -7,18 +7,34 @@
     position: relative;
     display: inline-flex;
     align-items: center;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    transition: width 0.25s ease;
+}
+
+.search-wrap.expanded {
     width: 260px;
+    cursor: text;
 }
 
 .search-wrap input {
-    width: 100%;
-    padding: 0.4rem 0.8rem 0.4rem 2rem;
+    width: 0;
+    padding: 0.4rem 0;
     font-size: 0.8rem;
-    border: 0.8px solid var(--border);
+    border: 0.8px solid transparent;
     border-radius: 4px;
-    background: var(--bg);
+    background: transparent;
     color: var(--fg);
     outline: none;
+    transition: all 0.25s ease;
+}
+
+.search-wrap.expanded input {
+    width: 100%;
+    padding: 0.4rem 0.8rem 0.4rem 2rem;
+    border-color: var(--border);
+    background: var(--bg);
 }
 
 .search-wrap input::placeholder {
@@ -27,26 +43,19 @@
 
 .search-icon {
     position: absolute;
-    left: 0.55rem;
+    left: 9px;
     width: 14px;
     height: 14px;
     color: var(--fg-subtle);
     pointer-events: none;
+    transition: left 0.25s ease;
 }
 
-.syncing #sync-icon {
-    animation: sync-spin-once 0.45s linear 1;
+.search-wrap.expanded .search-icon {
+    left: 0.55rem;
 }
 
-@keyframes sync-spin-once {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
 
-.syncing {
-    opacity: 0.7;
-    pointer-events: none;
-}
 
 .panel-default {
     flex: 0 0 auto;
