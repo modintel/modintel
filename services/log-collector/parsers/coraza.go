@@ -20,23 +20,23 @@ type RuleDetail struct {
 }
 
 type AlertDocument struct {
-	ID             primitive.ObjectID     `bson:"_id,omitempty" json:"id"`
-	Timestamp      string                 `bson:"timestamp" json:"timestamp"`
-	TimeBucket     string                 `bson:"time_bucket" json:"time_bucket"`
-	ClientIP       string                 `bson:"client_ip" json:"client_ip"`
-	URI            string                 `bson:"uri" json:"uri"`
-	Method         string                 `bson:"method" json:"method"`
-	Body           string                 `bson:"body" json:"body"`
-	Headers        map[string]string      `bson:"headers" json:"headers"`
-	TriggeredRules []string               `bson:"triggered_rules" json:"triggered_rules"`
-	AnomalyScore   float64                `bson:"anomaly_score" json:"anomaly_score"`
-	Status         string                 `bson:"status" json:"status"`
-	Source         string                 `bson:"source" json:"source"`
-	RequestFingerprint        string      `bson:"request_fingerprint" json:"request_fingerprint"`
-	RequestFingerprintVersion string      `bson:"request_fingerprint_version" json:"request_fingerprint_version"`
-	MLScore        *float64               `bson:"ml_score" json:"ml_score"`
-	HumanLabel     *string                `bson:"human_label" json:"human_label"`
-	RawLog         map[string]interface{} `bson:"raw_log" json:"raw_log"`
+	ID                        primitive.ObjectID     `bson:"_id,omitempty" json:"id"`
+	Timestamp                 string                 `bson:"timestamp" json:"timestamp"`
+	TimeBucket                string                 `bson:"time_bucket" json:"time_bucket"`
+	ClientIP                  string                 `bson:"client_ip" json:"client_ip"`
+	URI                       string                 `bson:"uri" json:"uri"`
+	Method                    string                 `bson:"method" json:"method"`
+	Body                      string                 `bson:"body" json:"body"`
+	Headers                   map[string]string      `bson:"headers" json:"headers"`
+	TriggeredRules            []string               `bson:"triggered_rules" json:"triggered_rules"`
+	AnomalyScore              float64                `bson:"anomaly_score" json:"anomaly_score"`
+	Status                    string                 `bson:"status" json:"status"`
+	Source                    string                 `bson:"source" json:"source"`
+	RequestFingerprint        string                 `bson:"request_fingerprint" json:"request_fingerprint"`
+	RequestFingerprintVersion string                 `bson:"request_fingerprint_version" json:"request_fingerprint_version"`
+	MLScore                   *float64               `bson:"ml_score" json:"ml_score"`
+	HumanLabel                *string                `bson:"human_label" json:"human_label"`
+	RawLog                    map[string]interface{} `bson:"raw_log" json:"raw_log"`
 
 	BodyLength  int               `bson:"body_length" json:"body_length"`
 	HeaderCount int               `bson:"header_count" json:"header_count"`
@@ -86,21 +86,21 @@ func ParseCorazaLog(raw []byte) (*AlertDocument, error) {
 				doc.Body = body
 				doc.BodyLength = len(body)
 			}
-		if headers, ok := req["headers"].(map[string]interface{}); ok {
-			doc.HeaderCount = len(headers)
-			for k, v := range headers {
-				switch cv := v.(type) {
-				case string:
-					doc.Headers[k] = cv
-				case []interface{}:
-					if len(cv) > 0 {
-						if s, ok := cv[0].(string); ok {
-							doc.Headers[k] = s
+			if headers, ok := req["headers"].(map[string]interface{}); ok {
+				doc.HeaderCount = len(headers)
+				for k, v := range headers {
+					switch cv := v.(type) {
+					case string:
+						doc.Headers[k] = cv
+					case []interface{}:
+						if len(cv) > 0 {
+							if s, ok := cv[0].(string); ok {
+								doc.Headers[k] = s
+							}
 						}
 					}
 				}
 			}
-		}
 		}
 	} else {
 		doc.Timestamp = time.Now().UTC().Format(time.RFC3339)
