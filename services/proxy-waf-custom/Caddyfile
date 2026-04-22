@@ -3,19 +3,27 @@
 }
 
 :8080 {
-	coraza_waf {
-		include /opt/coraza/config/coraza.conf
-		include /opt/coraza/config.d/*.conf
-		include /opt/coraza/config/crs-setup.conf
-		include /opt/coraza/owasp-crs/*.conf
-		include /opt/coraza/rules/*.conf
-		include /opt/coraza/rules.d/*.conf
-		include /opt/coraza/overrides/*.conf
+	log {
+		output file /var/log/caddy/access.json
+		format json {
+			request>headers
+		}
 	}
 
-	mirror http://inference-engine:8083
+	reverse_proxy proxy-waf:8080 {
+		trusted_proxies private_ranges
+	}
+}
 
-	reverse_proxy juice-shop:3000 {
+:3000 {
+	log {
+		output file /var/log/caddy/access.json
+		format json {
+			request>headers
+		}
+	}
+
+	reverse_proxy proxy-waf:3000 {
 		trusted_proxies private_ranges
 	}
 }
