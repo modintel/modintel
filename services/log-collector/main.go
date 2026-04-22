@@ -48,12 +48,6 @@ func isBlocked(doc *parsers.AlertDocument) bool {
 	return doc.AnomalyScore > 0
 }
 
-const corazaFingerprintWindow = 10 * time.Minute
-
-func findCorazaReferenceByFingerprint(collection interface{}, ctx context.Context, fingerprint string, timeBucket string, window time.Duration) (string, bool, error) {
-	return "", false, nil
-}
-
 func enrichWithAI(doc *parsers.AlertDocument) bool {
 	if isAlreadyEnriched(doc) {
 		return true
