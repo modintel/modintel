@@ -31,18 +31,34 @@ func inferenceEngineURL() string {
 	return "http://localhost:8083"
 }
 
+func hashHeaders(headers map[string]string) string {
+	h := sha256.New()
+	keys := make([]string, 0, len(headers))
+	for k := range headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		h.Write([]byte(k + "=" + headers[k] + "\n"))
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
 func uniqueAlertKey(doc *parsers.AlertDocument) string {
 	rules := make([]string, len(doc.TriggeredRules))
 	copy(rules, doc.TriggeredRules)
 	sort.Strings(rules)
 	h := sha256.New()
-	h.Write([]byte(doc.URI + "|" + doc.Timestamp + "|" + doc.ClientIP + "|" + strings.Join(rules, ",")))
+	h.Write([]byte(doc.Method + "|" + doc.URI + "|" + doc.Body + "|" + doc.ClientIP + "|" + doc.Timestamp + "|" + strings.Join(rules, ",") + "|" + hashHeaders(doc.Headers)))
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 func uniqueMissKey(doc *parsers.AlertDocument) string {
+	rules := make([]string, len(doc.TriggeredRules))
+	copy(rules, doc.TriggeredRules)
+	sort.Strings(rules)
 	h := sha256.New()
-	h.Write([]byte(doc.URI + "|" + doc.Timestamp + "|" + doc.ClientIP + "|" + doc.Method))
+	h.Write([]byte(doc.Method + "|" + doc.URI + "|" + doc.Body + "|" + doc.ClientIP + "|" + doc.Timestamp + "|" + strings.Join(rules, ",") + "|" + hashHeaders(doc.Headers)))
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
