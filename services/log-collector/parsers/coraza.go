@@ -31,6 +31,7 @@ type AlertDocument struct {
 	TriggeredRules            []string               `bson:"triggered_rules" json:"triggered_rules"`
 	AnomalyScore              float64                `bson:"anomaly_score" json:"anomaly_score"`
 	Status                    string                 `bson:"status" json:"status"`
+	HTTPStatus                int                    `bson:"http_status" json:"http_status"`
 	Source                    string                 `bson:"source" json:"source"`
 	RequestFingerprint        string                 `bson:"request_fingerprint" json:"request_fingerprint"`
 	RequestFingerprintVersion string                 `bson:"request_fingerprint_version" json:"request_fingerprint_version"`
