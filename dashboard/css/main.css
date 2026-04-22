@@ -3,9 +3,9 @@
     --bg: #ffffff;
     --bg-panel: #fafafa;
     --fg: #121212;
-    --fg-muted: #555555;
+    --fg-muted: #4a4a4a;
     --fg-subtle: rgba(0, 0, 0, 0.35);
-    --border: rgba(0, 0, 0, 0.06);
+    --border: rgba(0, 0, 0, 0.08);
     --border-active: rgba(0, 0, 0, 0.6);
     --accent: #ff570a;
     --accent-fg: #ffffff;
