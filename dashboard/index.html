@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -81,8 +81,8 @@
                         <div class="stat-value" id="stat-priority">—</div>
                     </div>
                     <div class="stat-cell">
-                        <div class="stat-label">Last Rule ID</div>
-                        <div class="stat-value" id="stat-rule">—</div>
+                        <div class="stat-label">ML Misses</div>
+                        <div class="stat-value" id="stat-misses">0</div>
                     </div>
                 </div>
             </div>
@@ -115,8 +115,14 @@
                 <div
                     style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
                     Real-time Detection Stream</div>
-                <input type="text" id="stream-search" placeholder="Search logs..."
-                    style="padding: 0.4rem 0.8rem; font-size: 0.8rem; border: 0.8px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg-subtle); outline: none; width: 260px;">
+                <div class="header-right-group">
+                    <div class="view-toggle">
+                        <button class="view-btn active" data-view="waf">WAF Alerts</button>
+                        <button class="view-btn" data-view="miss">Miss Detections</button>
+                    </div>
+                    <input type="text" id="stream-search" placeholder="Search logs..."
+                        style="padding: 0.4rem 0.8rem; font-size: 0.8rem; border: 0.8px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg-subtle); outline: none; width: 260px;">
+                </div>
             </div>
             <div class="log-scroll">
                 <table>
