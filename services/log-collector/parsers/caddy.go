@@ -2,81 +2,76 @@ package parsers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"time"
 )
 
-func ParseCaddyAccessLog(raw []byte) (*AlertDocument, error) {
-	var rawData map[string]interface{}
-	if err := json.Unmarshal(raw, &rawData); err != nil {
-		return nil, err
+type CaddyAccessLog struct {
+	Level   string `json:"level"`
+	TS      int64  `json:"ts"`
+	Logger  string `json:"logger"`
+	Msg     string `json:"msg"`
+	Request struct {
+		RemoteIP   string              `json:"remote_ip"`
+		RemotePort string              `json:"remote_port"`
+		ClientIP   string              `json:"client_ip"`
+		Proto      string              `json:"proto"`
+		Method     string              `json:"method"`
+		Host       string              `json:"host"`
+		URI        string              `json:"uri"`
+		Headers    map[string][]string `json:"headers"`
+	} `json:"request"`
+	BytesRead   int     `json:"bytes_read"`
+	Duration    float64 `json:"duration"`
+	Size        int     `json:"size"`
+	Status      int     `json:"status"`
+	RespHeaders map[string][]string `json:"resp_headers"`
+}
+
+func ParseCaddyAccessLog(data []byte) (*AlertDocument, error) {
+	var caddy CaddyAccessLog
+	if err := json.Unmarshal(data, &caddy); err != nil {
+		return nil, fmt.Errorf("unmarshal caddy log: %w", err)
 	}
 
 	doc := &AlertDocument{
-		Status:   "generated",
-		AIStatus: "unavailable",
-		RawLog:   rawData,
-		Headers:  make(map[string]string),
+		Timestamp:       time.Unix(caddy.TS, 0).UTC().Format(time.RFC3339),
+		ClientIP:        caddy.Request.ClientIP,
+		Method:          caddy.Request.Method,
+		URI:             caddy.Request.URI,
+		Headers:         flattenHeaders(caddy.Request.Headers),
+		HTTPStatus:      caddy.Status,
+		TriggeredRules:  []string{},
+		AnomalyScore:    0,
+		RuleDetails:     []RuleDetail{},
+		AIStatus:        "pending",
+		Source:          "unknown",
 	}
 
-	if ts, ok := rawData["ts"].(float64); ok {
-		doc.Timestamp = time.Unix(0, int64(ts*1e9)).UTC().Format(time.RFC3339Nano)
-	} else {
-		doc.Timestamp = time.Now().UTC().Format(time.RFC3339)
-	}
-
-	if request, ok := rawData["request"].(map[string]interface{}); ok {
-		if ip, ok := request["remote_ip"].(string); ok {
-			doc.ClientIP = ip
-		}
-		if method, ok := request["method"].(string); ok {
-			doc.Method = method
-		}
-		if uri, ok := request["uri"].(string); ok {
-			doc.URI = uri
-		}
-		if headers, ok := request["headers"].(map[string]interface{}); ok {
-			doc.HeaderCount = len(headers)
-			for k, v := range headers {
-				switch cv := v.(type) {
-				case string:
-					doc.Headers[k] = cv
-				case []interface{}:
-					if len(cv) > 0 {
-						if s, ok := cv[0].(string); ok {
-							doc.Headers[k] = s
-						}
-					}
-				}
-			}
+	if caddy.Request.Method == "GET" || caddy.Request.Method == "HEAD" {
+		if u, err := url.Parse(caddy.Request.URI); err == nil {
+			doc.Body = u.RawQuery
 		}
 	}
-
-	status := 0
-	if s, ok := rawData["status"].(float64); ok {
-		status = int(s)
-	}
-
-	if status == 403 {
-		doc.AnomalyScore = 1.0
-	} else {
-		doc.AnomalyScore = 0.0
-	}
-
-	doc.QueryParams = make(map[string]string)
-	if doc.URI != "" {
-		if parsed, err := url.Parse(doc.URI); err == nil {
-			for k, vals := range parsed.Query() {
-				if len(vals) > 0 {
-					doc.QueryParams[k] = vals[0]
-				}
-			}
-		}
-	}
-
-	doc.TimeBucket = bucketMinuteUTC(doc.Timestamp)
-	doc.RequestFingerprintVersion = "rfp-v1"
-	doc.RequestFingerprint = computeRequestFingerprint(doc)
 
 	return doc, nil
+}
+
+func flattenHeaders(headers map[string][]string) map[string]string {
+	result := make(map[string]string)
+	for key, values := range headers {
+		if len(values) > 0 {
+			result[key] = values[0]
+		}
+	}
+	return result
+}
+
+func IsBlockedByWAF(status int) bool {
+	return status == 403 || status == 406 || status == 500
+}
+
+func IsWAFPassed(status int) bool {
+	return status >= 200 && status < 400
 }
