@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import math
@@ -12,6 +10,7 @@ import numpy as np
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
 class MissONNXInference:
     def __init__(self, model_path: str):
         self.model_path = model_path
@@ -22,6 +21,7 @@ class MissONNXInference:
     def _load_model(self):
         try:
             import onnxruntime as ort
+
             self.session = ort.InferenceSession(
                 self.model_path,
                 providers=["CPUExecutionProvider"],
@@ -39,7 +39,9 @@ class MissONNXInference:
         except Exception:
             prob = float(raw[0])
         prob = max(0.0, min(1.0, prob))
-        entropy = -(prob * math.log2(prob + 1e-9) + (1 - prob) * math.log2(1 - prob + 1e-9))
+        entropy = -(
+            prob * math.log2(prob + 1e-9) + (1 - prob) * math.log2(1 - prob + 1e-9)
+        )
         h_max = 1.0
         h_norm = entropy / h_max if h_max > 0 else 0.0
         confidence = round((1.0 - h_norm) * 100.0, 2)
@@ -84,33 +86,100 @@ class MissONNXInference:
         features.append(len(path))
         features.append(path.count("/"))
         features.append(1.0 if ".." in path or "%2e%2e" in path.lower() else 0.0)
-        features.append(1.0 if any(ext in path for ext in [".php", ".jsp", ".asp", ".py", ".sh"]) else 0.0)
+        features.append(
+            1.0
+            if any(ext in path for ext in [".php", ".jsp", ".asp", ".py", ".sh"])
+            else 0.0
+        )
 
         qparams = parse_qs(query)
         features.append(len(qparams))
         features.append(sum(len(v[0]) for v in qparams.values() if v))
-        features.append(1.0 if any(k.lower() in ["id", "page", "file", "path", "url", "redirect"] for k in qparams) else 0.0)
+        features.append(
+            1.0
+            if any(
+                k.lower() in ["id", "page", "file", "path", "url", "redirect"]
+                for k in qparams
+            )
+            else 0.0
+        )
 
         body_lower = body.lower()
         features.append(len(body))
-        features.append(1.0 if any(tag in body_lower for tag in ["<script", "javascript:", "onerror", "onload"]) else 0.0)
-        features.append(1.0 if any(sql in body_lower for sql in ["select", "union", "insert", "delete", "drop", "--", "' or '", "1=1"]) else 0.0)
-        features.append(1.0 if "<?php" in body_lower or "system(" in body_lower or "exec(" in body_lower else 0.0)
-        features.append(1.0 if "<!entity" in body_lower or "<!doctype" in body_lower or "file:///" in body_lower else 0.0)
+        features.append(
+            1.0
+            if any(
+                tag in body_lower
+                for tag in ["<script", "javascript:", "onerror", "onload"]
+            )
+            else 0.0
+        )
+        features.append(
+            1.0
+            if any(
+                sql in body_lower
+                for sql in [
+                    "select",
+                    "union",
+                    "insert",
+                    "delete",
+                    "drop",
+                    "--",
+                    "' or '",
+                    "1=1",
+                ]
+            )
+            else 0.0
+        )
+        features.append(
+            1.0
+            if "<?php" in body_lower or "system(" in body_lower or "exec(" in body_lower
+            else 0.0
+        )
+        features.append(
+            1.0
+            if "<!entity" in body_lower
+            or "<!doctype" in body_lower
+            or "file:///" in body_lower
+            else 0.0
+        )
         features.append(1.0 if "${jndi:" in body_lower else 0.0)
         features.append(1.0 if "{{" in body or "${" in body else 0.0)
-        features.append(1.0 if "__proto__" in body_lower or "constructor.prototype" in body_lower else 0.0)
-        features.append(1.0 if any(nosql in body_lower for nosql in ["$gt", "$lt", "$ne", "$where", "$regex"]) else 0.0)
+        features.append(
+            1.0
+            if "__proto__" in body_lower or "constructor.prototype" in body_lower
+            else 0.0
+        )
+        features.append(
+            1.0
+            if any(
+                nosql in body_lower
+                for nosql in ["$gt", "$lt", "$ne", "$where", "$regex"]
+            )
+            else 0.0
+        )
 
         ua = headers.get("user-agent", "").lower()
-        features.append(1.0 if "nikto" in ua or "sqlmap" in ua or "dirbuster" in ua or "gobuster" in ua or "nmap" in ua else 0.0)
-        features.append(1.0 if "powershell" in ua or "curl" in ua or "wget" in ua else 0.0)
+        features.append(
+            1.0
+            if "nikto" in ua
+            or "sqlmap" in ua
+            or "dirbuster" in ua
+            or "gobuster" in ua
+            or "nmap" in ua
+            else 0.0
+        )
+        features.append(
+            1.0 if "powershell" in ua or "curl" in ua or "wget" in ua else 0.0
+        )
 
         ct = headers.get("content-type", "").lower()
         features.append(1.0 if "xml" in ct else 0.0)
         features.append(1.0 if "json" in ct else 0.0)
 
-        features.append(1.0 if "admin" in path or "login" in path or "auth" in path else 0.0)
+        features.append(
+            1.0 if "admin" in path or "login" in path or "auth" in path else 0.0
+        )
         features.append(1.0 if "api" in path else 0.0)
         features.append(1.0 if "rest" in path else 0.0)
         features.append(1.0 if re.search(r"\d+", path) else 0.0)
