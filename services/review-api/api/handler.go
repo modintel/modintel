@@ -628,6 +628,11 @@ func GetLogs(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	filter := bson.M{}
+	if source := strings.TrimSpace(c.Query("source")); source != "" {
+		filter["source"] = source
+	}
+
 	opts := options.Find().
 		SetSort(bson.D{{Key: "timestamp", Value: -1}}).
 		SetLimit(500).
@@ -645,17 +650,18 @@ func GetLogs(c *gin.Context) {
 			"ai_model_version":       1,
 			"ai_entropy":             1,
 			"ai_confidence_interval": 1,
+			"source":                 1,
 		})
-	cursor, err := collection.Find(ctx, bson.M{}, opts)
+	logCursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
 		log.Println("Error finding logs:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 		return
 	}
-	defer cursor.Close(ctx)
+	defer logCursor.Close(ctx)
 
 	var results []map[string]interface{}
-	if err := cursor.All(ctx, &results); err != nil {
+	if err := logCursor.All(ctx, &results); err != nil {
 		log.Println("Error decoding logs:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 		return
@@ -675,6 +681,7 @@ func GetLogs(c *gin.Context) {
 		AIModelVersion       *string                `json:"ai_model_version"`
 		AIEntropy            *float64               `json:"ai_entropy"`
 		AIConfidenceInterval *map[string]float64    `json:"ai_confidence_interval"`
+		Source               string                 `json:"source"`
 	}
 
 	alerts := make([]AlertResponse, 0, len(results))
@@ -729,6 +736,9 @@ func GetLogs(c *gin.Context) {
 				alert.AIConfidenceInterval = &interval
 			}
 		}
+		if src, ok := r["source"].(string); ok {
+			alert.Source = src
+		}
 
 		alerts = append(alerts, alert)
 	}
@@ -748,17 +758,17 @@ func GetStats(c *gin.Context) {
 		return
 	}
 
+	mlMissCount, err := collection.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
+	if err != nil {
+		log.Println("Error counting ml misses:", err)
+		mlMissCount = 0
+	}
+
 	opts := options.FindOne().SetSort(bson.D{{Key: "timestamp", Value: -1}})
 	var result bson.M
-	err = collection.FindOne(ctx, bson.M{}, opts).Decode(&result)
-	latestRule := "—"
 	latestPriority := "—"
+	err = collection.FindOne(ctx, bson.M{"ai_priority": bson.M{"$type": "string"}}, opts).Decode(&result)
 	if err == nil {
-		if rules, ok := result["triggered_rules"].(bson.A); ok && len(rules) > 0 {
-			if rule, ok := rules[0].(string); ok {
-				latestRule = rule
-			}
-		}
 		if priority, ok := result["ai_priority"].(string); ok && priority != "" {
 			latestPriority = priority
 		}
@@ -772,9 +782,9 @@ func GetStats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"total_alerts":      total,
-		"latest_rule":       latestRule,
 		"latest_priority":   latestPriority,
 		"ai_enriched_count": aiEnrichedCount,
+		"ml_miss_count":     mlMissCount,
 	})
 }
 
@@ -874,6 +884,7 @@ func GetmonitorMetrics(c *gin.Context) {
 
 	totalAlerts, _ := collection.CountDocuments(ctx, bson.M{})
 	aiEnrichedCount, _ := collection.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
+	mlMissCount, _ := collection.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
 
 	inferenceMetrics := getInferenceMetrics()
 	systemMetrics := getSystemMetrics(ctx)
@@ -888,6 +899,7 @@ func GetmonitorMetrics(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"total_alerts":             totalAlerts,
 		"ai_enriched_count":        aiEnrichedCount,
+		"ml_miss_count":            mlMissCount,
 		"avg_inference_ms":         inferenceMetrics.avgLatencyMs,
 		"p50_latency_ms":           inferenceMetrics.p50LatencyMs,
 		"p95_latency_ms":           inferenceMetrics.p95LatencyMs,

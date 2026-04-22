@@ -1,8 +1,11 @@
 package parsers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -17,19 +20,23 @@ type RuleDetail struct {
 }
 
 type AlertDocument struct {
-	ID             primitive.ObjectID     `bson:"_id,omitempty" json:"id"`
-	Timestamp      string                 `bson:"timestamp" json:"timestamp"`
-	ClientIP       string                 `bson:"client_ip" json:"client_ip"`
-	URI            string                 `bson:"uri" json:"uri"`
-	Method         string                 `bson:"method" json:"method"`
-	Body           string                 `bson:"body" json:"body"`
-	Headers        map[string]string      `bson:"headers" json:"headers"`
-	TriggeredRules []string               `bson:"triggered_rules" json:"triggered_rules"`
-	AnomalyScore   float64                `bson:"anomaly_score" json:"anomaly_score"`
-	Status         string                 `bson:"status" json:"status"`
-	MLScore        *float64               `bson:"ml_score" json:"ml_score"`
-	HumanLabel     *string                `bson:"human_label" json:"human_label"`
-	RawLog         map[string]interface{} `bson:"raw_log" json:"raw_log"`
+	ID                        primitive.ObjectID     `bson:"_id,omitempty" json:"id"`
+	Timestamp                 string                 `bson:"timestamp" json:"timestamp"`
+	TimeBucket                string                 `bson:"time_bucket" json:"time_bucket"`
+	ClientIP                  string                 `bson:"client_ip" json:"client_ip"`
+	URI                       string                 `bson:"uri" json:"uri"`
+	Method                    string                 `bson:"method" json:"method"`
+	Body                      string                 `bson:"body" json:"body"`
+	Headers                   map[string]string      `bson:"headers" json:"headers"`
+	TriggeredRules            []string               `bson:"triggered_rules" json:"triggered_rules"`
+	AnomalyScore              float64                `bson:"anomaly_score" json:"anomaly_score"`
+	Status                    string                 `bson:"status" json:"status"`
+	Source                    string                 `bson:"source" json:"source"`
+	RequestFingerprint        string                 `bson:"request_fingerprint" json:"request_fingerprint"`
+	RequestFingerprintVersion string                 `bson:"request_fingerprint_version" json:"request_fingerprint_version"`
+	MLScore                   *float64               `bson:"ml_score" json:"ml_score"`
+	HumanLabel                *string                `bson:"human_label" json:"human_label"`
+	RawLog                    map[string]interface{} `bson:"raw_log" json:"raw_log"`
 
 	BodyLength  int               `bson:"body_length" json:"body_length"`
 	HeaderCount int               `bson:"header_count" json:"header_count"`
@@ -82,8 +89,15 @@ func ParseCorazaLog(raw []byte) (*AlertDocument, error) {
 			if headers, ok := req["headers"].(map[string]interface{}); ok {
 				doc.HeaderCount = len(headers)
 				for k, v := range headers {
-					if sv, ok := v.(string); ok {
-						doc.Headers[k] = sv
+					switch cv := v.(type) {
+					case string:
+						doc.Headers[k] = cv
+					case []interface{}:
+						if len(cv) > 0 {
+							if s, ok := cv[0].(string); ok {
+								doc.Headers[k] = s
+							}
+						}
 					}
 				}
 			}
@@ -158,6 +172,118 @@ func ParseCorazaLog(raw []byte) (*AlertDocument, error) {
 	doc.TriggeredRules = triggeredRules
 	doc.AnomalyScore = anomalyScore
 	doc.RuleDetails = ruleDetails
+	doc.TimeBucket = bucketMinuteUTC(doc.Timestamp)
+	doc.RequestFingerprintVersion = "rfp-v1"
+	doc.RequestFingerprint = computeRequestFingerprint(doc)
 
 	return doc, nil
+}
+
+func computeRequestFingerprint(doc *AlertDocument) string {
+	method := strings.ToUpper(strings.TrimSpace(doc.Method))
+	rawPath := ""
+	rawQuery := ""
+	if parsed, err := url.Parse(doc.URI); err == nil {
+		rawPath = parsed.Path
+		rawQuery = parsed.RawQuery
+	}
+	normPath := normalizePath(rawPath)
+	normQueryKeys := normalizeQueryKeys(rawQuery)
+	bodyHash := sha256Hex(normalizeBody(doc.Body))
+	contentType := normalizeHeaderValue(doc.Headers, "content-type")
+	uaFamily := normalizeUserAgentFamily(doc.Headers)
+	ipBucket := ipv4Bucket(doc.ClientIP)
+	canonical := strings.Join([]string{
+		method, normPath, normQueryKeys, bodyHash, contentType, uaFamily, ipBucket,
+	}, "|")
+	return sha256Hex(canonical)
+}
+
+func normalizePath(path string) string {
+	if path == "" {
+		return "/"
+	}
+	lower := strings.ToLower(strings.TrimSpace(path))
+	parts := strings.Split(lower, "/")
+	filtered := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	if len(filtered) == 0 {
+		return "/"
+	}
+	return "/" + strings.Join(filtered, "/")
+}
+
+func normalizeQueryKeys(rawQuery string) string {
+	if rawQuery == "" {
+		return ""
+	}
+	v, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return ""
+	}
+	keys := make([]string, 0, len(v))
+	for k := range v {
+		keys = append(keys, strings.ToLower(strings.TrimSpace(k)))
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, "&")
+}
+
+func normalizeBody(body string) string {
+	if body == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(strings.TrimSpace(body)), " ")
+}
+
+func normalizeHeaderValue(headers map[string]string, key string) string {
+	if headers == nil {
+		return ""
+	}
+	for k, v := range headers {
+		if strings.EqualFold(strings.TrimSpace(k), key) {
+			return strings.ToLower(strings.TrimSpace(v))
+		}
+	}
+	return ""
+}
+
+func normalizeUserAgentFamily(headers map[string]string) string {
+	ua := normalizeHeaderValue(headers, "user-agent")
+	if ua == "" {
+		return ""
+	}
+	idx := strings.Index(ua, "/")
+	if idx > 0 {
+		return ua[:idx]
+	}
+	return ua
+}
+
+func ipv4Bucket(ip string) string {
+	ip = strings.TrimSpace(ip)
+	parts := strings.Split(ip, ".")
+	if len(parts) == 4 {
+		return parts[0] + "." + parts[1] + "." + parts[2] + ".0/24"
+	}
+	return ""
+}
+
+func sha256Hex(input string) string {
+	sum := sha256.Sum256([]byte(input))
+	return hex.EncodeToString(sum[:])
+}
+
+func bucketMinuteUTC(ts string) string {
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05.999999Z07:00", "2006-01-02T15:04:05Z07:00"} {
+		if t, err := time.Parse(layout, ts); err == nil {
+			return t.UTC().Truncate(time.Minute).Format(time.RFC3339)
+		}
+	}
+	return time.Now().UTC().Truncate(time.Minute).Format(time.RFC3339)
 }

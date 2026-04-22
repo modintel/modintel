@@ -1,12 +1,3 @@
-"""
-ModIntel Inference Engine — FastAPI application.
-
-Loads calibrated model artifacts and serves advisory predictions for Coraza
-audit events. Advisory-only: never blocks or allows traffic.
-
-Requirements: 7.1, 7.2, 7.3, 7.4, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7
-"""
-
 from __future__ import annotations
 
 import json
@@ -24,18 +15,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-# Logging
-# ---------------------------------------------------------------------------
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger("inference-engine")
-
-# ---------------------------------------------------------------------------
-# Global model state
-# ---------------------------------------------------------------------------
 
 _model_state: Dict[str, Any] = {
     "model": None,
@@ -52,10 +36,6 @@ _startup_time: float = time.time()
 _prediction_count: int = 0
 _total_latency_ms: float = 0.0
 _recent_latencies: list = []
-
-# ---------------------------------------------------------------------------
-# Model loading
-# ---------------------------------------------------------------------------
 
 
 def _resolve_model_dir() -> Path:
@@ -103,20 +83,11 @@ def _load_artifacts() -> None:
         _model_state["loaded"] = False
 
 
-# ---------------------------------------------------------------------------
-# Lifespan
-# ---------------------------------------------------------------------------
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _load_artifacts()
     yield
 
-
-# ---------------------------------------------------------------------------
-# App
-# ---------------------------------------------------------------------------
 
 app = FastAPI(
     title="ModIntel Inference Engine",
@@ -124,15 +95,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ---------------------------------------------------------------------------
-# Pydantic models
-# ---------------------------------------------------------------------------
-
 
 class CorazaAuditEvent(BaseModel):
-    """Coraza audit event payload accepted by POST /predict."""
-
-    # Request structure
     method: str = Field(..., description="HTTP method (GET, POST, …)")
     uri: str = Field(..., description="Request URI")
     headers: Optional[Any] = Field(
@@ -140,7 +104,6 @@ class CorazaAuditEvent(BaseModel):
     )
     body: Optional[str] = Field(default=None, description="Request body")
 
-    # Coraza WAF fields
     fired_rule_ids: Optional[List[Any]] = Field(default_factory=list)
     rule_severities: Optional[Dict[str, str]] = Field(default_factory=dict)
     rule_messages: Optional[Dict[str, str]] = Field(default_factory=dict)
@@ -176,35 +139,23 @@ class AdvisoryResponse(BaseModel):
     advisory_only: bool = True  # Req 8.4 — hardcoded, never configurable
 
 
-# ---------------------------------------------------------------------------
-# Input validation against Feature_Schema
-# ---------------------------------------------------------------------------
-
-
 def _validate_input(event: CorazaAuditEvent) -> Optional[str]:
-    """
-    Validate the audit event against the loaded Feature_Schema.
-    Returns an error string if validation fails, None otherwise.
-    """
+
     schema = _model_state.get("feature_schema")
     if not schema:
         return None  # No schema loaded — skip validation
 
     errors: List[str] = []
 
-    # method must be a non-empty string
     if not event.method or not isinstance(event.method, str):
         errors.append("Field 'method' is required and must be a non-empty string.")
 
-    # uri must be a non-empty string
     if not event.uri or not isinstance(event.uri, str):
         errors.append("Field 'uri' is required and must be a non-empty string.")
 
-    # anomaly_score range check (min=0)
     if event.anomaly_score is not None and event.anomaly_score < 0:
         errors.append(f"Field 'anomaly_score' must be >= 0, got {event.anomaly_score}.")
 
-    # inbound_threshold range check (min=0)
     if event.inbound_threshold is not None and event.inbound_threshold < 0:
         errors.append(
             f"Field 'inbound_threshold' must be >= 0, got {event.inbound_threshold}."
@@ -213,18 +164,8 @@ def _validate_input(event: CorazaAuditEvent) -> Optional[str]:
     return "; ".join(errors) if errors else None
 
 
-# ---------------------------------------------------------------------------
-# Inference helpers
-# ---------------------------------------------------------------------------
-
-
 def _compute_ci(prob: float, quantiles: Dict[str, Any]) -> ConfidenceInterval:
-    """
-    Compute 95% CI from bootstrap quantiles.
 
-    bootstrap_quantiles.json is expected to contain per-probability-bin
-    quantile offsets, or global q025/q975 offsets.
-    """
     try:
         q025 = float(quantiles.get("q025", 0.0))
         q975 = float(quantiles.get("q975", 0.0))
@@ -232,7 +173,6 @@ def _compute_ci(prob: float, quantiles: Dict[str, Any]) -> ConfidenceInterval:
         high = min(1.0, prob + q975)
         return ConfidenceInterval(low=round(low, 4), high=round(high, 4), level=0.95)
     except Exception:
-        # Fallback: symmetric ±0.1
         return ConfidenceInterval(
             low=round(max(0.0, prob - 0.1), 4),
             high=round(min(1.0, prob + 0.1), 4),
@@ -241,10 +181,7 @@ def _compute_ci(prob: float, quantiles: Dict[str, Any]) -> ConfidenceInterval:
 
 
 def _compute_entropy(prob: float) -> tuple[float, float]:
-    """
-    Binary Shannon entropy H and normalised H_norm ∈ [0, 1].
-    H_max for binary = log2(2) = 1.0 bit.
-    """
+
     p = max(1e-12, min(1 - 1e-12, prob))
     q = 1.0 - p
     h = -(p * math.log2(p) + q * math.log2(q))
@@ -253,13 +190,7 @@ def _compute_entropy(prob: float) -> tuple[float, float]:
 
 
 def _assign_priority(prob: float, ci_width: float, h_norm: float) -> tuple[str, str]:
-    """
-    Assign priority band and produce reasoning string.
 
-    P1: prob >= 0.90 AND ci_width <= 0.15
-    P3: prob <= 0.10 AND ci_width <= 0.15
-    P2: everything else (including h_norm >= 0.5 OR ci_width > 0.15)
-    """
     if prob >= 0.90 and ci_width <= 0.15:
         band = "P1"
         reason = (
@@ -295,10 +226,7 @@ def _assign_priority(prob: float, ci_width: float, h_norm: float) -> tuple[str, 
 def _top5_shap(
     feature_vector: np.ndarray, feature_names: List[str], schema: Dict
 ) -> List[ShapContribution]:
-    """
-    Compute top-5 SHAP feature contributions using TreeExplainer when available,
-    falling back to feature-value magnitude ranking.
-    """
+
     model = _model_state["model"]
     features_dict = schema.get("features", {})
 
@@ -316,7 +244,6 @@ def _top5_shap(
     except Exception:
         sv = np.array(feature_vector[0])
 
-    # Pair names with shap values and sort by absolute magnitude
     pairs = list(zip(feature_names, sv))
     pairs.sort(key=lambda x: abs(x[1]), reverse=True)
     top5 = pairs[:5]
@@ -339,10 +266,7 @@ def _top5_shap(
 
 
 def _conformal_prediction_set(prob: float) -> List[str]:
-    """
-    Simple conformal prediction set based on probability threshold.
-    Returns the set of labels that cannot be excluded at 95% confidence.
-    """
+
     labels: List[str] = []
     if prob >= 0.05:
         labels.append("attack")
@@ -351,25 +275,15 @@ def _conformal_prediction_set(prob: float) -> List[str]:
     return labels
 
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
-
-
 @app.post("/predict", response_model=AdvisoryResponse)
 async def predict(event: CorazaAuditEvent) -> JSONResponse:
-    """
-    Accept a Coraza audit event and return an Advisory_Response.
-    Requirements: 8.1, 8.2, 8.3, 8.4
-    """
+
     global _prediction_count, _total_latency_ms, _recent_latencies
 
-    # --- Input validation (Req 8.2) ---
     validation_error = _validate_input(event)
     if validation_error:
         raise HTTPException(status_code=422, detail=validation_error)
 
-    # --- Model availability check ---
     if not _model_state["loaded"]:
         return JSONResponse(
             status_code=500,
@@ -387,7 +301,6 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
         quantiles = _model_state["bootstrap_quantiles"]
         schema = _model_state["feature_schema"]
 
-        # Build record dict for feature extraction
         record = {
             "method": event.method,
             "uri": event.uri,
@@ -400,31 +313,23 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
             "inbound_threshold": event.inbound_threshold or 0.0,
         }
 
-        # Extract features
         feature_vector = extractor.transform(record)  # shape (1, n_features)
         feature_names: List[str] = extractor.get_feature_names_out()
 
-        # Calibrated probability
         prob_raw = calibrator.predict_proba(feature_vector)[0][1]
         attack_probability = float(round(prob_raw, 6))
 
-        # Confidence interval from bootstrap quantiles
         ci = _compute_ci(attack_probability, quantiles)
         ci_width = round(ci.high - ci.low, 4)
 
-        # Entropy
         entropy, h_norm = _compute_entropy(attack_probability)
 
-        # Confidence score (0–100): inverse of normalised entropy scaled by probability
         confidence_score = round((1.0 - h_norm) * 100.0, 2)
 
-        # Priority band
         band, reasoning = _assign_priority(attack_probability, ci_width, h_norm)
 
-        # SHAP top-5
         top5 = _top5_shap(feature_vector, feature_names, schema)
 
-        # Conformal prediction set
         conf_set = _conformal_prediction_set(attack_probability)
 
         elapsed_ms = (time.perf_counter() - t_start) * 1000.0
@@ -449,7 +354,6 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
         return JSONResponse(content=response.model_dump())
 
     except Exception as exc:
-        # Req 8.7 — HTTP 500, no stack trace in production
         logger.error("Inference failure: %s", exc)
         error_msg = "Internal server error"
         if os.getenv("DEBUG", "false").lower() == "true":
@@ -460,12 +364,90 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
         )
 
 
+@app.post("/predict-miss")
+async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
+    global _prediction_count, _total_latency_ms, _recent_latencies
+
+    t_start = time.perf_counter()
+
+    try:
+        miss_path = os.getenv("MISS_ONNX_MODEL_PATH", "/app/models/modintel.onnx")
+        if miss_path and Path(miss_path).exists():
+            from miss_onnx import MissONNXInference
+
+            miss_infer = MissONNXInference(miss_path)
+            result = miss_infer.predict(
+                {
+                    "method": event.method,
+                    "uri": event.uri,
+                    "headers": event.headers or {},
+                    "body": event.body or "",
+                }
+            )
+            elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+            _prediction_count += 1
+            _total_latency_ms += elapsed_ms
+            _recent_latencies.append(elapsed_ms)
+            if len(_recent_latencies) > 1000:
+                _recent_latencies = _recent_latencies[-1000:]
+            return JSONResponse(content=result)
+    except Exception as exc:
+        logger.warning("ONNX miss inference failed, falling back: %s", exc)
+
+    try:
+        if not _model_state["loaded"]:
+            return JSONResponse(
+                status_code=500,
+                content={"ai_status": "unavailable", "error": "No model loaded."},
+            )
+        extractor = _model_state["feature_extractor"]
+        calibrator = _model_state["calibrator"]
+        record = {
+            "method": event.method,
+            "uri": event.uri,
+            "headers": event.headers or {},
+            "body": event.body or "",
+            "fired_rule_ids": [],
+            "rule_severities": {},
+            "rule_messages": {},
+            "anomaly_score": 0.0,
+            "inbound_threshold": 0.0,
+        }
+        feature_vector = extractor.transform(record)
+        prob_raw = calibrator.predict_proba(feature_vector)[0][1]
+        attack_probability = float(round(prob_raw, 6))
+        entropy, h_norm = _compute_entropy(attack_probability)
+        confidence_score = round((1.0 - h_norm) * 100.0, 2)
+        band, reasoning = _assign_priority(attack_probability, 0.5, h_norm)
+        elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+        _prediction_count += 1
+        _total_latency_ms += elapsed_ms
+        _recent_latencies.append(elapsed_ms)
+        if len(_recent_latencies) > 1000:
+            _recent_latencies = _recent_latencies[-1000:]
+        return JSONResponse(
+            content={
+                "attack_probability": attack_probability,
+                "confidence_score": confidence_score,
+                "recommended_priority": band,
+                "priority_reasoning": reasoning,
+                "entropy": entropy,
+                "entropy_normalized": h_norm,
+                "advisory_only": True,
+                "model_version": _model_state["model_version"],
+            }
+        )
+    except Exception as exc:
+        logger.error("Miss inference failure: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content={"ai_status": "unavailable", "error": "Internal server error"},
+        )
+
+
 @app.get("/health")
 async def health() -> JSONResponse:
-    """
-    Return service health information.
-    Requirements: 8.5
-    """
+
     uptime = round(time.time() - _startup_time, 2)
     avg_latency = (
         round(_total_latency_ms / _prediction_count, 3)
@@ -485,9 +467,7 @@ async def health() -> JSONResponse:
 
 @app.get("/metrics")
 async def metrics() -> JSONResponse:
-    """
-    Return detailed metrics for monitoring.
-    """
+
     uptime = round(time.time() - _startup_time, 2)
     avg_latency = (
         round(_total_latency_ms / _prediction_count, 3)
@@ -520,10 +500,7 @@ async def metrics() -> JSONResponse:
 
 @app.get("/model-info")
 async def model_info() -> JSONResponse:
-    """
-    Return loaded model metadata, feature schema version, ECE and Brier score.
-    Requirements: 8.6
-    """
+
     if not _model_state["loaded"]:
         return JSONResponse(
             status_code=500,
@@ -546,10 +523,6 @@ async def model_info() -> JSONResponse:
         }
     )
 
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import uvicorn

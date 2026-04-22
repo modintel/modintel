@@ -1,5 +1,6 @@
 const API_BASE = '/api';
 let currentGraphRange = 'day';
+let currentView = 'waf';
 const MAX_VISIBLE_RULES = 5;
 
 function formatRules(rules) {
@@ -37,7 +38,7 @@ async function updateStats() {
         const data = await res.json();
         document.getElementById('stat-total').textContent = data.total_alerts || 0;
         document.getElementById('stat-ai-count').textContent = data.ai_enriched_count || 0;
-        document.getElementById('stat-rule').textContent = data.latest_rule || '-';
+        document.getElementById('stat-misses').textContent = data.ml_miss_count || 0;
 
         const priorityEl = document.getElementById('stat-priority');
         if (data.latest_priority && data.latest_priority !== '-') {
@@ -52,7 +53,8 @@ async function updateStats() {
 
 async function updateLogs() {
     try {
-        const res = await apiFetch(`${API_BASE}/logs`);
+        const sourceParam = currentView === 'miss' ? 'source=ml_miss_detector' : '';
+        const res = await apiFetch(`${API_BASE}/logs${sourceParam ? '?' + sourceParam : ''}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (!data.alerts) {
@@ -63,8 +65,12 @@ async function updateLogs() {
         const maxRows = 500;
         data.alerts.slice(0, maxRows).forEach((alert, i) => {
             const row = document.createElement('tr');
-            const ts = alert.timestamp ? alert.timestamp.replace(/\//g, '-').replace(' ', 'T') + 'Z' : '-';
-            const rules = formatRules(alert.triggered_rules);
+            const ts = alert.timestamp ? alert.timestamp.split('/').join('-').replace(' ', 'T') + 'Z' : '-';
+            const source = alert.source || 'coraza';
+            const isMiss = source === 'ml_miss_detector';
+            const rules = isMiss
+                ? '<span class="miss-badge">MISS</span>'
+                : formatRules(alert.triggered_rules);
 
             const aiScoreVal = alert.ai_score;
             const aiScore = aiScoreVal !== null && aiScoreVal !== undefined
@@ -77,11 +83,15 @@ async function updateLogs() {
                 ? `${alert.ai_confidence.toFixed(0)}%`
                 : '-';
 
+            const scoreDisplay = isMiss && aiScoreVal !== null && aiScoreVal !== undefined
+                ? `<span class="miss-score">${(aiScoreVal * 100).toFixed(1)}%</span>`
+                : `<span class="anomaly-badge">${alert.anomaly_score}</span>`;
+
             row.innerHTML = `
                 <td style="color:var(--fg-muted);">${new Date(ts).toLocaleTimeString()}</td>
                 <td>${alert.client_ip}</td>
                 <td style="font-family:monospace;font-size:0.75rem;">${alert.uri}</td>
-                <td class="anomaly-badge" style="text-align: center;">${alert.anomaly_score}</td>
+                <td style="text-align: center;">${scoreDisplay}</td>
                 <td style="text-align: center;">${rules}</td>
                 <td style="text-align: center;">${aiScore}</td>
                 <td style="text-align: center;">${aiConf}</td>
@@ -257,6 +267,12 @@ document.querySelectorAll('.graph-btn').forEach(btn => {
 
 updateGraph('day');
 
-
-
+document.querySelectorAll('.view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentView = btn.dataset.view;
+        updateLogs();
+    });
+});
 

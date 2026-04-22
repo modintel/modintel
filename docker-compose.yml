@@ -6,7 +6,7 @@ services:
     networks:
       - modintel-net
     ports:
-      - "127.0.0.1:27017:27017"
+      - "127.0.0.1:27018:27017"
     restart: always
 
   proxy-waf:
@@ -41,11 +41,13 @@ services:
   log-collector:
     build: ./services/log-collector
     volumes:
-      - modintel_waf-logs:/var/log/coraza:ro
+      - modintel_waf-logs:/var/log/coraza:rw
+      - ./services/log-collector/signatures:/app/signatures:ro
     environment:
       - LOG_FILE_PATH=/var/log/coraza/audit.json
       - MONGO_URI=${MONGO_URI}
       - INFERENCE_ENGINE_URL=${INFERENCE_ENGINE_URL}
+      - MODINTEL_SIGNATURES_FILE=/app/signatures/modintel_regex.signatures
     networks:
       - modintel-net
     ports:
@@ -58,8 +60,10 @@ services:
       - "8083:8083"
     volumes:
       - ./models:/app/models:ro
+      - ./services/inference-engine:/app
     environment:
       - MODEL_VERSION=v3
+      - MISS_ONNX_MODEL_PATH=/app/models/modintel.onnx
     mem_limit: 512m
     restart: always
     networks:
