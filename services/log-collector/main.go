@@ -348,43 +348,6 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 	}
 }
 
-func isStaticAsset(uri string) bool {
-	lower := strings.ToLower(uri)
-	staticExts := []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".map"}
-	for _, ext := range staticExts {
-		if strings.HasSuffix(lower, ext) {
-			return true
-		}
-	}
-	return false
-}
-
-func isHealthCheck(uri string) bool {
-	lower := strings.ToLower(uri)
-	healthPaths := []string{"/api/health", "/api/monitor", "/api/stats", "/api/trend", "/api/logs", "/api/rules", "/api/system", "/aggregate/health", "/api/v1/auth", "/api/v1/users", "/inference"}
-	for _, path := range healthPaths {
-		if strings.HasPrefix(lower, path) {
-			return true
-		}
-	}
-	return false
-}
-
-func isDashboardPage(uri string) bool {
-	lower := strings.ToLower(uri)
-	pages := []string{"/", "/signin", "/events", "/rules", "/training", "/datasets", "/reports", "/monitor", "/settings", "/help", "/index.html"}
-	for _, page := range pages {
-		if lower == page || strings.HasPrefix(lower, page+"/") {
-			return true
-		}
-	}
-	return false
-}
-
-func shouldSkip(uri string) bool {
-	return isStaticAsset(uri) || isHealthCheck(uri) || isDashboardPage(uri)
-}
-
 func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 	logFile := "/var/log/caddy/access.json"
 	if envLog := os.Getenv("CADDY_LOG_PATH"); envLog != "" {
@@ -433,10 +396,6 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 		doc, err := parsers.ParseCaddyAccessLog([]byte(line.Text))
 		if err != nil {
 			log.Printf("Failed to parse Caddy log line: %v", err)
-			continue
-		}
-
-		if shouldSkip(doc.URI) {
 			continue
 		}
 
