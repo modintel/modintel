@@ -652,16 +652,16 @@ func GetLogs(c *gin.Context) {
 			"ai_confidence_interval": 1,
 			"source":                 1,
 		})
-	cursor, err := collection.Find(ctx, filter, opts)
+	logCursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
 		log.Println("Error finding logs:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 		return
 	}
-	defer cursor.Close(ctx)
+	defer logCursor.Close(ctx)
 
 	var results []map[string]interface{}
-	if err := cursor.All(ctx, &results); err != nil {
+	if err := logCursor.All(ctx, &results); err != nil {
 		log.Println("Error decoding logs:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 		return
