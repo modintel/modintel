@@ -372,7 +372,7 @@ func isHealthCheck(uri string) bool {
 
 func isDashboardPage(uri string) bool {
 	lower := strings.ToLower(uri)
-	pages := []string{"/signin", "/events", "/rules", "/training", "/datasets", "/reports", "/monitor", "/settings", "/help"}
+	pages := []string{"/", "/signin", "/events", "/rules", "/training", "/datasets", "/reports", "/monitor", "/settings", "/help", "/index.html"}
 	for _, page := range pages {
 		if lower == page || strings.HasPrefix(lower, page+"/") {
 			return true
