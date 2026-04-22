@@ -55,7 +55,7 @@ services:
       - modintel_waf-logs:/var/log/coraza:ro
       - ./services/log-collector/signatures:/app/signatures:ro
     environment:
-      - LOG_FILE_PATH=/var/log/caddy/access.json
+      - CADDY_LOG_PATH=/var/log/caddy/waf-access.json
       - CORAZA_LOG_PATH=/var/log/coraza/audit.json
       - MONGO_URI=${MONGO_URI}
       - INFERENCE_ENGINE_URL=${INFERENCE_ENGINE_URL}
