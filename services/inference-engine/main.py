@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import json
@@ -39,10 +37,12 @@ _prediction_count: int = 0
 _total_latency_ms: float = 0.0
 _recent_latencies: list = []
 
+
 def _resolve_model_dir() -> Path:
     model_version = os.getenv("MODEL_VERSION", "latest")
     models_root = Path(os.getenv("MODELS_DIR", "/app/models"))
     return models_root / model_version
+
 
 def _load_artifacts() -> None:
     model_dir = _resolve_model_dir()
@@ -82,10 +82,12 @@ def _load_artifacts() -> None:
         logger.error("Failed to load model artifacts: %s", exc)
         _model_state["loaded"] = False
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _load_artifacts()
     yield
+
 
 app = FastAPI(
     title="ModIntel Inference Engine",
@@ -93,9 +95,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-class CorazaAuditEvent(BaseModel):
-    
 
+class CorazaAuditEvent(BaseModel):
     method: str = Field(..., description="HTTP method (GET, POST, …)")
     uri: str = Field(..., description="Request URI")
     headers: Optional[Any] = Field(
@@ -111,16 +112,19 @@ class CorazaAuditEvent(BaseModel):
 
     model_config = {"extra": "allow"}
 
+
 class ShapContribution(BaseModel):
     name: str
     group: str
     shap_value: float
     direction: str  # "positive" | "negative"
 
+
 class ConfidenceInterval(BaseModel):
     low: float
     high: float
     level: float = 0.95
+
 
 class AdvisoryResponse(BaseModel):
     attack_probability: float
@@ -134,8 +138,9 @@ class AdvisoryResponse(BaseModel):
     conformal_prediction_set: List[str]
     advisory_only: bool = True  # Req 8.4 — hardcoded, never configurable
 
+
 def _validate_input(event: CorazaAuditEvent) -> Optional[str]:
-    
+
     schema = _model_state.get("feature_schema")
     if not schema:
         return None  # No schema loaded — skip validation
@@ -158,8 +163,9 @@ def _validate_input(event: CorazaAuditEvent) -> Optional[str]:
 
     return "; ".join(errors) if errors else None
 
+
 def _compute_ci(prob: float, quantiles: Dict[str, Any]) -> ConfidenceInterval:
-    
+
     try:
         q025 = float(quantiles.get("q025", 0.0))
         q975 = float(quantiles.get("q975", 0.0))
@@ -173,16 +179,18 @@ def _compute_ci(prob: float, quantiles: Dict[str, Any]) -> ConfidenceInterval:
             level=0.95,
         )
 
+
 def _compute_entropy(prob: float) -> tuple[float, float]:
-    
+
     p = max(1e-12, min(1 - 1e-12, prob))
     q = 1.0 - p
     h = -(p * math.log2(p) + q * math.log2(q))
     h_norm = h / 1.0  # normalise by H_max = 1 bit
     return round(h, 6), round(h_norm, 6)
 
+
 def _assign_priority(prob: float, ci_width: float, h_norm: float) -> tuple[str, str]:
-    
+
     if prob >= 0.90 and ci_width <= 0.15:
         band = "P1"
         reason = (
@@ -214,10 +222,11 @@ def _assign_priority(prob: float, ci_width: float, h_norm: float) -> tuple[str, 
             )
     return band, reason
 
+
 def _top5_shap(
     feature_vector: np.ndarray, feature_names: List[str], schema: Dict
 ) -> List[ShapContribution]:
-    
+
     model = _model_state["model"]
     features_dict = schema.get("features", {})
 
@@ -255,8 +264,9 @@ def _top5_shap(
         )
     return contributions
 
+
 def _conformal_prediction_set(prob: float) -> List[str]:
-    
+
     labels: List[str] = []
     if prob >= 0.05:
         labels.append("attack")
@@ -264,9 +274,10 @@ def _conformal_prediction_set(prob: float) -> List[str]:
         labels.append("benign")
     return labels
 
+
 @app.post("/predict", response_model=AdvisoryResponse)
 async def predict(event: CorazaAuditEvent) -> JSONResponse:
-    
+
     global _prediction_count, _total_latency_ms, _recent_latencies
 
     validation_error = _validate_input(event)
@@ -352,6 +363,7 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
             content={"ai_status": "unavailable", "error": error_msg},
         )
 
+
 @app.post("/predict-miss")
 async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
     global _prediction_count, _total_latency_ms, _recent_latencies
@@ -362,13 +374,16 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
         miss_path = os.getenv("MISS_ONNX_MODEL_PATH", "/app/models/modintel.onnx")
         if miss_path and Path(miss_path).exists():
             from miss_onnx import MissONNXInference
+
             miss_infer = MissONNXInference(miss_path)
-            result = miss_infer.predict({
-                "method": event.method,
-                "uri": event.uri,
-                "headers": event.headers or {},
-                "body": event.body or "",
-            })
+            result = miss_infer.predict(
+                {
+                    "method": event.method,
+                    "uri": event.uri,
+                    "headers": event.headers or {},
+                    "body": event.body or "",
+                }
+            )
             elapsed_ms = (time.perf_counter() - t_start) * 1000.0
             _prediction_count += 1
             _total_latency_ms += elapsed_ms
@@ -410,16 +425,18 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
         _recent_latencies.append(elapsed_ms)
         if len(_recent_latencies) > 1000:
             _recent_latencies = _recent_latencies[-1000:]
-        return JSONResponse(content={
-            "attack_probability": attack_probability,
-            "confidence_score": confidence_score,
-            "recommended_priority": band,
-            "priority_reasoning": reasoning,
-            "entropy": entropy,
-            "entropy_normalized": h_norm,
-            "advisory_only": True,
-            "model_version": _model_state["model_version"],
-        })
+        return JSONResponse(
+            content={
+                "attack_probability": attack_probability,
+                "confidence_score": confidence_score,
+                "recommended_priority": band,
+                "priority_reasoning": reasoning,
+                "entropy": entropy,
+                "entropy_normalized": h_norm,
+                "advisory_only": True,
+                "model_version": _model_state["model_version"],
+            }
+        )
     except Exception as exc:
         logger.error("Miss inference failure: %s", exc)
         return JSONResponse(
@@ -427,9 +444,10 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
             content={"ai_status": "unavailable", "error": "Internal server error"},
         )
 
+
 @app.get("/health")
 async def health() -> JSONResponse:
-    
+
     uptime = round(time.time() - _startup_time, 2)
     avg_latency = (
         round(_total_latency_ms / _prediction_count, 3)
@@ -446,9 +464,10 @@ async def health() -> JSONResponse:
         }
     )
 
+
 @app.get("/metrics")
 async def metrics() -> JSONResponse:
-    
+
     uptime = round(time.time() - _startup_time, 2)
     avg_latency = (
         round(_total_latency_ms / _prediction_count, 3)
@@ -478,9 +497,10 @@ async def metrics() -> JSONResponse:
         }
     )
 
+
 @app.get("/model-info")
 async def model_info() -> JSONResponse:
-    
+
     if not _model_state["loaded"]:
         return JSONResponse(
             status_code=500,
@@ -502,6 +522,7 @@ async def model_info() -> JSONResponse:
             "brier_score": metadata.get("brier_score"),
         }
     )
+
 
 if __name__ == "__main__":
     import uvicorn
