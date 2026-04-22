@@ -65,12 +65,13 @@ async function updateLogs() {
         const maxRows = 500;
         data.alerts.slice(0, maxRows).forEach((alert, i) => {
             const row = document.createElement('tr');
-            const ts = alert.timestamp ? alert.timestamp.split('/').join('-').replace(' ', 'T') + 'Z' : '-';
+            let ts = alert.timestamp || '-';
+            if (ts.includes('/')) {
+                ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
+            }
             const source = alert.source || 'coraza';
             const isMiss = source === 'ml_miss_detector';
-            const rules = isMiss
-                ? '<span class="miss-badge">MISS</span>'
-                : formatRules(alert.triggered_rules);
+            const rules = formatRules(alert.triggered_rules);
 
             const aiScoreVal = alert.ai_score;
             const aiScore = aiScoreVal !== null && aiScoreVal !== undefined
