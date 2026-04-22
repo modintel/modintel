@@ -8,10 +8,10 @@ import (
 )
 
 type CaddyAccessLog struct {
-	Level   string `json:"level"`
-	TS      int64  `json:"ts"`
-	Logger  string `json:"logger"`
-	Msg     string `json:"msg"`
+	Level   string  `json:"level"`
+	TS      float64 `json:"ts"`
+	Logger  string  `json:"logger"`
+	Msg     string  `json:"msg"`
 	Request struct {
 		RemoteIP   string              `json:"remote_ip"`
 		RemotePort string              `json:"remote_port"`
@@ -35,8 +35,8 @@ func ParseCaddyAccessLog(data []byte) (*AlertDocument, error) {
 		return nil, fmt.Errorf("unmarshal caddy log: %w", err)
 	}
 
-	doc := &AlertDocument{
-		Timestamp:       time.Unix(caddy.TS, 0).UTC().Format(time.RFC3339),
+		doc := &AlertDocument{
+		Timestamp:       time.Unix(int64(caddy.TS), 0).UTC().Format(time.RFC3339),
 		ClientIP:        caddy.Request.ClientIP,
 		Method:          caddy.Request.Method,
 		URI:             caddy.Request.URI,
