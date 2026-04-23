@@ -29,19 +29,19 @@
         }
     }
 
-    function storeAuthData(token, user) {
+    function storeAuthData(token, user, remember) {
         localStorage.setItem('access_token', token);
-        if (user && user.refresh_token) {
+        if (remember && user && user.refresh_token) {
             localStorage.setItem('refresh_token', user.refresh_token);
         }
         localStorage.setItem('user', JSON.stringify(user));
     }
 
-    function handleLoginSuccess(data) {
+    function handleLoginSuccess(data, remember) {
         storeAuthData(data.access_token, {
             ...data.user,
             refresh_token: data.refresh_token,
-        });
+        }, remember);
         hideAlert();
         signinForm.style.display = 'none';
         if (loadingDots) loadingDots.style.display = 'flex';
@@ -51,7 +51,7 @@
         }, 500);
     }
 
-    async function authenticate(email, password) {
+    async function authenticate(email, password, remember) {
         try {
             const response = await fetch(AUTH_SERVICE_URL, {
                 method: 'POST',
@@ -64,7 +64,7 @@
             const data = await response.json();
 
             if (response.ok && data.success) {
-                handleLoginSuccess(data.data);
+                handleLoginSuccess(data.data, remember);
             } else {
                 showAlert('danger', data.error || 'Invalid credentials. Please try again.');
                 setLoading(false);
@@ -81,11 +81,12 @@
 
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
+        const remember = document.getElementById('remember')?.checked || false;
 
         hideAlert();
         setLoading(true);
 
-        authenticate(email, password);
+        authenticate(email, password, remember);
     }
 
     window.showComingSoon = function(e) {

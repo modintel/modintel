@@ -489,6 +489,18 @@ thead th:first-child[data-tooltip]::after {
     transform: none;
 }
 
+#load-more-logs {
+    display: block;
+    margin: 16px auto;
+    background: #ffffff;
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+#load-more-logs:hover {
+    background: var(--accent);
+    color: var(--accent-fg);
+}
 .header-right-group {
     display: flex;
     align-items: center;

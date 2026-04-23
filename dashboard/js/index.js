@@ -2,6 +2,10 @@ const API_BASE = '/api';
 let currentGraphRange = 'day';
 let currentView = 'waf';
 const MAX_VISIBLE_RULES = 5;
+let logsCursor = null;
+let logsHasMore = true;
+let logsLoading = false;
+let lastAlertCount = 0;
 const priorityFilters = {
     p1: true,
     p2: true,
@@ -41,7 +45,8 @@ async function updateStats() {
         const res = await apiFetch(`${API_BASE}/stats`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        document.getElementById('stat-total').textContent = data.total_alerts || 0;
+        const total = data.total_alerts || 0;
+        document.getElementById('stat-total').textContent = total;
         document.getElementById('stat-ai-count').textContent = data.ai_enriched_count || 0;
         document.getElementById('stat-misses').textContent = data.ml_miss_count || 0;
 
@@ -53,22 +58,41 @@ async function updateStats() {
             priorityEl.textContent = '-';
             priorityEl.className = 'stat-value';
         }
-    } catch (e) { }
+        return total;
+    } catch (e) { 
+        return 0;
+    }
 }
 
-async function updateLogs() {
+async function updateLogs(append = false) {
+    if (logsLoading) return;
+    logsLoading = true;
+
     try {
-        const sourceParam = currentView === 'miss' ? 'source=ml_miss_detector' : '';
-        const res = await apiFetch(`${API_BASE}/logs${sourceParam ? '?' + sourceParam : ''}`);
+        let url = logsCursor
+            ? `${API_BASE}/logs?cursor=${logsCursor}&limit=50`
+            : `${API_BASE}/logs?limit=50`;
+
+        if (currentView === 'miss') {
+            url += '&source=ml_miss_detector';
+        }
+
+        const res = await apiFetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (!data.alerts) {
+
+        if (!data.data) {
+            logsLoading = false;
             return;
         }
+
         const tbody = document.getElementById('logs-body');
-        tbody.innerHTML = '';
-        const maxRows = 500;
-        data.alerts.slice(0, maxRows).forEach((alert, i) => {
+        if (!append) {
+            tbody.innerHTML = '';
+            logsCursor = null;
+        }
+
+        data.data.forEach((alert, i) => {
             const row = document.createElement('tr');
             let ts = alert.timestamp || '-';
             if (ts.includes('/')) {
@@ -105,22 +129,58 @@ async function updateLogs() {
             `;
             tbody.appendChild(row);
         });
+
+        logsCursor = data.next_cursor || null;
+        logsHasMore = !!data.next_cursor;
+        
+        const loadMoreBtn = document.getElementById('load-more-logs');
+        if (loadMoreBtn) {
+            loadMoreBtn.style.display = logsHasMore ? 'block' : 'none';
+            loadMoreBtn.disabled = false;
+            loadMoreBtn.textContent = 'Load More';
+        }
+
         if (streamSearchQuery) applyStreamSearch();
         applyPriorityFilter();
     } catch (e) {
         console.error('Error in updateLogs:', e);
+    } finally {
+        logsLoading = false;
     }
 }
-setInterval(() => { updateStats(); updateLogs(); }, 2000);
-updateStats();
+
+async function loadMoreLogs() {
+    if (!logsHasMore || logsLoading) return;
+
+    const loadMoreBtn = document.getElementById('load-more-logs');
+    if (loadMoreBtn) {
+        loadMoreBtn.disabled = true;
+        loadMoreBtn.textContent = 'Loading...';
+    }
+
+    await updateLogs(true);
+}
+
+setInterval(async () => {
+    const currentTotal = await updateStats();
+    if (currentTotal > lastAlertCount) {
+        lastAlertCount = currentTotal;
+        logsCursor = null;
+        await updateLogs();
+    }
+}, 100);
+updateStats().then(total => { lastAlertCount = total; });
 updateLogs();
 
 async function clearLogs() {
     try {
         const res = await apiFetch(`${API_BASE}/logs`, { method: 'DELETE' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        updateStats();
-        updateLogs();
+        logsCursor = null;
+        logsHasMore = true;
+        lastAlertCount = 0;
+        await updateStats();
+        await updateLogs();
     } catch (e) {
         console.error('Error clearing logs:', e);
     }
@@ -169,9 +229,6 @@ function toggleReview() {
     if (isReviewing) {
         btn.classList.add('active');
         icon.innerHTML = '<rect x="6" y="6" width="12" height="12"></rect>';
-        updateStats();
-        updateLogs();
-        updateGraph(currentGraphRange);
     } else {
         btn.classList.remove('active');
         icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
@@ -211,6 +268,11 @@ if (clearCancelBtn) {
 const clearConfirmBtn = document.getElementById('clear-modal-confirm');
 if (clearConfirmBtn) {
     clearConfirmBtn.addEventListener('click', confirmClearLogs);
+}
+
+const loadMoreLogsBtn = document.getElementById('load-more-logs');
+if (loadMoreLogsBtn) {
+    loadMoreLogsBtn.addEventListener('click', loadMoreLogs);
 }
 
 const streamSearchInput = document.getElementById('stream-search');
@@ -315,6 +377,7 @@ document.querySelectorAll('.view-btn').forEach(btn => {
         document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentView = btn.dataset.view;
+        logsCursor = null; // Reset cursor when switching views
         updateLogs();
     });
 });
