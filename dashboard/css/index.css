@@ -492,13 +492,14 @@ thead th:first-child[data-tooltip]::after {
 #load-more-logs {
     display: block;
     margin: 16px auto;
-    background: var(--accent);
-    color: var(--accent-fg);
+    background: #ffffff;
+    color: var(--accent);
     border-color: var(--accent);
 }
 
 #load-more-logs:hover {
-    opacity: 0.9;
+    background: var(--accent);
+    color: var(--accent-fg);
 }
 .header-right-group {
     display: flex;

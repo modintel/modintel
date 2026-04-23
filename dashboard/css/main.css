@@ -211,7 +211,7 @@ nav {
 
 .btn-lock {
     background: var(--bg);
-    color: var(--fg);
+    color: var(--accent);
     border-color: var(--border);
     padding: 0.45rem 0.6rem;
 }

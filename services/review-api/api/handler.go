@@ -676,7 +676,7 @@ func GetLogs(c *gin.Context) {
 	}
 
 	opts := options.Find().
-		SetSort(bson.D{{Key: "_id", Value: 1}}).
+		SetSort(bson.D{{Key: "_id", Value: -1}}).
 		SetLimit(int64(params.Limit + 1)).
 		SetProjection(bson.M{
 			"_id":                    1,
@@ -822,7 +822,7 @@ func GetAlerts(c *gin.Context) {
 	defer cancel()
 
 	opts := options.Find().
-		SetSort(bson.D{{Key: "_id", Value: 1}}).
+		SetSort(bson.D{{Key: "_id", Value: -1}}).
 		SetLimit(int64(params.Limit + 1)).
 		SetProjection(bson.M{
 			"_id":                    1,

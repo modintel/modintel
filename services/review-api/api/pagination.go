@@ -91,5 +91,5 @@ func buildCursorFilter(cursor string) (bson.M, error) {
 		return nil, fmt.Errorf("invalid cursor")
 	}
 
-	return bson.M{"_id": bson.M{"$gt": objectID}}, nil
+	return bson.M{"_id": bson.M{"$lt": objectID}}, nil
 }
