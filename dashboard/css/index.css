@@ -448,3 +448,15 @@ thead th:first-child[data-tooltip]::after {
     left: 10px;
     transform: none;
 }
+
+#load-more-logs {
+    display: block;
+    margin: 16px auto;
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+}
+
+#load-more-logs:hover {
+    opacity: 0.9;
+}
