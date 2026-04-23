@@ -169,6 +169,9 @@ function updateServiceStatus(elementId, status) {
     const el = document.getElementById(elementId);
     if (!el) return;
 
+    const loading = el.querySelector('.status-loading');
+    if (loading) loading.remove();
+
     el.className = 'service-status-indicator';
 
     if (status === 'ok' || status === 'healthy') {

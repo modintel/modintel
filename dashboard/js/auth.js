@@ -34,7 +34,7 @@
             headers,
         });
 
-        if ((response.status === 401 || response.status === 403) && window.location.pathname !== SIGNIN_ROUTE) {
+        if (response.status === 401 && window.location.pathname !== SIGNIN_ROUTE) {
             clearAuth();
             window.location.href = SIGNIN_ROUTE;
             throw new Error(`HTTP ${response.status}`);

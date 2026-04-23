@@ -477,6 +477,9 @@
                 body: JSON.stringify({ enabled: nextEnabled })
             });
             if (!response.ok) {
+                if (response.status === 403) {
+                    showModal('Permission Denied', 'You need admin privileges to toggle rules.', 'error');
+                }
                 return;
             }
             setRuleRowUI(row, nextEnabled);
