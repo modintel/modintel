@@ -117,17 +117,24 @@
         </div>
         <div class="panel-right">
             <div class="panel-right-header">
-                <div
-                    style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
-                    Real-time Detection Stream</div>
-                <div class="header-right-group">
+                <div class="header-left-group">
+                    <div
+                        style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
+                        Real-time Detection Stream</div>
                     <div class="view-toggle">
                         <button class="view-btn active" data-view="waf">Alerts</button>
                         <button class="view-btn" data-view="miss">ML Filter</button>
                     </div>
+                </div>
+                <div class="header-right-group">
                     <div class="search-wrap">
                         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         <input type="text" id="stream-search" placeholder="Search logs...">
+                    </div>
+                    <div class="priority-toggle">
+                        <button class="priority-btn active" data-priority="p1">P1</button>
+                        <button class="priority-btn active" data-priority="p2">P2</button>
+                        <button class="priority-btn active" data-priority="p3">P3</button>
                     </div>
                 </div>
             </div>

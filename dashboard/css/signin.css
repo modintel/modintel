@@ -51,7 +51,7 @@ body.signin-page::before {
     color: var(--accent);
     position: absolute;
     top: 40px;
-    left: 56px;
+    left: 64px;
 }
 
 .brand-logo-top svg {

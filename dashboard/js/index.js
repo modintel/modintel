@@ -2,6 +2,11 @@ const API_BASE = '/api';
 let currentGraphRange = 'day';
 let currentView = 'waf';
 const MAX_VISIBLE_RULES = 5;
+const priorityFilters = {
+    p1: true,
+    p2: true,
+    p3: true
+};
 
 function formatRules(rules) {
     if (!rules || rules.length === 0) return '-';
@@ -101,6 +106,7 @@ async function updateLogs() {
             tbody.appendChild(row);
         });
         if (streamSearchQuery) applyStreamSearch();
+        applyPriorityFilter();
     } catch (e) {
         console.error('Error in updateLogs:', e);
     }
@@ -144,7 +150,12 @@ function applyStreamSearch() {
     const rows = document.querySelectorAll('#logs-body tr');
     rows.forEach(row => {
         const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(streamSearchQuery) ? '' : 'none';
+        const priorityCell = row.querySelector('td:last-child');
+        const priorityMatch = priorityCell ? priorityCell.textContent.match(/P[123]/i) : null;
+        const p = priorityMatch ? priorityMatch[0].toLowerCase() : null;
+        const priorityVisible = p ? priorityFilters[p] : true;
+        const searchVisible = streamSearchQuery === '' || text.includes(streamSearchQuery);
+        row.style.display = searchVisible && priorityVisible ? '' : 'none';
     });
 }
 
@@ -307,4 +318,24 @@ document.querySelectorAll('.view-btn').forEach(btn => {
         updateLogs();
     });
 });
+
+document.querySelectorAll('.priority-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        btn.classList.toggle('active');
+        priorityFilters[btn.dataset.priority] = btn.classList.contains('active');
+        applyPriorityFilter();
+    });
+});
+
+function applyPriorityFilter() {
+    const rows = document.querySelectorAll('#logs-body tr');
+    rows.forEach(row => {
+        const priorityCell = row.querySelector('td:last-child');
+        if (!priorityCell) return;
+        const priorityMatch = priorityCell.textContent.match(/P[123]/i);
+        if (!priorityMatch) return;
+        const p = priorityMatch[0].toLowerCase();
+        row.style.display = priorityFilters[p] ? '' : 'none';
+    });
+}
 

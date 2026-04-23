@@ -85,7 +85,11 @@
                 seen.add(el);
                 el.addEventListener('click', async (event) => {
                     event.preventDefault();
-                    await logout();
+                    showConfirm(
+                        'Logout',
+                        'Are you sure you want to log out?',
+                        async () => { await logout(); }
+                    );
                 });
             });
         });
