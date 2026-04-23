@@ -184,6 +184,9 @@ td {
     padding: 0.3rem 0.6rem;
     font-size: 0.7rem;
     white-space: nowrap;
+    background: var(--bg);
+    color: var(--fg-muted);
+    border-color: var(--border);
 }
 
 .restart-btn.pending-restart {

@@ -36,4 +36,6 @@ ml-pipeline/notebooks/.ipynb_checkpoints/
 proxy-waf/overrides/managed-overrides.conf
 
 #md files
-dist-plan.md
+modintel_regex.signatures
+concurrency.md
+rules.md

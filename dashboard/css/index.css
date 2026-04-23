@@ -3,19 +3,59 @@
     padding: 0 !important;
 }
 
-.syncing #sync-icon {
-    animation: sync-spin-once 0.45s linear 1;
+.search-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    transition: width 0.25s ease;
 }
 
-@keyframes sync-spin-once {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+.search-wrap.expanded {
+    width: 260px;
+    cursor: text;
 }
 
-.syncing {
-    opacity: 0.7;
+.search-wrap input {
+    width: 0;
+    padding: 0.4rem 0;
+    font-size: 0.8rem;
+    border: 0.8px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--fg);
+    outline: none;
+    transition: all 0.25s ease;
+}
+
+.search-wrap.expanded input {
+    width: 100%;
+    padding: 0.4rem 0.8rem 0.4rem 2rem;
+    border-color: var(--border);
+    background: var(--bg);
+}
+
+.search-wrap input::placeholder {
+    color: var(--fg-subtle);
+}
+
+.search-icon {
+    position: absolute;
+    left: 9px;
+    width: 14px;
+    height: 14px;
+    color: var(--fg-subtle);
     pointer-events: none;
+    transition: left 0.25s ease;
 }
+
+.search-wrap.expanded .search-icon {
+    left: 0.55rem;
+}
+
+
 
 .panel-default {
     flex: 0 0 auto;
@@ -460,3 +500,81 @@ thead th:first-child[data-tooltip]::after {
 #load-more-logs:hover {
     opacity: 0.9;
 }
+.header-right-group {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.header-left-group {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-right: auto;
+}
+
+.priority-toggle {
+    display: flex;
+    gap: 2px;
+    border: 0.8px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.priority-btn {
+    padding: 4px 8px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--font);
+}
+
+.priority-btn.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+}
+
+.view-toggle {
+    display: flex;
+    gap: 0;
+    border: 0.8px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.view-btn {
+    padding: 4px 10px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    border: none;
+    background: transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--font);
+}
+
+.view-btn.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+}
+
+.miss-badge {
+    display: inline-block;
+    padding: 1px 5px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: #f59e0b;
+    color: #1f2937;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+

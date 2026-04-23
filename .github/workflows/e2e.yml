@@ -19,6 +19,25 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          MONGO_URI=mongodb://mongodb:27017
+          JWT_SECRET=test-secret-for-ci
+          INFERENCE_ENGINE_URL=http://inference-engine:8083
+          AUTH_PORT=8084
+          BACKEND_TARGET=juice-shop:3000
+          AUTH_BOOTSTRAP_ADMIN_EMAIL=admin@modintel.local
+          AUTH_BOOTSTRAP_ADMIN_PASSWORD=ChangeMe123!
+          AUTH_BOOTSTRAP_ADMIN_ROLE=admin
+          AUTH_BOOTSTRAP_ADMIN_NAME=Admin
+          JWT_ACCESS_EXPIRY=15m
+          JWT_REFRESH_EXPIRY=24h
+          BCRYPT_COST=10
+          RATE_LIMIT_AUTH=100
+          MONGO_DB_NAME=modintel
+          EOF
+
       - name: Build services
         run: |
           docker compose build --parallel
@@ -26,7 +45,7 @@ jobs:
       - name: Start services
         run: |
           docker compose up -d
-          sleep 15
+          sleep 20
 
       - name: Health check services
         run: |

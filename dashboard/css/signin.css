@@ -51,7 +51,7 @@ body.signin-page::before {
     color: var(--accent);
     position: absolute;
     top: 40px;
-    left: 56px;
+    left: 64px;
 }
 
 .brand-logo-top svg {
@@ -291,6 +291,41 @@ body.signin-page::before {
     background: rgba(22, 163, 74, 0.05);
     border-color: rgba(22, 163, 74, 0.3);
     color: var(--success);
+}
+
+.loading-dots {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 14px 0;
+    margin-bottom: 20px;
+}
+
+.loading-dots span {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: dot-bounce 1.4s infinite ease-in-out both;
+}
+
+.loading-dots span:nth-child(1) {
+    animation-delay: -0.32s;
+}
+
+.loading-dots span:nth-child(2) {
+    animation-delay: -0.16s;
+}
+
+@keyframes dot-bounce {
+    0%, 80%, 100% {
+        transform: scale(0);
+    }
+    40% {
+        transform: scale(1);
+    }
 }
 
 @media (max-width: 900px) {

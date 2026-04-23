@@ -6,8 +6,27 @@ services:
     networks:
       - modintel-net
     ports:
-      - "127.0.0.1:27017:27017"
+      - "127.0.0.1:27018:27017"
     restart: always
+
+  proxy-waf-custom:
+    build: ./services/proxy-waf-custom
+    volumes:
+      - ./services/proxy-waf-custom/Caddyfile:/etc/caddy/Caddyfile
+      - modintel_caddy_logs:/var/log/caddy
+    networks:
+      - modintel-net
+    ports:
+      - "8080:8080"
+      - "3000:3000"
+    restart: always
+    command:
+      - caddy
+      - run
+      - --config
+      - /etc/caddy/Caddyfile
+      - --adapter
+      - caddyfile
 
   proxy-waf:
     image: ghcr.io/coreruleset/coraza-crs:caddy-alpine
@@ -26,9 +45,6 @@ services:
       - ANOMALY_INBOUND=3
     networks:
       - modintel-net
-    ports:
-      - "8080:8080"
-      - "3000:3000"
     restart: always
     user: root
 
@@ -41,11 +57,15 @@ services:
   log-collector:
     build: ./services/log-collector
     volumes:
+      - modintel_caddy_logs:/var/log/caddy:ro
       - modintel_waf-logs:/var/log/coraza:ro
+      - ./services/log-collector/signatures:/app/signatures:ro
     environment:
-      - LOG_FILE_PATH=/var/log/coraza/audit.json
+      - CADDY_LOG_PATH=/var/log/caddy/waf-access.json
+      - CORAZA_LOG_PATH=/var/log/coraza/audit.json
       - MONGO_URI=${MONGO_URI}
       - INFERENCE_ENGINE_URL=${INFERENCE_ENGINE_URL}
+      - MODINTEL_SIGNATURES_FILE=/app/signatures/modintel_regex.signatures
     networks:
       - modintel-net
     ports:
@@ -58,8 +78,10 @@ services:
       - "8083:8083"
     volumes:
       - ./models:/app/models:ro
+      - ./services/inference-engine:/app
     environment:
       - MODEL_VERSION=v3
+      - MISS_ONNX_MODEL_PATH=/app/models/modintel.onnx
     mem_limit: 512m
     restart: always
     networks:
@@ -76,7 +98,7 @@ services:
       - MONGO_URI=${MONGO_URI}
       - JWT_SECRET=${JWT_SECRET}
       - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}
-      - WAF_ENGINE=Coraza (Caddy edge)
+      - WAF_ENGINE=Coraza
       - BACKEND_TARGET=${BACKEND_TARGET}
       - INFERENCE_ENGINE_URL=${INFERENCE_ENGINE_URL}
       - WAF_OVERRIDES_FILE=/waf-overrides/managed-overrides.conf
@@ -129,3 +151,5 @@ volumes:
     name: modintel_waf-logs
   modintel_mongo_data:
     name: modintel_mongo_data
+  modintel_caddy_logs:
+    name: modintel_caddy_logs

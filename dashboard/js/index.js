@@ -1,9 +1,15 @@
 const API_BASE = '/api';
 let currentGraphRange = 'day';
+let currentView = 'waf';
 const MAX_VISIBLE_RULES = 5;
 let logsCursor = null;
 let logsHasMore = true;
 let logsLoading = false;
+const priorityFilters = {
+    p1: true,
+    p2: true,
+    p3: true
+};
 
 function formatRules(rules) {
     if (!rules || rules.length === 0) return '-';
@@ -40,7 +46,7 @@ async function updateStats() {
         const data = await res.json();
         document.getElementById('stat-total').textContent = data.total_alerts || 0;
         document.getElementById('stat-ai-count').textContent = data.ai_enriched_count || 0;
-        document.getElementById('stat-rule').textContent = data.latest_rule || '-';
+        document.getElementById('stat-misses').textContent = data.ml_miss_count || 0;
 
         const priorityEl = document.getElementById('stat-priority');
         if (data.latest_priority && data.latest_priority !== '-') {
@@ -58,14 +64,18 @@ async function updateLogs(append = false) {
     logsLoading = true;
 
     try {
-        const url = logsCursor 
+        let url = logsCursor
             ? `${API_BASE}/logs?cursor=${logsCursor}&limit=50`
             : `${API_BASE}/logs?limit=50`;
-        
+
+        if (currentView === 'miss') {
+            url += (logsCursor ? '&' : '?') + 'source=ml_miss_detector';
+        }
+
         const res = await apiFetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        
+
         if (!data.data) {
             logsLoading = false;
             return;
@@ -79,7 +89,12 @@ async function updateLogs(append = false) {
 
         data.data.forEach((alert, i) => {
             const row = document.createElement('tr');
-            const ts = alert.timestamp ? alert.timestamp.replace(/\//g, '-').replace(' ', 'T') + 'Z' : '-';
+            let ts = alert.timestamp || '-';
+            if (ts.includes('/')) {
+                ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
+            }
+            const source = alert.source || 'coraza';
+            const isMiss = source === 'ml_miss_detector';
             const rules = formatRules(alert.triggered_rules);
 
             const aiScoreVal = alert.ai_score;
@@ -93,11 +108,15 @@ async function updateLogs(append = false) {
                 ? `${alert.ai_confidence.toFixed(0)}%`
                 : '-';
 
+            const scoreDisplay = isMiss && aiScoreVal !== null && aiScoreVal !== undefined
+                ? `<span class="ai-score">*${(aiScoreVal * 100).toFixed(1)}%</span>`
+                : `<span class="anomaly-badge">${alert.anomaly_score}</span>`;
+
             row.innerHTML = `
                 <td style="color:var(--fg-muted);">${new Date(ts).toLocaleTimeString()}</td>
                 <td>${alert.client_ip}</td>
                 <td style="font-family:monospace;font-size:0.75rem;">${alert.uri}</td>
-                <td class="anomaly-badge" style="text-align: center;">${alert.anomaly_score}</td>
+                <td style="text-align: center;">${scoreDisplay}</td>
                 <td style="text-align: center;">${rules}</td>
                 <td style="text-align: center;">${aiScore}</td>
                 <td style="text-align: center;">${aiConf}</td>
@@ -117,6 +136,7 @@ async function updateLogs(append = false) {
         }
 
         if (streamSearchQuery) applyStreamSearch();
+        applyPriorityFilter();
     } catch (e) {
         console.error('Error in updateLogs:', e);
     } finally {
@@ -177,27 +197,47 @@ function applyStreamSearch() {
     const rows = document.querySelectorAll('#logs-body tr');
     rows.forEach(row => {
         const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(streamSearchQuery) ? '' : 'none';
+        const priorityCell = row.querySelector('td:last-child');
+        const priorityMatch = priorityCell ? priorityCell.textContent.match(/P[123]/i) : null;
+        const p = priorityMatch ? priorityMatch[0].toLowerCase() : null;
+        const priorityVisible = p ? priorityFilters[p] : true;
+        const searchVisible = streamSearchQuery === '' || text.includes(streamSearchQuery);
+        row.style.display = searchVisible && priorityVisible ? '' : 'none';
     });
 }
 
-function handleSync() {
+let isReviewing = false;
+
+function toggleReview() {
     const btn = document.getElementById('sync-btn');
-    const icon = document.getElementById('sync-icon');
-    btn.classList.add('syncing');
-    logsCursor = null;
-    logsHasMore = true;
-    updateStats();
-    updateLogs();
-    updateGraph(currentGraphRange);
-    setTimeout(() => {
-        btn.classList.remove('syncing');
-    }, 1000);
+    const icon = document.getElementById('review-icon');
+    isReviewing = !isReviewing;
+
+    if (isReviewing) {
+        btn.classList.add('active');
+        icon.innerHTML = '<rect x="6" y="6" width="12" height="12"></rect>';
+        updateStats();
+        updateLogs();
+        updateGraph(currentGraphRange);
+    } else {
+        btn.classList.remove('active');
+        icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+    }
 }
 
 const syncBtn = document.getElementById('sync-btn');
 if (syncBtn) {
-    syncBtn.addEventListener('click', handleSync);
+    syncBtn.addEventListener('click', toggleReview);
+}
+
+const lockBtn = document.getElementById('lock-btn');
+if (lockBtn) {
+    lockBtn.addEventListener('click', () => {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        window.location.href = '/signin';
+    });
 }
 
 const refreshBtn = document.getElementById('refresh-btn');
@@ -226,7 +266,21 @@ if (loadMoreLogsBtn) {
 }
 
 const streamSearchInput = document.getElementById('stream-search');
-if (streamSearchInput) {
+const searchWrap = document.querySelector('.search-wrap');
+if (searchWrap && streamSearchInput) {
+    searchWrap.addEventListener('click', (e) => {
+        if (!searchWrap.classList.contains('expanded')) {
+            searchWrap.classList.add('expanded');
+            streamSearchInput.focus();
+        }
+    });
+    streamSearchInput.addEventListener('blur', () => {
+        if (streamSearchInput.value.trim() === '') {
+            searchWrap.classList.remove('expanded');
+            streamSearchQuery = '';
+            applyStreamSearch();
+        }
+    });
     streamSearchInput.addEventListener('input', (e) => handleStreamSearch(e.target.value));
 }
 
@@ -308,6 +362,32 @@ document.querySelectorAll('.graph-btn').forEach(btn => {
 
 updateGraph('day');
 
+document.querySelectorAll('.view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentView = btn.dataset.view;
+        updateLogs();
+    });
+});
 
+document.querySelectorAll('.priority-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        btn.classList.toggle('active');
+        priorityFilters[btn.dataset.priority] = btn.classList.contains('active');
+        applyPriorityFilter();
+    });
+});
 
+function applyPriorityFilter() {
+    const rows = document.querySelectorAll('#logs-body tr');
+    rows.forEach(row => {
+        const priorityCell = row.querySelector('td:last-child');
+        if (!priorityCell) return;
+        const priorityMatch = priorityCell.textContent.match(/P[123]/i);
+        if (!priorityMatch) return;
+        const p = priorityMatch[0].toLowerCase();
+        row.style.display = priorityFilters[p] ? '' : 'none';
+    });
+}
 
