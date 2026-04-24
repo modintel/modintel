@@ -190,7 +190,7 @@ async function updateMetrics() {
         const data = await res.json();
 
         document.getElementById('stat-total').textContent = data.total_alerts || 0;
-        document.getElementById('stat-enriched').textContent = data.ai_enriched_count || 0;
+        document.getElementById('stat-enriched').textContent = data.coraza_count || 0;
         document.getElementById('stat-latency').textContent = `${(data.avg_inference_ms || 0).toFixed(1)}ms`;
         document.getElementById('stat-rpm').textContent = (data.predictions_per_minute || 0).toFixed(1);
 
