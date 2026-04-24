@@ -4,6 +4,8 @@
 		format json
 	}
 
+	log_append captured_body "{http.request.body}"
+
 	reverse_proxy proxy-waf:8080 {
 		trusted_proxies private_ranges
 	}
