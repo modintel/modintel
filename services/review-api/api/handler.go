@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"modintel/pkg/logger"
+	"modintel/pkg/middleware"
 	"modintel/services/review-api/db"
 
 	"github.com/gin-contrib/cors"
@@ -62,6 +64,7 @@ var (
 	requestStats     = newRequestWindowStats()
 	ruleIDPattern    = regexp.MustCompile(`^[0-9]+$`)
 	restartInFlight  atomic.Bool
+	appLogger        *logger.Logger
 	dockerHTTPClient = &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -184,15 +187,22 @@ func init() {
 	prometheus.MustRegister(inferenceRequestsTotal)
 }
 
-func SetupRouter() *gin.Engine {
+func SetupRouter(lgr *logger.Logger) *gin.Engine {
+	appLogger = lgr
 	r := gin.Default()
 	jwtSecret := os.Getenv("JWT_SECRET")
+
+	// Add reliability middleware first
+	r.Use(middleware.EnvelopeMiddleware())
+	if lgr != nil {
+		r.Use(middleware.PanicRecoveryMiddleware(lgr.Logger))
+	}
 
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
+		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
@@ -200,6 +210,7 @@ func SetupRouter() *gin.Engine {
 	r.Use(requestTracker())
 
 	r.GET("/health", HealthCheck)
+	r.GET("/health/ready", ReadinessCheck)
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	r.GET("/api/whoami", AuthMiddleware(jwtSecret), GetWhoAmI)
 
