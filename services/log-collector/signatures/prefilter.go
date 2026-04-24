@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"regexp"
+	"strings"
 )
 
 type SignaturePattern struct {
@@ -57,8 +58,11 @@ func (pf *Prefilter) Evaluate(method, uri, body string, headers map[string]strin
 	}
 
 	text := method + " " + uri + " " + body
-	for _, v := range headers {
-		text += " " + v
+	for k, v := range headers {
+		lowerKey := strings.ToLower(k)
+		if lowerKey != "user-agent" && lowerKey != "cookie" {
+			text += " " + v
+		}
 	}
 	textLower := text
 

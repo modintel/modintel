@@ -47,7 +47,7 @@ async function updateStats() {
         const data = await res.json();
         const total = data.total_alerts || 0;
         document.getElementById('stat-total').textContent = total;
-        document.getElementById('stat-ai-count').textContent = data.ai_enriched_count || 0;
+        document.getElementById('stat-ai-count').textContent = data.coraza_count || 0;
         document.getElementById('stat-misses').textContent = data.ml_miss_count || 0;
 
         const priorityEl = document.getElementById('stat-priority');
@@ -75,6 +75,11 @@ async function updateLogs(append = false) {
 
         if (currentView === 'miss') {
             url += '&source=ml_miss_detector';
+        }
+
+        const activePriorities = Object.keys(priorityFilters).filter(p => priorityFilters[p]);
+        if (activePriorities.length > 0 && activePriorities.length < 3) {
+            url += '&priority=' + activePriorities.map(p => p.toUpperCase()).join(',');
         }
 
         const res = await apiFetch(url);
@@ -141,7 +146,6 @@ async function updateLogs(append = false) {
         }
 
         if (streamSearchQuery) applyStreamSearch();
-        applyPriorityFilter();
     } catch (e) {
         console.error('Error in updateLogs:', e);
     } finally {
@@ -161,16 +165,83 @@ async function loadMoreLogs() {
     await updateLogs(true);
 }
 
+let isInitialLoad = true;
+
 setInterval(async () => {
     const currentTotal = await updateStats();
     if (currentTotal > lastAlertCount) {
         lastAlertCount = currentTotal;
-        logsCursor = null;
-        await updateLogs();
+        if (!isInitialLoad) {
+            await updateLogsNewOnly();
+        }
     }
-}, 100);
+}, 1000);
+
 updateStats().then(total => { lastAlertCount = total; });
-updateLogs();
+updateLogs().then(() => { isInitialLoad = false; });
+
+async function updateLogsNewOnly() {
+    try {
+        const url = `${API_BASE}/logs?limit=10`;
+        if (currentView === 'miss') {
+            url += '&source=ml_miss_detector';
+        }
+        const activePriorities = Object.keys(priorityFilters).filter(p => priorityFilters[p]);
+        if (activePriorities.length > 0 && activePriorities.length < 3) {
+            url += '&priority=' + activePriorities.map(p => p.toUpperCase()).join(',');
+        }
+
+        const res = await apiFetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.data || data.data.length === 0) return;
+
+        const tbody = document.getElementById('logs-body');
+        const firstRow = tbody.querySelector('tr');
+        const firstAlertTs = firstRow ? firstRow.querySelector('td')?.textContent : null;
+
+        data.data.reverse().forEach((alert, i) => {
+            const ts = alert.timestamp || '-';
+            if (ts.includes('/')) {
+                ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
+            }
+            const tsFormatted = new Date(ts).toLocaleTimeString();
+
+            if (firstAlertTs && tsFormatted <= firstAlertTs) return;
+
+            const source = alert.source || 'coraza';
+            const isMiss = source === 'ml_miss_detector';
+            const rules = formatRules(alert.triggered_rules);
+            const aiScoreVal = alert.ai_score;
+            const aiScore = aiScoreVal !== null && aiScoreVal !== undefined
+                ? `<span class="ai-score">${(aiScoreVal * 100).toFixed(1)}%</span>` : '-';
+            const aiPriority = alert.ai_priority
+                ? `<span class="priority-${alert.ai_priority.toLowerCase()}">${alert.ai_priority}</span>` : '-';
+            const aiConf = alert.ai_confidence !== null && alert.ai_confidence !== undefined
+                ? `${alert.ai_confidence.toFixed(0)}%` : '-';
+            const scoreDisplay = isMiss && aiScoreVal !== null && aiScoreVal !== undefined
+                ? `<span class="ai-score">*${(aiScoreVal * 100).toFixed(1)}%</span>`
+                : `<span class="anomaly-badge">${alert.anomaly_score}</span>`;
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td style="color:var(--fg-muted);">${tsFormatted}</td>
+                <td>${alert.client_ip}</td>
+                <td style="font-family:monospace;font-size:0.75rem;">${alert.uri}</td>
+                <td style="text-align: center;">${scoreDisplay}</td>
+                <td style="text-align: center;">${rules}</td>
+                <td style="text-align: center;">${aiScore}</td>
+                <td style="text-align: center;">${aiConf}</td>
+                <td style="text-align: center;">${aiPriority}</td>
+            `;
+            tbody.insertBefore(row, firstRow);
+        });
+
+        applyStreamSearch();
+    } catch (e) {
+        console.error('Error in updateLogsNewOnly:', e);
+    }
+}
 
 async function clearLogs() {
     try {
@@ -386,7 +457,8 @@ document.querySelectorAll('.priority-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         btn.classList.toggle('active');
         priorityFilters[btn.dataset.priority] = btn.classList.contains('active');
-        applyPriorityFilter();
+        logsCursor = null;
+        updateLogs();
     });
 });
 

@@ -674,6 +674,21 @@ func GetLogs(c *gin.Context) {
 	if source := strings.TrimSpace(c.Query("source")); source != "" {
 		filter["source"] = source
 	}
+	if priority := strings.TrimSpace(c.Query("priority")); priority != "" {
+		parts := strings.Split(priority, ",")
+		if len(parts) == 1 {
+			filter["ai_priority"] = strings.ToUpper(parts[0])
+		} else {
+			upperParts := make([]interface{}, len(parts))
+			for i, p := range parts {
+				upperParts[i] = strings.ToUpper(strings.TrimSpace(p))
+			}
+			filter["ai_priority"] = bson.M{"$in": upperParts}
+		}
+	}
+	if c.Query("exclude_score_0") == "true" {
+		filter["anomaly_score"] = bson.M{"$ne": 0}
+	}
 
 	opts := options.Find().
 		SetSort(bson.D{{Key: "_id", Value: -1}}).
@@ -946,9 +961,10 @@ func GetAlerts(c *gin.Context) {
 }
 
 func GetStats(c *gin.Context) {
-	collection := db.GetCollection("modintel", "alerts")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	collection := db.GetCollection("modintel", "alerts")
 
 	total, err := collection.CountDocuments(ctx, bson.M{})
 	if err != nil {
@@ -979,11 +995,63 @@ func GetStats(c *gin.Context) {
 		aiEnrichedCount = 0
 	}
 
+	blockedCount, err := collection.CountDocuments(ctx, bson.M{"anomaly_score": bson.M{"$gte": 5}})
+	if err != nil {
+		log.Println("Error counting blocked alerts:", err)
+		blockedCount = 0
+	}
+
+	var blockedPct float64
+	if total > 0 {
+		blockedPct = float64(blockedCount) / float64(total) * 100
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"total_alerts":      total,
 		"latest_priority":   latestPriority,
 		"ai_enriched_count": aiEnrichedCount,
 		"ml_miss_count":     mlMissCount,
+		"blocked_count":      blockedCount,
+		"blocked_percentage": blockedPct,
+	})
+}
+
+	mlMissCount, err := collection.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
+	if err != nil {
+		log.Println("Error counting ml misses:", err)
+		mlMissCount = 0
+	}
+
+	opts := options.FindOne().SetSort(bson.D{{Key: "timestamp", Value: -1}})
+	var result bson.M
+	latestPriority := "—"
+	err = collection.FindOne(ctx, bson.M{"ai_priority": bson.M{"$type": "string"}}, opts).Decode(&result)
+	if err == nil {
+		if priority, ok := result["ai_priority"].(string); ok && priority != "" {
+			latestPriority = priority
+		}
+	}
+
+	aiEnrichedCount, err := collection.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
+	if err != nil {
+		log.Println("Error counting AI enriched documents:", err)
+		aiEnrichedCount = 0
+	}
+
+	corazaCount, err := collection.CountDocuments(ctx, bson.M{"source": "coraza"})
+	if err != nil {
+		log.Println("Error counting Coraza alerts:", err)
+		corazaCount = 0
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total_alerts":      total,
+		"latest_priority":   latestPriority,
+		"ai_enriched_count": aiEnrichedCount,
+		"coraza_count":      corazaCount,
+		"ml_miss_count":     mlMissCount,
+		"blocked_count":      blockedCount,
+		"blocked_percentage": blockedPct,
 	})
 }
 

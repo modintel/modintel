@@ -146,16 +146,31 @@ function renderStats(alerts) {
     document.getElementById("blocked-attacks").textContent = `${pct}%`;
 }
 
+function renderStatsFromStats(stats) {
+    const total = stats.total_alerts || 0;
+    document.getElementById("total-attacks").textContent = `${total}`;
+    const blockedPct = stats.blocked_percentage || 0;
+    document.getElementById("blocked-attacks").textContent = `${blockedPct.toFixed(1)}%`;
+}
+
 async function refreshReports() {
     const apiBase = resolveApiBase();
     try {
-        const res = await apiFetch(`${apiBase}/logs`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        // Support both old format (data.alerts) and new pagination format (data.data)
-        const alerts = data.data || data.alerts || [];
+        const [logsRes, statsRes] = await Promise.all([
+            apiFetch(`${apiBase}/logs`),
+            apiFetch(`${apiBase}/stats`)
+        ]);
 
-        renderStats(alerts);
+        if (!logsRes.ok) throw new Error(`HTTP ${logsRes.status}`);
+        const logsData = await logsRes.json();
+        const alerts = logsData.data || logsData.alerts || [];
+
+        let stats = { total_alerts: alerts.length };
+        if (statsRes.ok) {
+            stats = await statsRes.json();
+        }
+
+        renderStatsFromStats(stats);
         renderVectors(alerts);
         renderTable(alerts);
     } catch (err) {

@@ -66,10 +66,6 @@ func isAlreadyEnriched(doc *parsers.AlertDocument) bool {
 	return doc.AIStatus == "enriched" && doc.AIScore != nil
 }
 
-func isBlocked(doc *parsers.AlertDocument) bool {
-	return doc.AnomalyScore > 0
-}
-
 func enrichWithAI(doc *parsers.AlertDocument) bool {
 	if isAlreadyEnriched(doc) {
 		return true
@@ -173,6 +169,26 @@ func enrichWithAI(doc *parsers.AlertDocument) bool {
 
 	log.Printf("AI enrichment: all retries exhausted, marking as unavailable")
 	doc.AIStatus = "unavailable"
+	return false
+}
+
+func shouldSkipSignatureCheck(uri string) bool {
+	lowerURI := strings.ToLower(uri)
+
+	staticExts := []string{".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".ico", ".js", ".css", ".woff", ".woff2", ".ttf", ".eot"}
+	for _, ext := range staticExts {
+		if strings.HasSuffix(lowerURI, ext) || strings.Contains(lowerURI, ext+"?") {
+			return true
+		}
+	}
+
+	benignPatterns := []string{"/rest/captcha/", "/rest/track-order/", "/assets/public/"}
+	for _, pattern := range benignPatterns {
+		if strings.Contains(uri, pattern) {
+			return true
+		}
+	}
+
 	return false
 }
 
@@ -311,8 +327,7 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 			log.Printf("Alert exists but not enriched (key=%s), re-enriching...", alertKey)
 		}
 
-		blocked := isBlocked(doc) || len(doc.TriggeredRules) > 0
-		if !blocked {
+		if doc.AnomalyScore <= 0 {
 			continue
 		}
 		doc.Source = "coraza"
@@ -399,11 +414,15 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 			continue
 		}
 
-		if sigPrefilter == nil {
-			continue
-		}
+	if sigPrefilter == nil {
+		continue
+	}
 
-		sigHit, matchedSigs := sigPrefilter.Evaluate(doc.Method, doc.URI, doc.Body, doc.Headers)
+	if shouldSkipSignatureCheck(doc.URI) {
+		continue
+	}
+
+	sigHit, matchedSigs := sigPrefilter.Evaluate(doc.Method, doc.URI, doc.Body, doc.Headers)
 		if !sigHit {
 			continue
 		}
