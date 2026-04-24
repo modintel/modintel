@@ -60,9 +60,8 @@ var (
 	totalRequests    atomic.Uint64
 	totalErrors      atomic.Uint64
 	requestStats     = newRequestWindowStats()
-	ruleIDPattern    = regexp.MustCompile(`^[0-9]+$`)
-	restartInFlight  atomic.Bool
-	appLogger        *AppLogger
+	ruleIDPattern   = regexp.MustCompile(`^[0-9]+$`)
+	restartInFlight atomic.Bool
 	dockerHTTPClient = &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -186,7 +185,6 @@ func init() {
 }
 
 func SetupRouter(lgr *AppLogger) *gin.Engine {
-	appLogger = lgr
 	r := gin.Default()
 	jwtSecret := os.Getenv("JWT_SECRET")
 

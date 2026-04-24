@@ -97,8 +97,7 @@ services:
 
   review-api:
     build:
-      context: .
-      dockerfile: ./services/review-api/Dockerfile
+      context: ./services/review-api
     dns:
       - 8.8.8.8
       - 10.69.222.225
