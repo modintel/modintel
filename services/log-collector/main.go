@@ -6,12 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"io"
 	"log"
 	"net/http"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -23,6 +23,50 @@ import (
 	"modintel.local/log-collector/parsers"
 	"modintel.local/log-collector/signatures"
 )
+
+type bodyCacheEntry struct {
+	Body     string
+	ExpireAt time.Time
+}
+
+var (
+	bodyCache   = make(map[string]bodyCacheEntry)
+	bodyCacheMu sync.RWMutex
+)
+
+func cacheKey(method, uri string) string {
+	h := sha256.New()
+	h.Write([]byte(method + "|" + uri))
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+func setBodyCache(method, uri, body string) {
+	key := cacheKey(method, uri)
+	bodyCacheMu.Lock()
+	defer bodyCacheMu.Unlock()
+	bodyCache[key] = bodyCacheEntry{Body: body, ExpireAt: time.Now().Add(5 * time.Minute)}
+}
+
+func getBodyCache(method, uri string) string {
+	key := cacheKey(method, uri)
+	bodyCacheMu.RLock()
+	defer bodyCacheMu.RUnlock()
+	if entry, ok := bodyCache[key]; ok && time.Now().Before(entry.ExpireAt) {
+		return entry.Body
+	}
+	return ""
+}
+
+func cleanupBodyCache() {
+	bodyCacheMu.Lock()
+	defer bodyCacheMu.Unlock()
+	now := time.Now()
+	for k, v := range bodyCache {
+		if now.After(v.ExpireAt) {
+			delete(bodyCache, k)
+		}
+	}
+}
 
 func inferenceEngineURL() string {
 	if u := os.Getenv("INFERENCE_ENGINE_URL"); u != "" {
@@ -48,6 +92,7 @@ func uniqueAlertKey(doc *parsers.AlertDocument) string {
 	rules := make([]string, len(doc.TriggeredRules))
 	copy(rules, doc.TriggeredRules)
 	sort.Strings(rules)
+
 	h := sha256.New()
 	h.Write([]byte(doc.Method + "|" + doc.URI + "|" + doc.Body + "|" + doc.ClientIP + "|" + doc.Timestamp + "|" + strings.Join(rules, ",") + "|" + hashHeaders(doc.Headers)))
 	return hex.EncodeToString(h.Sum(nil))[:16]
@@ -70,6 +115,8 @@ func enrichWithAI(doc *parsers.AlertDocument) bool {
 	if isAlreadyEnriched(doc) {
 		return true
 	}
+
+	log.Printf("AI ENRICHMENT START: uri=%s method=%s rules=%v", doc.URI, doc.Method, doc.TriggeredRules)
 
 	ruleSev := make(map[string]string)
 	ruleMsg := make(map[string]string)
@@ -98,145 +145,34 @@ func enrichWithAI(doc *parsers.AlertDocument) bool {
 	}
 
 	maxRetries := 3
-	backoff := 500 * time.Millisecond
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			log.Printf("AI enrichment: retry %d/%d after %v", attempt+1, maxRetries, backoff)
-			time.Sleep(backoff)
-			backoff *= 2
+	var resp *http.Response
+	for i := 0; i < maxRetries; i++ {
+		req, _ := http.NewRequest("POST", inferenceEngineURL()+"/predict", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err = client.Do(req)
+		if err == nil {
+			break
 		}
-
-		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Post(inferenceEngineURL()+"/predict", "application/json", bytes.NewBuffer(body))
-		if err != nil {
-			log.Printf("AI enrichment: request failed (attempt %d): %v", attempt+1, err)
-			continue
-		}
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			log.Printf("AI enrichment: non-2xx status %d (attempt %d)", resp.StatusCode, attempt+1)
-			resp.Body.Close()
-			continue
-		}
-
-		respBytes, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			log.Printf("AI enrichment: failed to read response body: %v", err)
-			continue
-		}
-
-		var result map[string]interface{}
-		if err := json.Unmarshal(respBytes, &result); err != nil {
-			log.Printf("AI enrichment: failed to decode response: %v", err)
-			continue
-		}
-
-		doc.AIStatus = "enriched"
-
-		if v, ok := result["attack_probability"].(float64); ok {
-			doc.AIScore = &v
-		}
-		if v, ok := result["confidence_score"].(float64); ok {
-			doc.AIConfidence = &v
-		}
-		if v, ok := result["recommended_priority"].(string); ok {
-			doc.AIPriority = &v
-		}
-		if v, ok := result["explanation"].(map[string]interface{}); ok {
-			doc.AIExplanation = v
-		}
-		if v, ok := result["model_version"].(string); ok {
-			doc.AIModelVersion = &v
-		}
-		if v, ok := result["entropy"].(float64); ok {
-			doc.AIEntropy = &v
-		}
-		if ci, ok := result["confidence_interval"].(map[string]interface{}); ok {
-			interval := make(map[string]float64)
-			if low, ok := ci["low"].(float64); ok {
-				interval["low"] = low
-			}
-			if high, ok := ci["high"].(float64); ok {
-				interval["high"] = high
-			}
-			doc.AIConfidenceInterval = interval
-		}
-
-		return true
+		log.Printf("AI enrichment: request failed (attempt %d/%d): %v", i+1, maxRetries, err)
+		time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
 	}
-
-	log.Printf("AI enrichment: all retries exhausted, marking as unavailable")
-	doc.AIStatus = "unavailable"
-	return false
-}
-
-func shouldSkipSignatureCheck(uri string) bool {
-	lowerURI := strings.ToLower(uri)
-
-	staticExts := []string{".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".ico", ".js", ".css", ".woff", ".woff2", ".ttf", ".eot"}
-	for _, ext := range staticExts {
-		if strings.HasSuffix(lowerURI, ext) || strings.Contains(lowerURI, ext+"?") {
-			return true
-		}
-	}
-
-	benignPatterns := []string{"/rest/captcha/", "/rest/track-order/", "/assets/public/"}
-	for _, pattern := range benignPatterns {
-		if strings.Contains(uri, pattern) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func enrichMiss(doc *parsers.AlertDocument) bool {
-	payload := map[string]interface{}{
-		"fired_rule_ids":    []string{},
-		"rule_severities":   map[string]string{},
-		"rule_messages":     map[string]string{},
-		"anomaly_score":     0.0,
-		"inbound_threshold": 0.0,
-		"method":            doc.Method,
-		"uri":               doc.URI,
-		"headers":           doc.Headers,
-		"body":              doc.Body,
-	}
-
-	body, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("Miss enrichment: failed to marshal request: %v", err)
-		doc.AIStatus = "unavailable"
-		return false
-	}
-
-	client := &http.Client{Timeout: 8 * time.Second}
-	resp, err := client.Post(inferenceEngineURL()+"/predict-miss", "application/json", bytes.NewBuffer(body))
-	if err != nil {
-		log.Printf("Miss enrichment: request failed: %v", err)
+		log.Printf("AI enrichment: failed after retries: %v", err)
 		doc.AIStatus = "unavailable"
 		return false
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("Miss enrichment: non-2xx status %d", resp.StatusCode)
-		doc.AIStatus = "unavailable"
-		return false
-	}
-
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("Miss enrichment: failed to read response body: %v", err)
+	if resp.StatusCode != 200 {
+		log.Printf("AI enrichment: got status %d", resp.StatusCode)
 		doc.AIStatus = "unavailable"
 		return false
 	}
 
 	var result map[string]interface{}
-	if err := json.Unmarshal(respBytes, &result); err != nil {
-		log.Printf("Miss enrichment: failed to decode response: %v", err)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("AI enrichment: failed to decode response: %v", err)
 		doc.AIStatus = "unavailable"
 		return false
 	}
@@ -248,6 +184,9 @@ func enrichMiss(doc *parsers.AlertDocument) bool {
 	if v, ok := result["confidence_score"].(float64); ok {
 		doc.AIConfidence = &v
 	}
+	if v, ok := result["explanation"].(map[string]interface{}); ok {
+		doc.AIExplanation = v
+	}
 	if v, ok := result["recommended_priority"].(string); ok {
 		doc.AIPriority = &v
 	}
@@ -256,6 +195,83 @@ func enrichMiss(doc *parsers.AlertDocument) bool {
 	}
 	if v, ok := result["entropy"].(float64); ok {
 		doc.AIEntropy = &v
+	}
+	if ci, ok := result["confidence_interval"].(map[string]interface{}); ok {
+		low, _ := ci["low"].(float64)
+		high, _ := ci["high"].(float64)
+		doc.AIConfidenceInterval = map[string]float64{"low": low, "high": high}
+	}
+
+	return true
+}
+
+func enrichMiss(doc *parsers.AlertDocument) bool {
+	if isAlreadyEnriched(doc) {
+		return true
+	}
+
+	ruleSev := make(map[string]string)
+	for _, rid := range doc.TriggeredRules {
+		ruleSev[rid] = "high"
+	}
+
+	payload := map[string]interface{}{
+		"fired_rule_ids":    doc.TriggeredRules,
+		"rule_severities":   ruleSev,
+		"method":            doc.Method,
+		"uri":               doc.URI,
+		"headers":           doc.Headers,
+		"body":              doc.Body,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Miss enrichment: failed to marshal: %v", err)
+		doc.AIStatus = "unavailable"
+		return false
+	}
+
+	req, _ := http.NewRequest("POST", inferenceEngineURL()+"/predict-miss", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Miss enrichment failed: %v", err)
+		doc.AIStatus = "unavailable"
+		return false
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("Miss enrichment: failed to decode: %v", err)
+		doc.AIStatus = "unavailable"
+		return false
+	}
+
+	doc.AIStatus = "enriched"
+	if v, ok := result["attack_probability"].(float64); ok {
+		doc.AIScore = &v
+	}
+	if v, ok := result["confidence_score"].(float64); ok {
+		doc.AIConfidence = &v
+	}
+	if v, ok := result["explanation"].(map[string]interface{}); ok {
+		doc.AIExplanation = v
+	}
+	if v, ok := result["recommended_priority"].(string); ok {
+		doc.AIPriority = &v
+	}
+	if v, ok := result["model_version"].(string); ok {
+		doc.AIModelVersion = &v
+	}
+	if v, ok := result["entropy"].(float64); ok {
+		doc.AIEntropy = &v
+	}
+	if ci, ok := result["confidence_interval"].(map[string]interface{}); ok {
+		low, _ := ci["low"].(float64)
+		high, _ := ci["high"].(float64)
+		doc.AIConfidenceInterval = map[string]float64{"low": low, "high": high}
 	}
 
 	return true
@@ -276,12 +292,6 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 			continue
 		}
 		break
-	}
-
-	if err := os.Truncate(logFile, 0); err != nil {
-		log.Printf("Warning: failed to truncate Coraza audit log: %v", err)
-	} else {
-		log.Printf("Coraza audit log truncated")
 	}
 
 	t, err := tail.TailFile(logFile, tail.Config{
@@ -320,7 +330,6 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 		cancel()
 
 		if err == nil && existing["ai_status"] == "enriched" {
-			log.Printf("Skipping already-enriched alert (key=%s, uri=%s)", alertKey, doc.URI)
 			continue
 		}
 		if err == nil {
@@ -330,7 +339,15 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 		if doc.AnomalyScore <= 0 {
 			continue
 		}
-		doc.Source = "coraza"
+doc.Source = "coraza"
+
+		if doc.Body == "" {
+			if cached := getBodyCache(doc.Method, doc.URI); cached != "" {
+				doc.Body = cached
+				doc.BodyLength = len(cached)
+			}
+		}
+
 		enrichWithAI(doc)
 
 		docJSON, err := json.Marshal(doc)
@@ -347,7 +364,7 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 		docMap["coraza_flagged"] = true
 
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		_, err = collection.UpdateOne(
+		res, err := collection.UpdateOne(
 			ctx,
 			bson.M{"alert_key": alertKey},
 			bson.M{"$set": docMap},
@@ -358,7 +375,7 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 		if err != nil {
 			log.Printf("Failed to upsert Coraza alert to MongoDB: %v", err)
 		} else {
-			log.Printf("Coraza alert ingested: %s", doc.URI)
+			log.Printf("Coraza alert ingested: %s (matched=%d, upserted=%v)", doc.URI, res.MatchedCount, res.UpsertedID)
 		}
 	}
 }
@@ -378,12 +395,6 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 			continue
 		}
 		break
-	}
-
-	if err := os.Truncate(logFile, 0); err != nil {
-		log.Printf("Warning: failed to truncate Caddy access log: %v", err)
-	} else {
-		log.Printf("Caddy access log truncated")
 	}
 
 	t, err := tail.TailFile(logFile, tail.Config{
@@ -414,15 +425,15 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 			continue
 		}
 
-	if sigPrefilter == nil {
-		continue
-	}
+		if doc.Body != "" {
+			setBodyCache(doc.Method, doc.URI, doc.Body)
+		}
 
-	if shouldSkipSignatureCheck(doc.URI) {
-		continue
-	}
+		if sigPrefilter == nil {
+			continue
+		}
 
-	sigHit, matchedSigs := sigPrefilter.Evaluate(doc.Method, doc.URI, doc.Body, doc.Headers)
+		sigHit, matchedSigs := sigPrefilter.Evaluate(doc.Method, doc.URI, doc.Body, doc.Headers)
 		if !sigHit {
 			continue
 		}
@@ -490,6 +501,12 @@ func main() {
 	}
 
 	go api.Serve()
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			cleanupBodyCache()
+		}
+	}()
 	go processCorazaAuditLogs(sigPrefilter)
 	processCaddyAccessLogs(sigPrefilter)
 }
