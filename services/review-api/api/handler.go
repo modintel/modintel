@@ -18,8 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"modintel/pkg/logger"
-	"modintel/pkg/middleware"
 	"modintel/services/review-api/db"
 
 	"github.com/gin-contrib/cors"
@@ -64,7 +62,7 @@ var (
 	requestStats     = newRequestWindowStats()
 	ruleIDPattern    = regexp.MustCompile(`^[0-9]+$`)
 	restartInFlight  atomic.Bool
-	appLogger        *logger.Logger
+	appLogger        *AppLogger
 	dockerHTTPClient = &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -187,15 +185,15 @@ func init() {
 	prometheus.MustRegister(inferenceRequestsTotal)
 }
 
-func SetupRouter(lgr *logger.Logger) *gin.Engine {
+func SetupRouter(lgr *AppLogger) *gin.Engine {
 	appLogger = lgr
 	r := gin.Default()
 	jwtSecret := os.Getenv("JWT_SECRET")
 
 	// Add reliability middleware first
-	r.Use(middleware.EnvelopeMiddleware())
+	r.Use(EnvelopeMiddleware())
 	if lgr != nil {
-		r.Use(middleware.PanicRecoveryMiddleware(lgr.Logger))
+		r.Use(PanicRecoveryMiddleware(lgr.Logger))
 	}
 
 	r.Use(cors.New(cors.Config{
