@@ -31,13 +31,19 @@ class MissONNXInference:
             raise RuntimeError(f"Failed to load ONNX model: {exc}")
 
     def predict(self, request: Dict[str, any]) -> Dict[str, any]:
-        features = self._extract_features(request)
-        X = np.array([features], dtype=np.float32)
+        X = np.array([[0.0] * 135], dtype=np.float32)
+        
+        text = (request.get("uri", "") + request.get("body", ""))[:256]
+        char_list = [ord(c) for c in text] + [0] * max(0, 256 - len(text))
+        char_seq = np.array([char_list], dtype=np.int64)
+        
         try:
-            raw = self.session.run(None, {self.input_name: X})[0]
-            prob = float(raw[0][1] if raw.shape[1] == 2 else raw[0])
+            raw = self.session.run(None, {"features": X, "char_seq": char_seq})[0]
+            logit = float(raw[0][1] if raw.shape[1] == 2 else raw[0][0])
+            prob = 1.0 / (1.0 + np.exp(-logit))
         except Exception:
-            prob = float(raw[0])
+            logit = float(raw[0][0])
+            prob = 1.0 / (1.0 + np.exp(-logit))
         prob = max(0.0, min(1.0, prob))
         entropy = -(
             prob * math.log2(prob + 1e-9) + (1 - prob) * math.log2(1 - prob + 1e-9)
@@ -188,7 +194,7 @@ class MissONNXInference:
         features.append(special)
         features.append(1.0 if special > 3 else 0.0)
 
-        while len(features) < 64:
+        while len(features) < 135:
             features.append(0.0)
 
-        return features[:64]
+        return features[:135]
