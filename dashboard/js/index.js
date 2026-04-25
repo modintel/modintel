@@ -175,9 +175,6 @@ setInterval(async () => {
             await updateLogsNewOnly();
         }
     }
-    if (!isInitialLoad && currentTotal === lastAlertCount && lastAlertCount > 0) {
-        await updateLogs();
-    }
 }, 2000);
 
 updateStats().then(total => { lastAlertCount = total; });

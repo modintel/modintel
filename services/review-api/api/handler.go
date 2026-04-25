@@ -973,10 +973,22 @@ func GetStats(c *gin.Context) {
 		return
 	}
 
-	mlMissCount, err := collection.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
+	corazaCount, err := collection.CountDocuments(ctx, bson.M{"source": bson.M{"$in": []string{"coraza", "waf_blocked"}}})
+	if err != nil {
+		log.Println("Error counting Coraza alerts:", err)
+		corazaCount = 0
+	}
+
+	mlMissCount, err := collection.CountDocuments(ctx, bson.M{"source": "unknown"})
 	if err != nil {
 		log.Println("Error counting ml misses:", err)
 		mlMissCount = 0
+	}
+
+	aiEnrichedCount, err := collection.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
+	if err != nil {
+		log.Println("Error counting AI enriched documents:", err)
+		aiEnrichedCount = 0
 	}
 
 	opts := options.FindOne().SetSort(bson.D{{Key: "timestamp", Value: -1}})
@@ -987,18 +999,6 @@ func GetStats(c *gin.Context) {
 		if priority, ok := result["ai_priority"].(string); ok && priority != "" {
 			latestPriority = priority
 		}
-	}
-
-	aiEnrichedCount, err := collection.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
-	if err != nil {
-		log.Println("Error counting AI enriched documents:", err)
-		aiEnrichedCount = 0
-	}
-
-	corazaCount, err := collection.CountDocuments(ctx, bson.M{"source": "coraza"})
-	if err != nil {
-		log.Println("Error counting Coraza alerts:", err)
-		corazaCount = 0
 	}
 
 	blockedCount, err := collection.CountDocuments(ctx, bson.M{"anomaly_score": bson.M{"$gte": 5}})
