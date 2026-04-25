@@ -50,19 +50,10 @@
             <div class="hero">
                 <div class="hero-eyebrow">Operations</div>
                 <h1>System Monitor</h1>
-                <p>Real-time infrastructure metrics and service health for the ModIntel engine. Track performance,
-                    latency, and system status.</p>
+                <p>Real-time metrics and service health.</p>
             </div>
 
             <div class="stats-grid">
-                <div class="stat-cell">
-                    <div class="stat-label">Total Alerts</div>
-                    <div class="stat-value" id="stat-total">0</div>
-                </div>
-                <div class="stat-cell">
-                    <div class="stat-label">Layer 1 (Coraza + AI)</div>
-                    <div class="stat-value" id="stat-enriched">0</div>
-                </div>
                 <div class="stat-cell">
                     <div class="stat-label">Avg Latency</div>
                     <div class="stat-value" id="stat-latency">0ms</div>
@@ -76,50 +67,49 @@
 <div class="section service-status-section">
                 <h3>Service Status</h3>
                 <div class="service-list" id="service-list">
-                    <div class="service-row">
-                        <div class="service-item compact">
-                            <div class="service-status-indicator" id="status-proxy">
-                                <div class="status-loading"></div>
-                            </div>
-                            <div class="service-info">
-                                <div class="service-name">proxy-waf</div>
-                            </div>
+                    <div class="service-item">
+                        <div class="service-status-indicator" id="status-proxy">
+                            <div class="status-loading"></div>
                         </div>
-                        <div class="service-item compact">
-                            <div class="service-status-indicator" id="status-log-collector">
-                                <div class="status-loading"></div>
-                            </div>
-                            <div class="service-info">
-                                <div class="service-name">log-collector</div>
-                            </div>
+                        <div class="service-info">
+                            <div class="service-name">proxy-waf</div>
+                            <div class="service-detail">Caddy + Coraza (Entry)</div>
                         </div>
                     </div>
-                    <div class="service-row">
-                        <div class="service-item compact">
-                            <div class="service-status-indicator" id="status-inference">
-                                <div class="status-loading"></div>
-                            </div>
-                            <div class="service-info">
-                                <div class="service-name">inference-engine</div>
-                            </div>
+                    <div class="service-item">
+                        <div class="service-status-indicator" id="status-log-collector">
+                            <div class="status-loading"></div>
                         </div>
-                        <div class="service-item compact">
-                            <div class="service-status-indicator" id="status-review-api">
-                                <div class="status-loading"></div>
-                            </div>
-                            <div class="service-info">
-                                <div class="service-name">review-api</div>
-                            </div>
+                        <div class="service-info">
+                            <div class="service-name">log-collector</div>
+                            <div class="service-detail">Log Processor</div>
                         </div>
                     </div>
-                    <div class="service-row single">
-                        <div class="service-item compact">
-                            <div class="service-status-indicator" id="status-auth-service">
-                                <div class="status-loading"></div>
-                            </div>
-                            <div class="service-info">
-                                <div class="service-name">auth-service</div>
-                            </div>
+                    <div class="service-item">
+                        <div class="service-status-indicator" id="status-inference">
+                            <div class="status-loading"></div>
+                        </div>
+                        <div class="service-info">
+                            <div class="service-name">inference-engine</div>
+                            <div class="service-detail">ML Inference</div>
+                        </div>
+                    </div>
+                    <div class="service-item">
+                        <div class="service-status-indicator" id="status-review-api">
+                            <div class="status-loading"></div>
+                        </div>
+                        <div class="service-info">
+                            <div class="service-name">review-api</div>
+                            <div class="service-detail">API Server</div>
+                        </div>
+                    </div>
+                    <div class="service-item">
+                        <div class="service-status-indicator" id="status-auth-service">
+                            <div class="status-loading"></div>
+                        </div>
+                        <div class="service-info">
+                            <div class="service-name">auth-service</div>
+                            <div class="service-detail">Auth Service</div>
                         </div>
                     </div>
                 </div>
