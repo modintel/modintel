@@ -5,11 +5,11 @@ let errorRateHistory = [];
 const MAX_HISTORY = 20;
 
 const HEALTH_ENDPOINTS = {
-    'review-api': `${API_BASE}/health/review-api`,
     'log-collector': `${API_BASE}/health/log-collector`,
     'inference-engine': `${API_BASE}/health/inference-engine`,
-    'auth-service': `${API_BASE}/health/auth-service`,
     'proxy-waf': `${API_BASE}/health/proxy-waf`,
+    'review-api': `${API_BASE}/health/review-api`,
+    'auth-service': `${API_BASE}/health/auth-service`,
 };
 
 function generateChartPoints(data, width, height, padding) {
@@ -109,21 +109,26 @@ async function updateServiceHealth() {
 
 async function fetchAggregateHealth() {
     try {
-        const res = await fetch(`${API_BASE}/health/aggregate`, {
-            headers: {
-                Authorization: `Bearer ${getAccessToken()}`,
-            },
-        });
-        if (!res.ok) {
-            return null;
-        }
-        const payload = await res.json();
-        if (!payload || typeof payload !== 'object' || !payload.services) {
-            return null;
-        }
-        return payload.services;
-    } catch (_) {
-        return null;
+        const [logCollector, inference, proxy, review, auth] = await Promise.all([
+            fetchServiceStatus(HEALTH_ENDPOINTS['log-collector']),
+            fetchServiceStatus(HEALTH_ENDPOINTS['inference-engine']),
+            fetchServiceStatus(HEALTH_ENDPOINTS['proxy-waf']),
+            fetchServiceStatus(HEALTH_ENDPOINTS['review-api']),
+            fetchServiceStatus(HEALTH_ENDPOINTS['auth-service']),
+        ]);
+
+        updateServiceStatus('status-log-collector', logCollector);
+        updateServiceStatus('status-inference', inference);
+        updateServiceStatus('status-proxy', proxy);
+        updateServiceStatus('status-review-api', review);
+        updateServiceStatus('status-auth-service', auth);
+} catch (e) {
+        console.error('Error fetching service health:', e);
+        updateServiceStatus('status-log-collector', 'unknown');
+        updateServiceStatus('status-inference', 'unknown');
+        updateServiceStatus('status-proxy', 'unknown');
+        updateServiceStatus('status-review-api', 'unknown');
+        updateServiceStatus('status-auth-service', 'unknown');
     }
 }
 

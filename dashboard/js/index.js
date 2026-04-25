@@ -175,7 +175,10 @@ setInterval(async () => {
             await updateLogsNewOnly();
         }
     }
-}, 1000);
+    if (!isInitialLoad && currentTotal === lastAlertCount && lastAlertCount > 0) {
+        await updateLogs();
+    }
+}, 2000);
 
 updateStats().then(total => { lastAlertCount = total; });
 updateLogs().then(() => { isInitialLoad = false; });
@@ -448,7 +451,7 @@ document.querySelectorAll('.view-btn').forEach(btn => {
         document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentView = btn.dataset.view;
-        logsCursor = null; // Reset cursor when switching views
+        logsCursor = null;
         updateLogs();
     });
 });
