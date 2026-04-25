@@ -70,13 +70,10 @@ func ParseCaddyAccessLog(data []byte) (*AlertDocument, error) {
 }
 
 func extractFirstJsonValue(data []byte, key string) string {
-	searchKey := `"` + key + `":"`
+	searchKey := `"` + key + `":`
 	idx := strings.Index(string(data), searchKey)
-	searchKey = `"` + key + `":`
-		idx = strings.Index(string(data), searchKey)
-		if idx == -1 {
-			return ""
-		}
+	if idx == -1 {
+		return ""
 	}
 	valueStart := idx + len(searchKey)
 	remaining := data[valueStart:]
