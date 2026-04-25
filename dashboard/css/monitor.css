@@ -37,6 +37,19 @@
     gap: 8px;
 }
 
+.service-row {
+    display: flex;
+    gap: 8px;
+}
+
+.service-row.single {
+    justify-content: center;
+}
+
+.service-row.single .service-item {
+    flex: 0 1 50%;
+}
+
 .service-item {
     display: flex;
     align-items: center;
@@ -45,6 +58,24 @@
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 4px;
+    flex: 1;
+}
+
+.service-item.compact {
+    padding: 8px 10px;
+    gap: 8px;
+}
+
+.service-item.compact .service-info {
+    gap: 0;
+}
+
+.service-item.compact .service-name {
+    font-size: 0.8rem;
+}
+
+.service-item.compact .service-detail {
+    font-size: 0.65rem;
 }
 
 .service-status-indicator {
