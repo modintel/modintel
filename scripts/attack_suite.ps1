@@ -52,7 +52,16 @@ $attacks = @(
     @{ Name = "ProtoPollution: constructor.prototype"; URI = "/api/Users"; Body = '{"constructor": {"prototype": {"admin": true}}}'; Method = "POST"; ContentType = "application/json" },
     @{ Name = "B2B: SQLi in CID"; URI = "/b2b/v2/orders"; Body = '{"cid": "JS0815DE OR 1=1--", "orderLines": []}'; Method = "POST"; ContentType = "application/json" },
     @{ Name = "B2B: XSS in CID"; URI = "/b2b/v2/orders"; Body = '{"cid": "<script>alert(1)</script>", "orderLines": []}'; Method = "POST"; ContentType = "application/json" },
-    @{ Name = "XSS: iframe javascript"; URI = "/api/Feedbacks"; Body = '{"comment": "<iframe src=javascript:alert(1)>", "rating": 5}'; Method = "POST"; ContentType = "application/json" }
+    @{ Name = "XSS: iframe javascript"; URI = "/api/Feedbacks"; Body = '{"comment": "<iframe src=javascript:alert(1)>", "rating": 5}'; Method = "POST"; ContentType = "application/json" },
+    @{ Name = "Layer2: SQLi Obfuscated hex"; URI = "/rest/products/search?q=0x2720554e494f4e2053454c454354202a2066726f6d207573657273--"; Method = "GET" },
+    @{ Name = "Layer2: SQLi char encoding"; URI = "/rest/products/search?q=%27%20%4f%52%20%31%3d%31--"; Method = "GET" },
+    @{ Name = "Layer2: XSS eventless"; URI = "/rest/products/search?q=<img src=x onerror>=alert(1)>"; Method = "GET" },
+    @{ Name = "Layer2: SQLicomment inline"; URI = "/rest/products/search?q=admin'--"; Method = "GET" },
+    @{ Name = "Layer2: NoSQLi array extend"; URI = "/rest/user/login"; Body = '{"email": [{"$ne": ""}], "password": "test"}'; Method = "POST"; ContentType = "application/json" },
+    @{ Name = "Layer2: encoded path"; URI = "/rest/products/search?q=%2e%2e%2f%2e%2e%2f%65%74%63%2f%70%61%73%73%77%64"; Method = "GET" },
+    @{ Name = "Layer2: double urlencode"; URI = "/rest/products/search?q=%252e%252e%252fetc%252fpasswd"; Method = "GET" },
+    @{ Name = "Layer2: SQLi case variant"; URI = "/rest/products/search?q=' uNiOn SeLeAlL * FrOm uSeRs--"; Method = "GET" },
+    @{ Name = "Layer2: XSS unicode escape"; URI = "/rest/products/search?q=<script>alert(/xss/)</script>"; Method = "GET" }
 )
 
 function Invoke-Attack {
