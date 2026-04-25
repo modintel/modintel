@@ -76,40 +76,50 @@
 <div class="section service-status-section">
                 <h3>Service Status</h3>
                 <div class="service-list" id="service-list">
-                    <div class="service-item">
-                        <div class="service-status-indicator" id="status-proxy">
-                            <div class="status-loading"></div>
+                    <div class="service-row">
+                        <div class="service-item compact">
+                            <div class="service-status-indicator" id="status-proxy">
+                                <div class="status-loading"></div>
+                            </div>
+                            <div class="service-info">
+                                <div class="service-name">proxy-waf</div>
+                            </div>
                         </div>
-                        <div class="service-info">
-                            <div class="service-name">proxy-waf</div>
-                            <div class="service-detail">Caddy + Coraza (Entry)</div>
-                        </div>
-                    </div>
-                    <div class="service-item">
-                        <div class="service-status-indicator" id="status-log-collector">
-                            <div class="status-loading"></div>
-                        </div>
-                        <div class="service-info">
-                            <div class="service-name">log-collector</div>
-                            <div class="service-detail">Log Processor</div>
-                        </div>
-                    </div>
-                    <div class="service-item">
-                        <div class="service-status-indicator" id="status-inference">
-                            <div class="status-loading"></div>
-                        </div>
-                        <div class="service-info">
-                            <div class="service-name">inference-engine</div>
-                            <div class="service-detail">ML Inference</div>
+                        <div class="service-item compact">
+                            <div class="service-status-indicator" id="status-log-collector">
+                                <div class="status-loading"></div>
+                            </div>
+                            <div class="service-info">
+                                <div class="service-name">log-collector</div>
+                            </div>
                         </div>
                     </div>
-                    <div class="service-item">
-                        <div class="service-status-indicator" id="status-review-api">
-                            <div class="status-loading"></div>
+                    <div class="service-row">
+                        <div class="service-item compact">
+                            <div class="service-status-indicator" id="status-inference">
+                                <div class="status-loading"></div>
+                            </div>
+                            <div class="service-info">
+                                <div class="service-name">inference-engine</div>
+                            </div>
                         </div>
-                        <div class="service-info">
-                            <div class="service-name">review-api</div>
-                            <div class="service-detail">API Server</div>
+                        <div class="service-item compact">
+                            <div class="service-status-indicator" id="status-review-api">
+                                <div class="status-loading"></div>
+                            </div>
+                            <div class="service-info">
+                                <div class="service-name">review-api</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="service-row single">
+                        <div class="service-item compact">
+                            <div class="service-status-indicator" id="status-auth-service">
+                                <div class="status-loading"></div>
+                            </div>
+                            <div class="service-info">
+                                <div class="service-name">auth-service</div>
+                            </div>
                         </div>
                     </div>
                 </div>
