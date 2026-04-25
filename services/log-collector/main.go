@@ -216,12 +216,12 @@ func enrichMiss(doc *parsers.AlertDocument) bool {
 	}
 
 	payload := map[string]interface{}{
-		"fired_rule_ids":    doc.TriggeredRules,
-		"rule_severities":   ruleSev,
-		"method":            doc.Method,
-		"uri":               doc.URI,
-		"headers":           doc.Headers,
-		"body":              doc.Body,
+		"fired_rule_ids":  doc.TriggeredRules,
+		"rule_severities": ruleSev,
+		"method":          doc.Method,
+		"uri":             doc.URI,
+		"headers":         doc.Headers,
+		"body":            doc.Body,
 	}
 
 	body, err := json.Marshal(payload)
@@ -339,7 +339,7 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 		if doc.AnomalyScore <= 0 {
 			continue
 		}
-doc.Source = "coraza"
+		doc.Source = "coraza"
 
 		if doc.Body == "" {
 			if cached := getBodyCache(doc.Method, doc.URI); cached != "" {

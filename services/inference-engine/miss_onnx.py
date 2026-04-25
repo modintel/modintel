@@ -32,11 +32,11 @@ class MissONNXInference:
 
     def predict(self, request: Dict[str, any]) -> Dict[str, any]:
         X = np.array([[0.0] * 135], dtype=np.float32)
-        
+
         text = (request.get("uri", "") + request.get("body", ""))[:256]
         char_list = [ord(c) for c in text] + [0] * max(0, 256 - len(text))
         char_seq = np.array([char_list], dtype=np.int64)
-        
+
         try:
             raw = self.session.run(None, {"features": X, "char_seq": char_seq})[0]
             logit = float(raw[0][1] if raw.shape[1] == 2 else raw[0][0])

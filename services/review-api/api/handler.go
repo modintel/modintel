@@ -1013,11 +1013,11 @@ func GetStats(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"total_alerts":      total,
-		"latest_priority":   latestPriority,
-		"ai_enriched_count": aiEnrichedCount,
-		"coraza_count":      corazaCount,
-		"ml_miss_count":     mlMissCount,
+		"total_alerts":       total,
+		"latest_priority":    latestPriority,
+		"ai_enriched_count":  aiEnrichedCount,
+		"coraza_count":       corazaCount,
+		"ml_miss_count":      mlMissCount,
 		"blocked_count":      blockedCount,
 		"blocked_percentage": blockedPct,
 	})
