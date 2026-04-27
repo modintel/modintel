@@ -1,8 +1,5 @@
 const API_BASE = '/api';
 let currentRange = '1h';
-let workersHistory = [];
-let mongodbHistory = [];
-const MAX_HISTORY = 20;
 
 const RANGE_CONFIG = {
     '1h': { bucketSeconds: 60, labelFormat: { hour: '2-digit', minute: '2-digit' }, maxPoints: 60 },
@@ -270,26 +267,6 @@ function updateChartLabels(labels) {
     });
 }
 
-function updateSparkline(id, data) {
-    const container = document.getElementById(`${id}-bars`);
-    if (!container) return;
-
-    let values = Array.isArray(data) ? data.map(v => Number.isFinite(Number(v)) ? Number(v) : 0) : [];
-    if (values.length === 0) values = [0];
-
-    const max = Math.max(...values, 1);
-    const height = 20;
-
-    container.innerHTML = '';
-    values.forEach((val) => {
-        const barHeight = Math.max(2, (val / max) * height);
-        const bar = document.createElement('div');
-        bar.className = 'bar';
-        bar.style.height = `${barHeight}px`;
-        container.appendChild(bar);
-    });
-}
-
 function updateWorkerBars() {
     const container = document.getElementById('workers-bars');
     if (!container) return;
@@ -316,45 +293,10 @@ function updateMongoBars() {
     }
 }
 
-function updateWorkerSparkline() {
-    workersHistory.push(Number(document.getElementById('goroutines').textContent) || 0);
-    if (workersHistory.length > MAX_HISTORY) workersHistory.shift();
-    updateSparkline('workers', workersHistory);
-}
-
-function updateMongoSparkline() {
-    const connVal = Number(document.getElementById('mongodb-connections').textContent) || 0;
-    mongodbHistory.push(connVal);
-    if (mongodbHistory.length > MAX_HISTORY) mongodbHistory.shift();
-    updateSparkline('mongodb', mongodbHistory);
-}
-
-let isReviewing = false;
-
-async function toggleReview() {
-    const btn = document.getElementById('sync-btn');
-    const icon = document.getElementById('review-icon');
-    isReviewing = !isReviewing;
-
-    if (isReviewing) {
-        btn.classList.add('active');
-        icon.innerHTML = '<rect x="6" y="6" width="12" height="12"></rect>';
-        await fetchAggregateHealth();
-        await updateMetrics();
-    } else {
-        btn.classList.remove('active');
-        icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
-    }
-}
-
 fetchAggregateHealth();
-	updateMetrics();
+updateMetrics();
 
-	setInterval(() => {
-fetchAggregateHealth();
+setInterval(() => {
+	fetchAggregateHealth();
 	updateMetrics();
-
-	setInterval(() => {
-		fetchAggregateHealth();
-		updateMetrics();
-	}, 2000);
+}, 2000);
