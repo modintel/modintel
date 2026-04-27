@@ -1,13 +1,20 @@
-FROM golang:1.26-alpine
+FROM golang:1.25-alpine
+ENV GOPROXY=https://goproxy.io,https://goproxy.cn,https://proxy.golang.org,direct
 
 WORKDIR /app
 
+RUN apk add --no-cache git
+
 COPY go.mod go.sum ./
-RUN go mod download
+RUN for i in $(seq 1 15); do \
+    go mod download -x && break || \
+    (echo "Retry $i..." && sleep 20); \
+    if [ $i -eq 15 ]; then exit 1; fi; \
+    done
 
 COPY . .
 
-RUN go build -o auth-service .
+RUN go build -v -o auth-service .
 
 EXPOSE 8084
 

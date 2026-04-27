@@ -60,8 +60,8 @@ var (
 	totalRequests    atomic.Uint64
 	totalErrors      atomic.Uint64
 	requestStats     = newRequestWindowStats()
-	ruleIDPattern    = regexp.MustCompile(`^[0-9]+$`)
-	restartInFlight  atomic.Bool
+	ruleIDPattern   = regexp.MustCompile(`^[0-9]+$`)
+	restartInFlight atomic.Bool
 	dockerHTTPClient = &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -184,15 +184,21 @@ func init() {
 	prometheus.MustRegister(inferenceRequestsTotal)
 }
 
-func SetupRouter() *gin.Engine {
+func SetupRouter(lgr *AppLogger) *gin.Engine {
 	r := gin.Default()
 	jwtSecret := os.Getenv("JWT_SECRET")
+
+	// Add reliability middleware first
+	r.Use(EnvelopeMiddleware())
+	if lgr != nil {
+		r.Use(PanicRecoveryMiddleware(lgr.Logger))
+	}
 
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
+		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
@@ -200,6 +206,7 @@ func SetupRouter() *gin.Engine {
 	r.Use(requestTracker())
 
 	r.GET("/health", HealthCheck)
+	r.GET("/health/ready", ReadinessCheck)
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	r.GET("/api/whoami", AuthMiddleware(jwtSecret), GetWhoAmI)
 

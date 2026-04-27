@@ -39,3 +39,7 @@ func Connect() {
 func GetCollection(databaseName, collectionName string) *mongo.Collection {
 	return Client.Database(databaseName).Collection(collectionName)
 }
+
+func GetClient() *mongo.Client {
+	return Client
+}
