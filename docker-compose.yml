@@ -121,6 +121,19 @@ services:
     restart: always
     user: root
 
+  training-api:
+    build: ./services/training-api
+    ports:
+      - "8085:8085"
+    volumes:
+      - ./models:/app/models
+    environment:
+      - MONGO_URI=${MONGO_URI}
+      - MONGO_DB_NAME=${MONGO_DB_NAME}
+    networks:
+      - modintel-net
+    restart: always
+
   auth-service:
     build: ./services/auth-service
     ports:
