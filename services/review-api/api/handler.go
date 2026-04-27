@@ -1115,39 +1115,83 @@ func GetmonitorMetrics(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	collection := db.GetCollection("modintel", "alerts")
+	metricsCollection := db.GetCollection("modintel", "metrics")
+	alertColl := db.GetCollection("modintel", "alerts")
+	rangeType := c.DefaultQuery("range", "1h")
 
-	totalAlerts, _ := collection.CountDocuments(ctx, bson.M{})
-	aiEnrichedCount, _ := collection.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
-	mlMissCount, _ := collection.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
+	window := parseMetricsWindow(rangeType)
+	startTime := time.Now().UTC().Add(-window)
+
+	filter := bson.M{"timestamp": bson.M{"$gte": startTime}}
+	opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: 1}}).SetProjection(bson.M{
+		"timestamp":              1,
+		"requests_delta":         1,
+		"errors_delta":           1,
+		"requests_per_minute":    1,
+		"errors_per_minute":      1,
+		"avg_inference_ms":       1,
+		"predictions_per_minute": 1,
+	})
+
+	cursor, err := metricsCollection.Find(ctx, filter, opts)
+	if err != nil {
+		log.Printf("Error fetching metrics time series: %v", err)
+	}
+	defer cursor.Close(ctx)
+
+	var timeSeries []bson.M
+	for cursor.Next(ctx) {
+		var doc bson.M
+		if err := cursor.Decode(&doc); err != nil {
+			continue
+		}
+		timeSeries = append(timeSeries, doc)
+	}
+
+	if len(timeSeries) == 0 {
+		now := time.Now().UTC()
+		for i := 0; i < 60; i++ {
+			ts := now.Add(-time.Duration(i) * time.Minute)
+			timeSeries = append(timeSeries, bson.M{
+				"timestamp":           ts,
+				"requests_per_minute": 0,
+				"errors_per_minute":   0,
+			})
+		}
+	}
+
+	totalAlerts, _ := alertColl.CountDocuments(ctx, bson.M{})
+	aiEnrichedCount, _ := alertColl.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
+	mlMissCount, _ := alertColl.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
 
 	inferenceMetrics := getInferenceMetrics()
 	systemMetrics := getSystemMetrics(ctx)
-	window := parseMetricsWindow(c.Query("range"))
-	windowRequests, windowErrors := requestStats.totals(window, time.Now().UTC())
+	window_requests, window_errors := requestStats.totals(window, time.Now().UTC())
 
 	var errorRate float64
-	if windowRequests > 0 {
-		errorRate = float64(windowErrors) / float64(windowRequests)
+	if window_requests > 0 {
+		errorRate = float64(window_errors) / float64(window_requests)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"time_series":              timeSeries,
+		"range":                    rangeType,
 		"total_alerts":             totalAlerts,
 		"ai_enriched_count":        aiEnrichedCount,
 		"ml_miss_count":            mlMissCount,
-		"avg_inference_ms":         inferenceMetrics.avgLatencyMs,
-		"p50_latency_ms":           inferenceMetrics.p50LatencyMs,
-		"p95_latency_ms":           inferenceMetrics.p95LatencyMs,
-		"p99_latency_ms":           inferenceMetrics.p99LatencyMs,
-		"total_predictions":        inferenceMetrics.totalPredictions,
-		"predictions_per_minute":   inferenceMetrics.predictionsPerMinute,
-		"model_version":            inferenceMetrics.modelVersion,
-		"inference_uptime_seconds": inferenceMetrics.uptimeSeconds,
-		"requests_per_minute":      inferenceMetrics.predictionsPerMinute,
+		"avg_inference_ms":         inferenceMetrics.AvgLatencyMs,
+		"p50_latency_ms":           inferenceMetrics.P50LatencyMs,
+		"p95_latency_ms":           inferenceMetrics.P95LatencyMs,
+		"p99_latency_ms":           inferenceMetrics.P99LatencyMs,
+		"total_predictions":        inferenceMetrics.TotalPredictions,
+		"predictions_per_minute":   inferenceMetrics.PredictionsPerMinute,
+		"model_version":            inferenceMetrics.ModelVersion,
+		"inference_uptime_seconds": inferenceMetrics.UptimeSeconds,
+		"requests_per_minute":      inferenceMetrics.PredictionsPerMinute,
 		"error_rate":               errorRate,
 		"error_rate_window":        window.String(),
-		"window_requests":          windowRequests,
-		"window_errors":            windowErrors,
+		"window_requests":          window_requests,
+		"window_errors":            window_errors,
 		"total_requests":           totalRequests.Load(),
 		"total_errors":             totalErrors.Load(),
 		"mongodb_connections":      systemMetrics.MongoDBConnections,
@@ -1178,14 +1222,14 @@ func parseMetricsWindow(raw string) time.Duration {
 }
 
 type inferenceMetricsData struct {
-	avgLatencyMs         float64
-	p50LatencyMs         float64
-	p95LatencyMs         float64
-	p99LatencyMs         float64
-	totalPredictions     int
-	predictionsPerMinute float64
-	modelVersion         string
-	uptimeSeconds        float64
+	AvgLatencyMs         float64 `json:"avg_inference_ms"`
+	P50LatencyMs         float64 `json:"p50_latency_ms"`
+	P95LatencyMs         float64 `json:"p95_latency_ms"`
+	P99LatencyMs         float64 `json:"p99_latency_ms"`
+	TotalPredictions     int     `json:"total_predictions"`
+	PredictionsPerMinute float64 `json:"predictions_per_minute"`
+	ModelVersion         string  `json:"model_version"`
+	UptimeSeconds        float64 `json:"inference_uptime_seconds"`
 }
 
 func getInferenceMetrics() inferenceMetricsData {
@@ -1216,45 +1260,48 @@ func getInferenceMetrics() inferenceMetricsData {
 	metrics := inferenceMetricsData{}
 
 	if v, ok := result["avg_inference_latency_ms"].(float64); ok {
-		metrics.avgLatencyMs = v
+		metrics.AvgLatencyMs = v
 	}
 	if v, ok := result["p50_latency_ms"].(float64); ok {
-		metrics.p50LatencyMs = v
+		metrics.P50LatencyMs = v
 	}
 	if v, ok := result["p95_latency_ms"].(float64); ok {
-		metrics.p95LatencyMs = v
+		metrics.P95LatencyMs = v
 	}
 	if v, ok := result["p99_latency_ms"].(float64); ok {
-		metrics.p99LatencyMs = v
+		metrics.P99LatencyMs = v
 	}
 	if v, ok := result["total_predictions"].(float64); ok {
-		metrics.totalPredictions = int(v)
+		metrics.TotalPredictions = int(v)
 	}
 	if v, ok := result["predictions_per_minute"].(float64); ok {
-		metrics.predictionsPerMinute = v
+		metrics.PredictionsPerMinute = v
 	}
 	if v, ok := result["model_version"].(string); ok {
-		metrics.modelVersion = v
+		metrics.ModelVersion = v
 	}
 	if v, ok := result["uptime_seconds"].(float64); ok {
-		metrics.uptimeSeconds = v
+		metrics.UptimeSeconds = v
 	}
 
 	return metrics
 }
 
 type systemMetricsData struct {
-	Hostname            string  `json:"hostname"`
-	GoVersion           string  `json:"go_version"`
-	UptimeSeconds       float64 `json:"uptime_seconds"`
-	CpuPercent          float64 `json:"cpu_percent"`
-	MemoryUsedMB        uint64  `json:"memory_used_mb"`
-	MemoryTotalMB       uint64  `json:"memory_total_mb"`
-	MemoryPercent       float64 `json:"memory_percent"`
-	Goroutines          int     `json:"goroutines"`
-	MongoDBConnections  int64   `json:"mongodb_connections"`
-	MongoDBDatabaseSize int64   `json:"mongodb_database_size_bytes"`
-	MongoDBAlertCount   int64   `json:"mongodb_alert_count"`
+	Hostname                 string  `json:"hostname"`
+	GoVersion                string  `json:"go_version"`
+	UptimeSeconds            float64 `json:"uptime_seconds"`
+	CpuPercent               float64 `json:"cpu_percent"`
+	MemoryUsedMB             uint64  `json:"memory_used_mb"`
+	MemoryTotalMB            uint64  `json:"memory_total_mb"`
+	MemoryPercent            float64 `json:"memory_percent"`
+	Goroutines               int     `json:"goroutines"`
+	MongoDBConnections       int64   `json:"mongodb_connections"`
+	MongoDBDatabaseSizeBytes int64   `json:"mongodb_database_size_bytes"`
+	MongoDBAlertCount        int64   `json:"mongodb_alert_count"`
+	TotalAlerts              int64   `json:"total_alerts"`
+	AIEnrichedCount          int64   `json:"ai_enriched_count"`
+	MLMissCount              int64   `json:"ml_miss_count"`
 }
 
 func toInt64(v interface{}) (int64, bool) {
@@ -1328,12 +1375,22 @@ func getSystemMetrics(ctx context.Context) systemMetricsData {
 		err = db.Client.Database(dbName).RunCommand(dbStatsCtx, bson.D{{Key: "dbStats", Value: 1}}).Decode(&dbStats)
 		if err == nil {
 			if size, ok := toInt64(dbStats["storageSize"]); ok && size > 0 {
-				metrics.MongoDBDatabaseSize = size
+				metrics.MongoDBDatabaseSizeBytes = size
 			} else if size, ok := toInt64(dbStats["dataSize"]); ok {
-				metrics.MongoDBDatabaseSize = size
+				metrics.MongoDBDatabaseSizeBytes = size
 			}
 		}
 	}
+
+	alertColl := db.GetCollection("modintel", "alerts")
+	alertsCount, _ := alertColl.CountDocuments(ctx, bson.M{})
+	metrics.TotalAlerts = alertsCount
+
+	aiEnrichedCount, _ := alertColl.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
+	metrics.AIEnrichedCount = aiEnrichedCount
+
+	mlMissCount, _ := alertColl.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
+	metrics.MLMissCount = mlMissCount
 
 	return metrics
 }
@@ -1344,6 +1401,22 @@ func getHostname() string {
 		return "unknown"
 	}
 	return host
+}
+
+func GetTotalRequests() uint64 {
+	return totalRequests.Load()
+}
+
+func GetTotalErrors() uint64 {
+	return totalErrors.Load()
+}
+
+func GetInferenceMetrics() inferenceMetricsData {
+	return getInferenceMetrics()
+}
+
+func GetSystemMetrics(ctx context.Context) systemMetricsData {
+	return getSystemMetrics(ctx)
 }
 
 func getCPULoad() float64 {
