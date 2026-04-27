@@ -29,18 +29,49 @@
             headers.set('Authorization', `Bearer ${token}`);
         }
 
-        const response = await fetch(url, {
+        let response = await fetch(url, {
             ...options,
             headers,
         });
 
         if (response.status === 401 && window.location.pathname !== SIGNIN_ROUTE) {
+            const refreshed = await tryRefreshToken();
+            if (refreshed) {
+                headers.set('Authorization', `Bearer ${getAccessToken()}`);
+                response = await fetch(url, { ...options, headers });
+                return response;
+            }
             clearAuth();
             window.location.href = SIGNIN_ROUTE;
             throw new Error(`HTTP ${response.status}`);
         }
 
         return response;
+    }
+
+    async function tryRefreshToken() {
+        const refreshToken = localStorage.getItem('refresh_token');
+        if (!refreshToken) return false;
+
+        try {
+            const resp = await fetch('/api/v1/auth/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+            });
+
+            if (!resp.ok) return false;
+
+            const data = await resp.json();
+            const accessToken = data.access_token || (data.data && data.data.access_token);
+            if (accessToken) {
+                localStorage.setItem('access_token', accessToken);
+                return true;
+            }
+            return false;
+        } catch (_) {
+            return false;
+        }
     }
 
     async function logout() {
