@@ -301,3 +301,41 @@
 .panel-right {
     overflow-y: auto;
 }
+
+.sparkline-bars {
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: 3px;
+    height: 40px;
+    margin-top: 8px;
+    width: 100%;
+}
+
+.sparkline-bars .bar {
+    flex: 1 1 auto;
+    min-width: 1px;
+    max-width: 3px;
+    background: var(--accent);
+    border-radius: 1px;
+    transition: none;
+    align-self: flex-end;
+    margin-bottom: -2px;
+}
+
+.memory-bar-container {
+    height: 8px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.memory-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
