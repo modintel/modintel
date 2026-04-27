@@ -357,7 +357,7 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
         logger.error("Inference failure: %s", exc)
         error_msg = "Internal server error"
         if os.getenv("DEBUG", "false").lower() == "true":
-            error_msg = str(exc)  # Include details in debug mode for development
+            error_msg = str(exc)
         return JSONResponse(
             status_code=500,
             content={"ai_status": "unavailable", "error": error_msg},
@@ -447,7 +447,6 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
 
 @app.get("/health")
 async def health() -> JSONResponse:
-
     uptime = round(time.time() - _startup_time, 2)
     avg_latency = (
         round(_total_latency_ms / _prediction_count, 3)
