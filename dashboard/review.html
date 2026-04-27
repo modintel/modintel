@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alert Review</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <meta name="description" content="Review AI-labeled alerts for ML training">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/review.css">
+</head>
+
+<body data-attach-logout="false">
+    <nav>
+        <div class="nav-brand">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff570a" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span style="color: #ff570a;">MODINTEL</span>
+        </div>
+        <div class="nav-links">
+            <a href="/events">Events</a>
+            <a href="/rules">Rules</a>
+            <a href="/training">Training</a>
+            <a href="/datasets">Datasets</a>
+            <a href="/reports">Reports</a>
+            <a href="/monitor">Monitor</a>
+            <a href="/settings">Settings</a>
+        </div>
+        <div class="nav-actions">
+            <button class="btn btn-review active" id="sync-btn">
+                <svg id="review-icon" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2.5">
+                    <rect x="6" y="6" width="12" height="12"></rect>
+                </svg>
+                Review
+            </button>
+            <button class="btn btn-lock" id="lock-btn" title="Lock Dashboard">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+            </button>
+        </div>
+    </nav>
+    <div class="main">
+        <div class="panel-left">
+            <div class="hero-eyebrow">Analysis</div>
+                <h1>Alert Review</h1>
+                <p>Review AI-labeled alerts and provide ground truth labels.</p>
+
+            <div class="stats-grid">
+                <div class="stat-cell">
+                    <div class="stat-label">Reviewed</div>
+                    <div class="stat-value" id="stat-reviewed">0</div>
+                </div>
+                <div class="stat-cell">
+                    <div class="stat-label">Pending</div>
+                    <div class="stat-value" id="stat-pending">0</div>
+                </div>
+                <div class="stat-cell">
+                    <div class="stat-label label-tp">True Positives</div>
+                    <div class="stat-value" id="stat-tp" style="color: var(--success)">0</div>
+                </div>
+                <div class="stat-cell">
+                    <div class="stat-label label-fp">False Positives</div>
+                    <div class="stat-value" id="stat-fp" style="color: var(--danger)">0</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Quick Filters</h3>
+                <div class="filter-row">
+                    <button class="view-btn active" data-filter="status" data-value="generated">Pending</button>
+                    <button class="view-btn" data-filter="status" data-value="reviewed">Reviewed</button>
+                    <button class="view-btn" data-filter="status" data-value="">All</button>
+                </div>
+                <div class="filter-row">
+                    <button class="priority-btn active" data-filter="priority" data-value="">All</button>
+                    <button class="priority-btn" data-filter="priority" data-value="P1">P1</button>
+                    <button class="priority-btn" data-filter="priority" data-value="P2">P2</button>
+                    <button class="priority-btn" data-filter="priority" data-value="P3">P3</button>
+                </div>
+                <div class="filter-row">
+                    <button class="priority-btn active" data-filter="source" data-value="">All</button>
+                    <button class="priority-btn" data-filter="source" data-value="coraza">Layer 1</button>
+                    <button class="priority-btn" data-filter="source" data-value="ml_miss_detector">Layer 2</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-right">
+            <div class="panel-right-header">
+                <div class="header-left-group">
+                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
+                        Review Queue
+                    </div>
+                </div>
+            </div>
+            <div class="log-scroll">
+                <table class="review-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 9%;">Timestamp</th>
+                            <th style="width: 5%;">Method</th>
+                            <th style="width: 28%;">URI</th>
+                            <th style="width: 6%;">Status</th>
+                            <th style="width: 6%;">AI Score</th>
+                            <th style="width: 6%;">Priority</th>
+                            <th style="width: 6%;">Source</th>
+                            <th style="width: 6%;">Label</th>
+                            <th style="width: 8%; padding-left: 20px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="review-body"></tbody>
+                </table>
+                <div style="text-align: center;">
+                    <button id="load-more-review" class="btn btn-primary" style="display: none;">Load More</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="js/auth.js"></script>
+    <script src="js/boot.js"></script>
+    <script src="js/review.js"></script>
+</body>
+
+</html>
