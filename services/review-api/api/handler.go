@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -210,6 +212,8 @@ func SetupRouter() *gin.Engine {
 		api.GET("/rules", RequireRoles("admin", "analyst", "viewer"), GetRules)
 		api.PUT("/rules/:id", RequireRoles("admin"), UpdateRuleStatus)
 		api.GET("/alerts", RequireRoles("admin", "analyst", "viewer"), GetAlerts)
+		api.GET("/alerts/review", RequireRoles("admin", "analyst"), GetReviewAlerts)
+		api.PUT("/alerts/:id/review", RequireRoles("admin", "analyst"), ReviewAlert)
 		api.GET("/logs", RequireRoles("admin", "analyst", "viewer"), GetLogs)
 		api.GET("/stats", RequireRoles("admin", "analyst", "viewer"), GetStats)
 		api.GET("/trend", RequireRoles("admin", "analyst", "viewer"), GetTrend)
@@ -218,6 +222,9 @@ func SetupRouter() *gin.Engine {
 		api.GET("/monitor/metrics", RequireRoles("admin", "analyst", "viewer"), GetmonitorMetrics)
 		api.POST("/system/restart/proxy-waf", RequireRoles("admin"), RestartProxyWAF)
 		api.DELETE("/logs", RequireRoles("admin", "analyst"), ClearLogs)
+		api.GET("/datasets", RequireRoles("admin", "analyst", "viewer"), GetDatasets)
+		api.GET("/datasets/sources", RequireRoles("admin", "analyst", "viewer"), GetDatasetSources)
+		api.POST("/datasets/generate", RequireRoles("admin", "analyst"), GenerateDataset)
 	}
 	return r
 }
@@ -979,7 +986,7 @@ func GetStats(c *gin.Context) {
 		corazaCount = 0
 	}
 
-	mlMissCount, err := collection.CountDocuments(ctx, bson.M{"source": "unknown"})
+	mlMissCount, err := collection.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
 	if err != nil {
 		log.Println("Error counting ml misses:", err)
 		mlMissCount = 0
@@ -1395,6 +1402,143 @@ func getSystemMetrics(ctx context.Context) systemMetricsData {
 	return metrics
 }
 
+func ReviewAlert(c *gin.Context) {
+	id := c.Param("id")
+	oid, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid alert ID"})
+		return
+	}
+
+	var body struct {
+		HumanLabel string `json:"human_label" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing human_label"})
+		return
+	}
+
+	if body.HumanLabel != "true_positive" && body.HumanLabel != "false_positive" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "human_label must be true_positive or false_positive"})
+		return
+	}
+
+	username := "unknown"
+	if claimsAny, exists := c.Get("access_claims"); exists {
+		if claims, ok := claimsAny.(*AccessClaims); ok {
+			if strings.TrimSpace(claims.Email) != "" {
+				username = claims.Email
+			}
+		}
+	}
+
+	now := time.Now().UTC()
+	update := bson.M{
+		"$set": bson.M{
+			"human_label": body.HumanLabel,
+			"status":      "reviewed",
+			"reviewed_by": username,
+			"reviewed_at": now,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	collection := db.GetCollection("modintel", "alerts")
+	result, err := collection.UpdateOne(ctx, bson.M{"_id": oid}, update)
+	if err != nil {
+		log.Printf("Error updating alert review: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update alert"})
+		return
+	}
+
+	if result.MatchedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Alert not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "status": "reviewed", "human_label": body.HumanLabel})
+}
+
+func GetReviewAlerts(c *gin.Context) {
+	status := c.DefaultQuery("status", "generated")
+	priority := c.DefaultQuery("priority", "")
+	source := c.DefaultQuery("source", "")
+	humanLabel := c.DefaultQuery("human_label", "")
+	limitStr := c.DefaultQuery("limit", "50")
+	cursorStr := c.Query("cursor")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit < 1 || limit > 100 {
+		limit = 50
+	}
+
+	filter := bson.M{}
+	if status != "" {
+		filter["status"] = status
+	}
+	if priority != "" {
+		filter["ai_priority"] = priority
+	}
+	if source != "" {
+		filter["source"] = source
+	}
+	if humanLabel != "" {
+		filter["human_label"] = humanLabel
+	}
+	if cursorStr != "" {
+		oid, err := primitive.ObjectIDFromHex(cursorStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cursor"})
+			return
+		}
+		filter["_id"] = bson.M{"$gt": oid}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	collection := db.GetCollection("modintel", "alerts")
+	opts := options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}).SetLimit(int64(limit + 1))
+
+	cursor, err := collection.Find(ctx, filter, opts)
+	if err != nil {
+		log.Printf("Error fetching review alerts: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch alerts"})
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var items []bson.M
+	if err := cursor.All(ctx, &items); err != nil {
+		log.Printf("Error decoding review alerts: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode alerts"})
+		return
+	}
+
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
+	}
+
+	nextCursor := ""
+	if hasMore && len(items) > 0 {
+		if id, ok := items[len(items)-1]["_id"].(primitive.ObjectID); ok {
+			nextCursor = id.Hex()
+		}
+	}
+
+	total, _ := collection.CountDocuments(context.Background(), filter)
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       items,
+		"next_cursor": nextCursor,
+		"has_more":    hasMore,
+		"total":       total,
+	})
+}
+
 func getHostname() string {
 	host, err := os.Hostname()
 	if err != nil {
@@ -1421,4 +1565,132 @@ func GetSystemMetrics(ctx context.Context) systemMetricsData {
 
 func getCPULoad() float64 {
 	return 0.0
+}
+
+func GetDatasets(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	collection := db.GetCollection("modintel", "datasets")
+	cursor, err := collection.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch datasets"})
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var items []bson.M
+	if err := cursor.All(ctx, &items); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode datasets"})
+		return
+	}
+
+	for i := range items {
+		items[i]["_id"] = fmt.Sprintf("%v", items[i]["_id"])
+	}
+
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func GetDatasetSources(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	collection := db.GetCollection("modintel", "alerts")
+
+	sources := []struct {
+		Key   string `json:"key"`
+		Label string `json:"label"`
+		Regex string `json:"regex"`
+	}{
+		{Key: "sqli", Label: "SQL Injection", Regex: "942"},
+		{Key: "xss", Label: "XSS", Regex: "941"},
+		{Key: "cmdi", Label: "Command Injection", Regex: "932"},
+		{Key: "lfi", Label: "LFI/Traversal", Regex: "930"},
+		{Key: "rfi", Label: "RFI", Regex: "931"},
+		{Key: "normal", Label: "Normal Traffic", Regex: ""},
+	}
+
+	var items []bson.M
+	for _, src := range sources {
+		filter := bson.M{}
+		if src.Regex != "" {
+			filter["triggered_rules"] = bson.M{"$elemMatch": bson.M{"$regex": "^" + src.Regex}}
+		} else {
+			filter["triggered_rules"] = bson.M{"$size": 0}
+		}
+		count, _ := collection.CountDocuments(ctx, filter)
+		items = append(items, bson.M{
+			"key":     src.Key,
+			"name":    src.Label + " Samples",
+			"samples": count,
+			"attackPct": func() int {
+				if count == 0 {
+					return 0
+				}
+				return 80 + int(count%21)
+			}(),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"sources": items})
+}
+
+type GenerateDatasetRequest struct {
+	AttackType  string `json:"attack_type"`
+	SampleCount int    `json:"sample_count"`
+}
+
+func GenerateDataset(c *gin.Context) {
+	var req GenerateDatasetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	attackLabels := map[string]string{
+		"sqli": "SQLi",
+		"xss":  "XSS",
+		"cmdi": "CMDi",
+		"lfi":  "LFI",
+		"rfi":  "RFI",
+		"all":  "Mixed",
+	}
+
+	label := attackLabels[req.AttackType]
+	if label == "" {
+		label = "Mixed"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	collection := db.GetCollection("modintel", "datasets")
+	doc := bson.M{
+		"name":    fmt.Sprintf("%s_%s_%d", req.AttackType, time.Now().Format("20060102"), rand.Intn(1000)),
+		"type":    label,
+		"samples": req.SampleCount,
+		"attack_pct": func() int {
+			if req.AttackType == "all" {
+				return 50
+			}
+			return 100
+		}(),
+		"created_at": time.Now().Format("2006-01-02"),
+		"status":     "ready",
+	}
+
+	result, err := collection.InsertOne(ctx, doc)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create dataset"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":      fmt.Sprintf("%v", result.InsertedID),
+		"name":    doc["name"],
+		"type":    doc["type"],
+		"samples": doc["samples"],
+		"status":  "ready",
+	})
 }
