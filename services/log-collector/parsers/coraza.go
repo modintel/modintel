@@ -37,6 +37,8 @@ type AlertDocument struct {
 	RequestFingerprintVersion string                 `bson:"request_fingerprint_version" json:"request_fingerprint_version"`
 	MLScore                   *float64               `bson:"ml_score" json:"ml_score"`
 	HumanLabel                *string                `bson:"human_label" json:"human_label"`
+	ReviewedBy                *string                `bson:"reviewed_by" json:"reviewed_by"`
+	ReviewedAt                *time.Time             `bson:"reviewed_at" json:"reviewed_at"`
 	RawLog                    map[string]interface{} `bson:"raw_log" json:"raw_log"`
 
 	BodyLength  int               `bson:"body_length" json:"body_length"`
