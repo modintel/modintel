@@ -76,9 +76,18 @@
 		reverse_proxy health-aggregator:8090
 	}
 
+	handle /api/health/training-api {
+		rewrite * /health
+		reverse_proxy training-api:8085
+	}
+
 	handle /api/health/proxy-waf {
 		header Content-Type application/json
 		respond "{\"status\":\"ok\",\"service\":\"proxy-waf\"}" 200
+	}
+
+	handle /api/training* {
+		reverse_proxy training-api:8085
 	}
 
 	handle /api/* {
@@ -100,8 +109,13 @@
 	redir /settings.html /settings 308
 	redir /help.html /help 308
 
+	redir /review.html /review 308
+
 	@signin path /signin
 	rewrite @signin /signin.html
+
+	@review path /review
+	rewrite @review /review.html
 
 	@events path / /events
 	rewrite @events /index.html
