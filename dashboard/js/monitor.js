@@ -208,7 +208,8 @@ async function updateMetrics() {
         updateRequestRateChart(requestRates);
 
         const labels = generateLabels(timeSeries, currentRange);
-        updateChartLabels(labels);
+        updateChartLabels('request-labels', labels);
+        updateChartLabels('error-labels', labels);
 
         const p50 = data.p50_latency_ms || 0;
         const p95 = data.p95_latency_ms || 0;
@@ -246,23 +247,31 @@ function formatBytes(bytes) {
     return `${value.toFixed(1)} ${units[unitIndex]}`;
 }
 
-function updateChartLabels(labels) {
-    const labelsEl = document.getElementById('request-labels');
+function updateChartLabels(elementId, labels) {
+    const labelsEl = document.getElementById(elementId);
     if (!labelsEl) return;
 
     labelsEl.innerHTML = '';
-
-    if (!labels || labels.length === 0) {
+    if (!Array.isArray(labels) || labels.length === 0) {
+        labelsEl.innerHTML = '<span>-</span><span>-</span><span>-</span>';
         return;
     }
 
-    const config = RANGE_CONFIG[currentRange] || RANGE_CONFIG['1h'];
-    const step = Math.max(1, Math.floor(labels.length / 4));
-    const indices = [0, step, step * 2, labels.length - 1];
+    let indices;
+    if (currentRange === '1h') {
+        indices = [0, Math.floor(labels.length / 4), Math.floor(labels.length / 2), Math.floor(labels.length * 3 / 4), labels.length - 1];
+    } else if (currentRange === '6h') {
+        indices = [0, Math.floor(labels.length / 4), Math.floor(labels.length / 2), Math.floor(labels.length * 3 / 4), labels.length - 1];
+    } else if (currentRange === '24h') {
+        indices = [0, Math.floor(labels.length / 4), Math.floor(labels.length / 2), Math.floor(labels.length * 3 / 4), labels.length - 1];
+    } else {
+        indices = [0, Math.floor(labels.length / 4), Math.floor(labels.length / 2), Math.floor(labels.length * 3 / 4), labels.length - 1];
+    }
 
-    indices.forEach(idx => {
+    const unique = [...new Set(indices.filter(i => i >= 0 && i < labels.length))];
+    unique.forEach(i => {
         const span = document.createElement('span');
-        span.textContent = labels[idx] || '';
+        span.textContent = labels[i] || '';
         labelsEl.appendChild(span);
     });
 }
@@ -300,3 +309,12 @@ setInterval(() => {
 	fetchAggregateHealth();
 	updateMetrics();
 }, 2000);
+
+document.querySelectorAll('.time-range-buttons .graph-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.time-range-buttons .graph-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentRange = btn.dataset.range;
+        updateMetrics();
+    });
+});
