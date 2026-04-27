@@ -347,34 +347,14 @@ async function toggleReview() {
     }
 }
 
-const syncBtn = document.getElementById('sync-btn');
-if (syncBtn) {
-    syncBtn.addEventListener('click', toggleReview);
-}
-
-const lockBtn = document.getElementById('lock-btn');
-if (lockBtn) {
-    lockBtn.addEventListener('click', () => {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-        window.location.href = '/signin';
-    });
-}
-
-document.querySelectorAll('.time-range-buttons .graph-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.time-range-buttons .graph-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentRange = btn.dataset.range;
-        updateMetrics();
-    });
-});
-
 fetchAggregateHealth();
-updateMetrics();
+	updateMetrics();
 
-setInterval(() => {
-    fetchAggregateHealth();
-    updateMetrics();
-}, 2000);
+	setInterval(() => {
+fetchAggregateHealth();
+	updateMetrics();
+
+	setInterval(() => {
+		fetchAggregateHealth();
+		updateMetrics();
+	}, 2000);
