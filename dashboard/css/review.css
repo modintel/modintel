@@ -1,0 +1,132 @@
+.btn-true, .btn-false {
+    background: transparent;
+    border: none;
+}
+.btn-true:hover, .btn-false:hover {
+    background: transparent;
+}
+.btn-true { color: var(--success); }
+.btn-false { color: var(--danger); }
+
+.review-row-tp {
+    border-left: 2px solid var(--success);
+    opacity: 0.6;
+}
+
+.review-row-fp {
+    border-left: 2px solid var(--danger);
+    opacity: 0.6;
+}
+
+.review-row-expanded {
+    background: var(--bg-panel);
+}
+
+.review-actions {
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+}
+
+.review-stats {
+    font-size: 0.75rem;
+    color: var(--fg-muted);
+}
+
+.stats-grid .stat-label.label-tp {
+    color: var(--success);
+}
+
+.stats-grid .stat-label.label-fp {
+    color: var(--danger);
+}
+
+.filter-row {
+    display: flex;
+    gap: 2px;
+    border: 0.8px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.filter-row:last-child {
+    margin-bottom: 0;
+}
+
+.filter-row .view-btn,
+.filter-row .priority-btn {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--font);
+    flex: 1;
+}
+
+.filter-row .view-btn.active,
+.filter-row .priority-btn.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+}
+
+.review-table tr {
+    transition: opacity 0.2s;
+}
+
+.review-table tr.reviewed {
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+.review-table tr.reviewed td {
+    text-decoration: line-through;
+}
+
+.action-cell {
+    display: flex;
+    gap: 4px;
+}
+
+.action-cell button {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: none;
+}
+.action-cell button:hover {
+    background: transparent;
+}
+.btn-true, .btn-false {
+    transition: none;
+}
+.btn-true {
+    color: var(--success);
+}
+.btn-false {
+    color: var(--danger);
+}
+
+#load-more-review {
+    display: block;
+    margin: 16px auto;
+    background: #ffffff;
+    color: var(--accent);
+    border-color: var(--accent);
+}
+#load-more-review:hover {
+    background: var(--accent);
+    color: var(--accent-fg);
+}
