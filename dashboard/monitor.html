@@ -148,7 +148,7 @@
                                     <stop offset="100%" style="stop-color:#ff570a;stop-opacity:0" />
                                 </linearGradient>
                             </defs>
-                            <polyline id="request-line" fill="none" stroke="#ff570a" stroke-width="1.5" points="" />
+                            <polyline id="request-line" fill="none" stroke="#ff570a" stroke-width="1" points="" />
                             <path id="request-area" fill="url(#request-gradient)" stroke="none" d="" />
                         </svg>
                     </div>
@@ -198,7 +198,7 @@
                                     <stop offset="100%" style="stop-color:#dc2626;stop-opacity:0" />
                                 </linearGradient>
                             </defs>
-                            <polyline id="error-line" fill="none" stroke="#dc2626" stroke-width="1.5" points="" />
+                            <polyline id="error-line" fill="none" stroke="#dc2626" stroke-width="1" points="" />
                             <path id="error-area" fill="url(#error-gradient)" stroke="none" d="" />
                         </svg>
                     </div>
@@ -210,12 +210,16 @@
                         <span class="metric-title">Database</span>
                         <span class="metric-value-inline" id="mongodb-connections">1</span>
                     </div>
+                    <div id="mongodb-bars" class="sparkline-bars"></div>
                 </div>
 
                 <div class="metric-card compact">
                     <div class="metric-header">
                         <span class="metric-title">Memory</span>
                         <span class="metric-value-inline" id="memory-used">0 MB</span>
+                    </div>
+                    <div class="memory-bar-container">
+                        <div class="memory-bar" id="memory-bar"></div>
                     </div>
                 </div>
 
@@ -224,12 +228,16 @@
                         <span class="metric-title">Workers</span>
                         <span class="metric-value-inline" id="goroutines">0</span>
                     </div>
+                    <div id="workers-bars" class="sparkline-bars"></div>
                 </div>
 
                 <div class="metric-card compact">
                     <div class="metric-header">
                         <span class="metric-title">Storage</span>
                         <span class="metric-value-inline" id="sys-dbsize">-</span>
+                    </div>
+                    <div class="memory-bar-container">
+                        <div class="memory-bar" id="storage-bar"></div>
                     </div>
                 </div>
             </div>
