@@ -145,8 +145,8 @@
 }
 
 .badge.active {
-    background: var(--success-subtle);
-    color: var(--success);
+    background: rgba(255, 87, 10, 0.15);
+    color: var(--accent);
 }
 
 .btn-sm {
