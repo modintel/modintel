@@ -290,25 +290,11 @@ function applyStreamSearch() {
     });
 }
 
-let isReviewing = false;
-
-function toggleReview() {
-    const btn = document.getElementById('sync-btn');
-    const icon = document.getElementById('review-icon');
-    isReviewing = !isReviewing;
-
-    if (isReviewing) {
-        btn.classList.add('active');
-        icon.innerHTML = '<rect x="6" y="6" width="12" height="12"></rect>';
-    } else {
-        btn.classList.remove('active');
-        icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
-    }
-}
-
 const syncBtn = document.getElementById('sync-btn');
 if (syncBtn) {
-    syncBtn.addEventListener('click', toggleReview);
+    syncBtn.addEventListener('click', () => {
+        window.location.href = '/review';
+    });
 }
 
 const lockBtn = document.getElementById('lock-btn');
