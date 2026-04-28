@@ -122,17 +122,27 @@ services:
     user: root
 
   training-api:
-    build: ./services/training-api
+    build:
+      context: .
+      dockerfile: services/training-api/Dockerfile
     ports:
       - "8085:8085"
     volumes:
       - ./models:/app/models
+      - ./data:/app/data:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - MONGO_URI=${MONGO_URI}
       - MONGO_DB_NAME=${MONGO_DB_NAME}
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}
+      - MODEL_VERSION=${MODEL_VERSION:-v3}
+      - ML_PIPELINE_DATA_DIR=/app/data
+      - ML_PIPELINE_MODELS_DIR=/app/models
+      - TRAIN_SCRIPT=/app/ml-pipeline/train_model.py
     networks:
       - modintel-net
     restart: always
+    user: root
 
   auth-service:
     build: ./services/auth-service
