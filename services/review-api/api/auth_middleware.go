@@ -27,15 +27,24 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
-		raw := c.GetHeader("Authorization")
-		parts := strings.SplitN(raw, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		tokenStr := ""
+		if cookie, err := c.Cookie("access_token"); err == nil && cookie != "" {
+			tokenStr = cookie
+		} else {
+			raw := c.GetHeader("Authorization")
+			parts := strings.SplitN(raw, " ", 2)
+			if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+				tokenStr = parts[1]
+			}
+		}
+
+		if tokenStr == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
 			c.Abort()
 			return
 		}
 
-		token, err := jwt.ParseWithClaims(parts[1], &AccessClaims{}, func(token *jwt.Token) (interface{}, error) {
+		token, err := jwt.ParseWithClaims(tokenStr, &AccessClaims{}, func(token *jwt.Token) (interface{}, error) {
 			if token.Method != jwt.SigningMethodHS256 {
 				return nil, errors.New("unexpected signing method")
 			}
