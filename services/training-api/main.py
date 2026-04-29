@@ -388,13 +388,18 @@ def _restart_inference_engine(version: str):
 
 
 @app.post("/api/training/datasets/cut")
-async def cut_reviewed_dataset():
+async def cut_reviewed_dataset(body: dict = {}):
     try:
         import pandas as pd
     except ImportError:
         raise HTTPException(status_code=500, detail="pandas not available")
 
     try:
+        dataset_name = re.sub(r"[^\w\s-]", "", str(body.get("name", ""))).strip()
+        dataset_name = re.sub(r"\s+", "_", dataset_name)[:100]
+        if not dataset_name:
+            dataset_name = f"reviewed_export_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+
         collection = get_db()["alerts"]
         cursor = collection.find(
             {"status": "reviewed"},
@@ -421,7 +426,8 @@ async def cut_reviewed_dataset():
 
         datasets_coll = get_db()["datasets"]
         doc = {
-            "name": f"reviewed_export_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+            "name": dataset_name,
+            "type": "Mixed",
             "type": "Mixed",
             "samples": total,
             "attack_pct": attack_pct,
