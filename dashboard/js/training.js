@@ -5,15 +5,14 @@ document.getElementById('val-split').addEventListener('input', function() {
     document.getElementById('val-split-val').textContent = this.value + '%';
 });
 
+document.getElementById('hp-toggle-check').addEventListener('change', function() {
+    document.getElementById('hp-advanced').style.display = this.checked ? 'block' : 'none';
+});
+
 async function loadTrainingStatus() {
     try {
         const res = await apiFetch(`${API_BASE}/training/status`);
         const data = await res.json();
-        document.getElementById('model-version').textContent = data.active_version || 'v0';
-        document.getElementById('last-trained').textContent = data.last_trained
-            ? new Date(data.last_trained).toLocaleDateString()
-            : '—';
-
         if (data.training_active) {
             const btn = document.getElementById('train-model-btn');
             btn.textContent = 'Training...';
@@ -53,11 +52,11 @@ function renderHistory(items) {
             <td>${item.dataset}</td>
             <td>${item.precision}%</td>
             <td>${item.recall}%</td>
-            <td style="color:var(--success);">${item.fpr}%</td>
+            <td style="color:var(--accent);">${item.fpr}%</td>
             <td>${new Date(item.trained_at).toLocaleDateString()}</td>
             <td>
                 ${item.active
-                    ? '<span class="badge active">Active</span>'
+                    ? '<span class="badge-active">Active</span>'
                     : `<button class="btn btn-sm deploy-btn" data-version="${item.version}">Deploy</button>`}
             </td>
         </tr>
@@ -120,7 +119,7 @@ async function trainModel() {
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            alert(err.detail || err.error || 'Training failed');
+            showModal('Training Failed', err.detail || err.error || 'An error occurred', 'error');
             btn.textContent = 'Start Training';
             btn.disabled = false;
             return;
@@ -144,8 +143,8 @@ function updateEvalMetrics(item) {
         metrics.innerHTML = `
             <div class="metric"><div class="metric-label">Precision</div><div class="metric-value">—</div></div>
             <div class="metric"><div class="metric-label">Recall</div><div class="metric-value">—</div></div>
-            <div class="metric"><div class="metric-label">FPR</div><div class="metric-value" style="color:var(--success);">—</div></div>
-            <div class="metric"><div class="metric-label">F1 Score</div><div class="metric-value">—</div></div>
+            <div class="metric"><div class="metric-label">FPR</div><div class="metric-value" style="color:var(--accent);">—</div></div>
+            <div class="metric"><div class="metric-label">F1</div><div class="metric-value">—</div></div>
         `;
         return;
     }
@@ -161,10 +160,10 @@ function updateEvalMetrics(item) {
         </div>
         <div class="metric">
             <div class="metric-label">FPR</div>
-            <div class="metric-value" style="color:var(--success);">${item.fpr}%</div>
+            <div class="metric-value" style="color:var(--accent);">${item.fpr}%</div>
         </div>
         <div class="metric">
-            <div class="metric-label">F1 Score</div>
+            <div class="metric-label">F1</div>
             <div class="metric-value">${item.f1_score}%</div>
         </div>
     `;
@@ -177,7 +176,7 @@ async function deployModel(version) {
         });
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            alert(err.detail || 'Failed to deploy model');
+            showModal('Deploy Failed', err.detail || 'Failed to deploy model', 'error');
             return;
         }
         loadTrainingStatus();
