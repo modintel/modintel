@@ -1,19 +1,11 @@
 const API_BASE = '/api';
 let currentRange = '1h';
 
-const RANGE_CONFIG = {
-    '1h': { bucketSeconds: 60, labelFormat: { hour: '2-digit', minute: '2-digit' }, maxPoints: 60 },
-    '6h': { bucketSeconds: 300, labelFormat: { hour: '2-digit', minute: '2-digit' }, maxPoints: 72 },
-    '24h': { bucketSeconds: 900, labelFormat: { hour: '2-digit', minute: '2-digit' }, maxPoints: 96 },
-    '7d': { bucketSeconds: 3600, labelFormat: { month: 'numeric', day: 'numeric', hour: '2-digit' }, maxPoints: 168 },
-};
-
-const HEALTH_ENDPOINTS = {
-    'log-collector': `${API_BASE}/health/log-collector`,
-    'inference-engine': `${API_BASE}/health/inference-engine`,
-    'proxy-waf': `${API_BASE}/health/proxy-waf`,
-    'review-api': `${API_BASE}/health/review-api`,
-    'auth-service': `${API_BASE}/health/auth-service`,
+const RANGE_FIELD = {
+    '1h': 'time_1h',
+    '6h': 'time_6h',
+    '24h': 'time_24h',
+    '7d': 'time_7d',
 };
 
 function generateChartPoints(data, width, height, padding) {
@@ -83,46 +75,22 @@ function updateLatencyBars(p50, p95, p99) {
 
 async function fetchAggregateHealth() {
     try {
-        const [logCollector, inference, proxy, review, auth] = await Promise.all([
-            fetchServiceStatus(HEALTH_ENDPOINTS['log-collector']),
-            fetchServiceStatus(HEALTH_ENDPOINTS['inference-engine']),
-            fetchServiceStatus(HEALTH_ENDPOINTS['proxy-waf']),
-            fetchServiceStatus(HEALTH_ENDPOINTS['review-api']),
-            fetchServiceStatus(HEALTH_ENDPOINTS['auth-service']),
-        ]);
-
-        updateServiceStatus('status-log-collector', logCollector);
-        updateServiceStatus('status-inference', inference);
-        updateServiceStatus('status-proxy', proxy);
-        updateServiceStatus('status-review-api', review);
-        updateServiceStatus('status-auth-service', auth);
+        const res = await apiFetch(`${API_BASE}/monitor/health`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        applyHealthData(data.services);
     } catch (e) {
         console.error('Error fetching service health:', e);
-        updateServiceStatus('status-log-collector', 'unknown');
-        updateServiceStatus('status-inference', 'unknown');
-        updateServiceStatus('status-proxy', 'unknown');
-        updateServiceStatus('status-review-api', 'unknown');
-        updateServiceStatus('status-auth-service', 'unknown');
+        markAllServicesUnknown();
     }
 }
 
-async function fetchServiceStatus(url) {
-    try {
-        const res = await fetch(url, {
-            headers: {
-                Authorization: `Bearer ${getAccessToken()}`,
-            },
-        });
-
-        if (!res.ok) {
-            return res.status >= 500 ? 'down' : 'degraded';
-        }
-
-        const payload = await res.json();
-        return normalizeServiceStatus(payload.status);
-    } catch (_) {
-        return 'down';
-    }
+function markAllServicesUnknown() {
+    updateServiceStatus('status-log-collector', 'unknown');
+    updateServiceStatus('status-inference', 'unknown');
+    updateServiceStatus('status-proxy', 'unknown');
+    updateServiceStatus('status-review-api', 'unknown');
+    updateServiceStatus('status-auth-service', 'unknown');
 }
 
 function normalizeServiceStatus(status) {
@@ -162,6 +130,15 @@ function updateServiceStatus(elementId, status) {
     }
 }
 
+function updateAllServiceStatuses(services) {
+    if (!services) return;
+    updateServiceStatus('status-log-collector', services['log-collector'] || 'unknown');
+    updateServiceStatus('status-inference', services['inference-engine'] || 'unknown');
+    updateServiceStatus('status-proxy', services['proxy-waf'] || 'unknown');
+    updateServiceStatus('status-review-api', services['review-api'] || 'unknown');
+    updateServiceStatus('status-auth-service', services['auth-service'] || 'unknown');
+}
+
 function extractTimeSeriesData(timeSeries, fieldName) {
     if (!timeSeries || !Array.isArray(timeSeries)) {
         return [];
@@ -173,9 +150,7 @@ function extractTimeSeriesData(timeSeries, fieldName) {
     });
 }
 
-function generateLabels(timeSeries, range) {
-    const config = RANGE_CONFIG[range] || RANGE_CONFIG['1h'];
-
+function generateLabels(timeSeries) {
     if (!timeSeries || !Array.isArray(timeSeries)) {
         return [];
     }
@@ -184,55 +159,70 @@ function generateLabels(timeSeries, range) {
         const ts = point.timestamp;
         if (!ts) return '';
         const date = new Date(ts);
-        return date.toLocaleTimeString([], config.labelFormat);
+        if (currentRange === '7d') {
+            return date.toLocaleDateString([], { month: 'numeric', day: 'numeric' }) + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     });
 }
 
-async function updateMetrics() {
+async function fetchMetrics() {
     try {
         const res = await apiFetch(`${API_BASE}/monitor/metrics?range=${currentRange}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-
-        document.getElementById('stat-latency').textContent = `${(data.avg_inference_ms || 0).toFixed(1)}ms`;
-        document.getElementById('stat-rpm').textContent = (data.requests_per_minute || 0).toFixed(1);
-
-        const system = data.system || {};
-        document.getElementById('mongodb-connections').textContent = system.mongodb_connections || 1;
-        document.getElementById('memory-used').textContent = `${system.memory_used_mb || 0} / ${system.memory_total_mb || 0} MB`;
-        document.getElementById('goroutines').textContent = system.goroutines || 0;
-        document.getElementById('sys-dbsize').textContent = formatBytes(system.mongodb_database_size_bytes);
-
-        const timeSeries = data.time_series || [];
-        const requestRates = extractTimeSeriesData(timeSeries, 'requests_per_minute');
-        updateRequestRateChart(requestRates);
-
-        const labels = generateLabels(timeSeries, currentRange);
-        updateChartLabels('request-labels', labels);
-        updateChartLabels('error-labels', labels);
-
-        const p50 = data.p50_latency_ms || 0;
-        const p95 = data.p95_latency_ms || 0;
-        const p99 = data.p99_latency_ms || 0;
-        updateLatencyBars(p50, p95, p99);
-
-        const errorRates = extractTimeSeriesData(timeSeries, 'errors_per_minute');
-        updateErrorRateChart(errorRates);
-
-        updateWorkerBars();
-        updateMongoBars();
-
-        const memoryPercent = system.memory_percent || 0;
-        document.getElementById('memory-bar').style.width = `${memoryPercent}%`;
-
-        const dbSize = system.mongodb_database_size_bytes || 0;
-        const totalStorageMB = 1000;
-        const storagePercent = Math.min((dbSize / (totalStorageMB * 1024 * 1024)) * 100, 100);
-        document.getElementById('storage-bar').style.width = `${storagePercent}%`;
-
+        applyMetricsData(data);
     } catch (e) {
         console.error('Error fetching metrics:', e);
     }
+}
+
+function applyMetricsData(data) {
+    document.getElementById('stat-latency').textContent = `${(data.avg_inference_ms || 0).toFixed(1)}ms`;
+    document.getElementById('stat-rpm').textContent = (data.requests_per_minute || 0).toFixed(1);
+
+    const system = data.system || {};
+    document.getElementById('mongodb-connections').textContent = system.mongodb_connections || 1;
+    document.getElementById('memory-used').textContent = `${system.memory_used_mb || 0} / ${system.memory_total_mb || 0} MB`;
+    document.getElementById('goroutines').textContent = system.goroutines || 0;
+    document.getElementById('sys-dbsize').textContent = formatBytes(system.mongodb_database_size_bytes);
+
+    const timeField = RANGE_FIELD[currentRange] || 'time_1h';
+    const timeSeries = data[timeField] || data.time_series || [];
+    const requestRates = extractTimeSeriesData(timeSeries, 'requests_per_minute');
+    updateRequestRateChart(requestRates);
+
+    const labels = generateLabels(timeSeries);
+    updateChartLabels('request-labels', labels);
+    updateChartLabels('error-labels', labels);
+
+    const p50 = data.p50_latency_ms || 0;
+    const p95 = data.p95_latency_ms || 0;
+    const p99 = data.p99_latency_ms || 0;
+    updateLatencyBars(p50, p95, p99);
+
+    const errorRates = extractTimeSeriesData(timeSeries, 'errors_per_minute');
+    updateErrorRateChart(errorRates);
+
+    updateWorkerBars();
+    updateMongoBars();
+
+    const memoryPercent = system.memory_percent || 0;
+    document.getElementById('memory-bar').style.width = `${memoryPercent}%`;
+
+    const dbSize = system.mongodb_database_size_bytes || 0;
+    const totalStorageMB = 1_000;
+    const storagePercent = Math.min((dbSize / (totalStorageMB * 1_024 * 1_024)) * 100, 100);
+    document.getElementById('storage-bar').style.width = `${storagePercent}%`;
+}
+
+function applyHealthData(services) {
+    if (!services) return;
+    updateServiceStatus('status-log-collector', services['log-collector'] || 'unknown');
+    updateServiceStatus('status-inference', services['inference-engine'] || 'unknown');
+    updateServiceStatus('status-proxy', services['proxy-waf'] || 'unknown');
+    updateServiceStatus('status-review-api', services['review-api'] || 'unknown');
+    updateServiceStatus('status-auth-service', services['auth-service'] || 'unknown');
 }
 
 function formatBytes(bytes) {
@@ -302,19 +292,65 @@ function updateMongoBars() {
     }
 }
 
-fetchAggregateHealth();
-updateMetrics();
+let sseClient = null;
+let pollingInterval = null;
 
-setInterval(() => {
-	fetchAggregateHealth();
-	updateMetrics();
-}, 2000);
+function startSSE() {
+    if (sseClient) sseClient.close();
+
+    const indicator = SSE_createIndicator('connection-indicator');
+    sseClient = new SSEClient('/api/events/stream', {
+        onMetrics: function (data) {
+            applyMetricsData(data);
+        },
+        onHealth: function (data) {
+            applyHealthData(data.services);
+        },
+        onConnect: function () {
+            if (sseClient && sseClient.fallbackActive) {
+                stopPolling();
+                sseClient.fallbackActive = false;
+            }
+        },
+        onFallback: function () {
+            startPolling();
+        }
+    });
+    if (indicator) sseClient.indicator = indicator;
+    sseClient.connect();
+}
+
+function stopSSE() {
+    if (sseClient) {
+        sseClient.close();
+        sseClient = null;
+    }
+}
+
+function startPolling() {
+    if (pollingInterval) return;
+    pollingInterval = setInterval(() => {
+        fetchAggregateHealth();
+        fetchMetrics();
+    }, 2000);
+}
+
+function stopPolling() {
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+}
+
+fetchMetrics();
+fetchAggregateHealth();
+startSSE();
 
 document.querySelectorAll('.time-range-buttons .graph-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.time-range-buttons .graph-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentRange = btn.dataset.range;
-        updateMetrics();
+        fetchMetrics();
     });
 });
