@@ -212,11 +212,15 @@ if (cutBtn && cutModal) {
     });
 
     document.getElementById('cut-modal-confirm').addEventListener('click', async () => {
-        const name = document.getElementById('cut-dataset-name').value.trim() || 'reviewed_export';
-        cutModal.classList.remove('open');
+            const name = document.getElementById('cut-dataset-name').value.trim() || 'reviewed_export';
+            cutModal.classList.remove('open');
 
-        try {
-            const res = await apiFetch(`${API_BASE}/training/datasets/cut`, { method: 'POST' });
+            try {
+                const res = await apiFetch(`${API_BASE}/training/datasets/cut`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name }),
+                });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
                 showModal('Export Failed', err.detail || 'Failed to export dataset', 'error');

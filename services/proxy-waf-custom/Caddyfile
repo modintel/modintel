@@ -25,6 +25,10 @@
 		reverse_proxy auth-service:8084
 	}
 
+	handle /api/training/* {
+		reverse_proxy training-api:8085
+	}
+
 	reverse_proxy review-api:8082 {
 		trusted_proxies private_ranges
 		flush_interval 0

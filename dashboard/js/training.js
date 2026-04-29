@@ -42,7 +42,7 @@ async function loadTrainingHistory() {
 function renderHistory(items) {
     const tbody = document.getElementById('training-history');
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--fg-muted);padding:20px;">No training history yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--fg-muted);padding:20px;">No training history yet.</td></tr>';
         return;
     }
     tbody.innerHTML = items.map(item => `
