@@ -90,11 +90,16 @@ async function generateDataset() {
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            alert(err.error || 'Failed to generate dataset');
+            showModal('Generation Failed', err.error || 'Failed to generate dataset', 'error');
             btn.textContent = 'Generate';
             btn.disabled = false;
             return;
         }
+
+        btn.textContent = 'Exporting...';
+        await apiFetch(`${API_BASE}/training/datasets/export`, {
+            method: 'POST'
+        }).catch(() => {});
 
         btn.textContent = 'Generated!';
         setTimeout(() => {
