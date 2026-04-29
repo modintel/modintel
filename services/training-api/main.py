@@ -490,6 +490,29 @@ async def export_dataset():
         raise HTTPException(status_code=500, detail="Internal error during export")
 
 
+@app.delete("/api/training/history/{version}")
+async def delete_model(version: str):
+    if not re.match(r"^v\d+$", version):
+        raise HTTPException(status_code=400, detail="Invalid version format")
+
+    collection = get_db()["training_history"]
+    record = collection.find_one({"version": version})
+    if not record:
+        raise HTTPException(status_code=404, detail="Model version not found")
+
+    if record.get("active"):
+        raise HTTPException(status_code=409, detail="Cannot delete the active model")
+
+    collection.delete_one({"version": version})
+
+    model_path = os.path.join(MODELS_DIR, f"v{version.lstrip('v')}")
+    if os.path.isdir(model_path):
+        import shutil
+        shutil.rmtree(model_path, ignore_errors=True)
+
+    return {"status": "deleted", "version": version}
+
+
 if __name__ == "__main__":
     import uvicorn
 
