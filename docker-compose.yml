@@ -1,6 +1,7 @@
 services:
   mongodb:
     image: mongo:7
+    command: --replSet rs0
     volumes:
       - modintel_mongo_data:/data/db
     networks:
@@ -82,7 +83,7 @@ services:
     environment:
       - MODEL_VERSION=v3
       - MISS_ONNX_MODEL_PATH=/app/models/modintel.onnx
-    mem_limit: 512m
+    mem_limit: 1g
     restart: always
     networks:
       - modintel-net
