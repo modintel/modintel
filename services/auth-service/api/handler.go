@@ -113,6 +113,55 @@ func (h *Handler) health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"service": "auth-service", "status": "ok"})
 }
 
+func (h *Handler) setAccessTokenCookie(c *gin.Context, token string, expiry time.Duration) {
+	maxAge := int(expiry.Seconds())
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "access_token",
+		Value:    token,
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   h.cfg.CookieSecure,
+	})
+}
+
+func (h *Handler) setRefreshTokenCookie(c *gin.Context, token string, expiry time.Duration) {
+	maxAge := int(expiry.Seconds())
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    token,
+		Path:     "/api/v1/auth",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   h.cfg.CookieSecure,
+	})
+}
+
+func (h *Handler) clearAuthCookies(c *gin.Context) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "access_token",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Path:     "/api/v1/auth",
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:   "sse_token",
+		Value:  "",
+		Path:   "/api/events/stream",
+		MaxAge: -1,
+	})
+}
+
 func (h *Handler) login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -193,13 +242,13 @@ func (h *Handler) login(c *gin.Context) {
 
 	_, _ = h.users.UpdateOne(ctx, bson.M{"_id": user.ID}, bson.M{"$set": bson.M{"last_login": now, "updated_at": now}})
 
+	h.setAccessTokenCookie(c, accessToken, time.Until(accessExp))
+	h.setRefreshTokenCookie(c, refreshToken, time.Until(refreshExp))
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"access_token":  accessToken,
-			"token_type":    "Bearer",
-			"expires_in":    int(time.Until(accessExp).Seconds()),
-			"refresh_token": refreshToken,
+			"expires_in": int(time.Until(accessExp).Seconds()),
 			"user": gin.H{
 				"id":         userIDHex,
 				"email":      user.Email,
@@ -212,25 +261,25 @@ func (h *Handler) login(c *gin.Context) {
 }
 
 func (h *Handler) refresh(c *gin.Context) {
-	var req RefreshRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errResp("Invalid request payload", "AUTH_400"))
-		return
+	refreshToken, err := c.Cookie("refresh_token")
+	if err != nil || refreshToken == "" {
+		var req RefreshRequest
+		if err := c.ShouldBindJSON(&req); err == nil {
+			refreshToken = strings.TrimSpace(req.RefreshToken)
+		}
 	}
-
-	req.RefreshToken = strings.TrimSpace(req.RefreshToken)
-	if req.RefreshToken == "" {
+	if refreshToken == "" {
 		c.JSON(http.StatusBadRequest, errResp("refresh_token is required", "AUTH_400"))
 		return
 	}
 
-	claims, err := h.issuer.ParseRefreshToken(req.RefreshToken)
+	claims, err := h.issuer.ParseRefreshToken(refreshToken)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, errResp("Invalid refresh token", "AUTH_002"))
 		return
 	}
 
-	hash := auth.HashToken(req.RefreshToken)
+	hash := auth.HashToken(refreshToken)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
@@ -301,35 +350,34 @@ func (h *Handler) refresh(c *gin.Context) {
 		return
 	}
 
+	h.setAccessTokenCookie(c, accessToken, time.Until(accessExp))
+	h.setRefreshTokenCookie(c, newRefresh, time.Until(refreshExp))
+
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data": gin.H{
-			"access_token":  accessToken,
-			"token_type":    "Bearer",
-			"expires_in":    int(time.Until(accessExp).Seconds()),
-			"refresh_token": newRefresh,
-		},
+		"success":    true,
+		"expires_in": int(time.Until(accessExp).Seconds()),
 	})
 }
 
 func (h *Handler) logout(c *gin.Context) {
-	var req RefreshRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errResp("Invalid request payload", "AUTH_400"))
+	refreshToken, err := c.Cookie("refresh_token")
+	if err != nil || refreshToken == "" {
+		var req RefreshRequest
+		if err := c.ShouldBindJSON(&req); err == nil {
+			refreshToken = strings.TrimSpace(req.RefreshToken)
+		}
+	}
+	if refreshToken == "" {
+		h.clearAuthCookies(c)
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Logged out"})
 		return
 	}
 
-	req.RefreshToken = strings.TrimSpace(req.RefreshToken)
-	if req.RefreshToken == "" {
-		c.JSON(http.StatusBadRequest, errResp("refresh_token is required", "AUTH_400"))
-		return
-	}
-
-	hash := auth.HashToken(req.RefreshToken)
+	hash := auth.HashToken(refreshToken)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	_, err := h.tokens.UpdateOne(ctx, bson.M{"token_hash": hash, "revoked": false}, bson.M{
+	_, err = h.tokens.UpdateOne(ctx, bson.M{"token_hash": hash, "revoked": false}, bson.M{
 		"$set": bson.M{
 			"revoked":    true,
 			"revoked_at": time.Now().UTC(),
@@ -340,6 +388,7 @@ func (h *Handler) logout(c *gin.Context) {
 		return
 	}
 
+	h.clearAuthCookies(c)
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Logged out"})
 }
 
@@ -441,15 +490,23 @@ func (h *Handler) updateProfile(c *gin.Context) {
 
 func (h *Handler) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		token := ""
 		raw := c.GetHeader("Authorization")
 		parts := strings.SplitN(raw, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			c.JSON(http.StatusUnauthorized, errResp("Missing bearer token", "AUTH_003"))
-			c.Abort()
-			return
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			token = parts[1]
+		}
+		if token == "" {
+			var err error
+			token, err = c.Cookie("access_token")
+			if err != nil || token == "" {
+				c.JSON(http.StatusUnauthorized, errResp("Missing bearer token", "AUTH_003"))
+				c.Abort()
+				return
+			}
 		}
 
-		claims, err := h.issuer.ParseAccessToken(parts[1])
+		claims, err := h.issuer.ParseAccessToken(token)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, errResp("Invalid access token", "AUTH_003"))
 			c.Abort()
