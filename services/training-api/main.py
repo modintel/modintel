@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import socket
 import subprocess
 from datetime import datetime, timezone
 from typing import Optional
@@ -141,18 +142,8 @@ def _run_training(job: TrainingJob):
     try:
         parquet_path = os.path.join(DATA_DIR, "processed", "waf_dataset_v1.parquet")
         if not os.path.isfile(parquet_path):
-            metrics = {
-                "f1": 0.85 + (int(job.version.lstrip("v")) * 0.02),
-                "auroc": 0.90 + (int(job.version.lstrip("v")) * 0.01),
-                "fpr": 0.10 - (int(job.version.lstrip("v")) * 0.01),
-                "fnr": 0.05,
-                "ece": 0.03,
-                "precision": 0.88 + (int(job.version.lstrip("v")) * 0.015),
-                "recall": 0.82 + (int(job.version.lstrip("v")) * 0.02),
-            }
-            job.metrics = metrics
-            job.status = "completed"
-            _save_training_result(job, metrics)
+            job.status = "failed"
+            job.error = f"Dataset not found at {parquet_path}. Generate it first from the Datasets page."
             return
 
         env = os.environ.copy()
@@ -282,6 +273,9 @@ async def start_training(req: TrainingRequest):
 
 @app.post("/api/training/{version}/activate")
 async def activate_model(version: str):
+    if not re.match(r"^v\d+$", version):
+        raise HTTPException(status_code=400, detail="Invalid version format")
+
     collection = get_db()["training_history"]
     record = collection.find_one({"version": version})
     if not record:
@@ -299,11 +293,11 @@ async def activate_model(version: str):
 
     try:
         _restart_inference_engine(version)
-    except Exception as e:
+    except Exception:
         return {
             "status": "activated",
             "version": version,
-            "restart_warning": f"Model activated but inference engine restart failed: {str(e)}",
+            "restart_warning": "Model activated but inference engine restart failed",
         }
 
     return {
@@ -313,8 +307,187 @@ async def activate_model(version: str):
     }
 
 
+def _docker_socket_request(
+    method: str, path: str, body: Optional[str] = None
+) -> Optional[dict]:
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(10)
+        sock.connect("/var/run/docker.sock")
+
+        req = f"{method} {path} HTTP/1.1\r\nHost: docker\r\nConnection: close\r\n"
+        if body:
+            req += f"Content-Type: application/json\r\nContent-Length: {len(body)}\r\n"
+        req += "\r\n"
+        if body:
+            req += body
+
+        sock.sendall(req.encode())
+
+        raw = b""
+        while True:
+            chunk = sock.recv(8192)
+            if not chunk:
+                break
+            raw += chunk
+        sock.close()
+
+        return _parse_docker_response(raw)
+    except Exception:
+        return None
+
+
+def _parse_docker_response(raw: bytes) -> Optional[dict]:
+    parts = raw.split(b"\r\n\r\n", 1)
+    if len(parts) < 2:
+        return None
+    header, body = parts
+    if b"Transfer-Encoding: chunked" in header:
+        body = _dechunk(body)
+    try:
+        return json.loads(body)
+    except Exception:
+        return None
+
+
+def _dechunk(data: bytes) -> bytes:
+    result = b""
+    while data:
+        line_end = data.find(b"\r\n")
+        if line_end < 0:
+            break
+        size_hex = data[:line_end].split(b";")[0].strip()
+        size = int(size_hex, 16)
+        if size == 0:
+            break
+        data = data[line_end + 2 :]
+        result += data[:size]
+        data = data[size + 2 :]
+    return result
+
+
 def _restart_inference_engine(version: str):
-    pass
+    try:
+        resp = _docker_socket_request("GET", "/containers/json?all=true")
+        if not resp:
+            return
+
+        container_id = None
+        for c in resp if isinstance(resp, list) else []:
+            names = c.get("Names", [])
+            if any("inference-engine" in n for n in names):
+                container_id = c.get("Id")
+                break
+
+        if not container_id:
+            return
+
+        _docker_socket_request("POST", f"/containers/{container_id}/restart?t=10")
+    except Exception:
+        pass
+
+
+@app.post("/api/training/datasets/cut")
+async def cut_reviewed_dataset():
+    try:
+        import pandas as pd
+    except ImportError:
+        raise HTTPException(status_code=500, detail="pandas not available")
+
+    try:
+        collection = get_db()["alerts"]
+        cursor = collection.find(
+            {"status": "reviewed"},
+            {
+                "timestamp": 1, "method": 1, "uri": 1, "source": 1,
+                "ai_score": 1, "ai_probability": 1, "triggered_rules": 1,
+                "anomaly_score": 1, "human_label": 1, "_id": 0,
+            },
+        ).limit(50000)
+
+        rows = list(cursor)
+        if not rows:
+            raise HTTPException(status_code=400, detail="No reviewed alerts to export")
+
+        df = pd.DataFrame(rows)
+        os.makedirs(os.path.join(DATA_DIR, "processed"), exist_ok=True)
+        parquet_path = os.path.join(DATA_DIR, "processed", "waf_dataset_v1.parquet")
+        df.to_parquet(parquet_path, index=False)
+
+        tp_count = df[df["human_label"] == "true_positive"].shape[0] if "human_label" in df.columns else 0
+        fp_count = df[df["human_label"] == "false_positive"].shape[0] if "human_label" in df.columns else 0
+        total = len(df)
+        attack_pct = round((tp_count / total) * 100) if total > 0 else 0
+
+        datasets_coll = get_db()["datasets"]
+        doc = {
+            "name": f"reviewed_export_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+            "type": "Mixed",
+            "samples": total,
+            "attack_pct": attack_pct,
+            "true_positives": tp_count,
+            "false_positives": fp_count,
+            "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "status": "ready",
+            "source": "reviewed",
+        }
+        datasets_coll.insert_one(doc)
+
+        return {
+            "status": "ready",
+            "path": parquet_path,
+            "samples": total,
+            "true_positives": tp_count,
+            "false_positives": fp_count,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal error during export")
+
+
+@app.post("/api/training/datasets/export")
+async def export_dataset():
+    try:
+        import pandas as pd
+    except ImportError:
+        raise HTTPException(status_code=500, detail="pandas not available")
+
+    try:
+        collection = get_db()["alerts"]
+        cursor = collection.find(
+            {"source": {"$in": ["coraza", "ml_miss_detector", "waf_blocked"]}},
+            {
+                "timestamp": 1,
+                "method": 1,
+                "uri": 1,
+                "source": 1,
+                "ai_score": 1,
+                "ai_probability": 1,
+                "triggered_rules": 1,
+                "anomaly_score": 1,
+                "_id": 0,
+            },
+        ).limit(50000)
+
+        rows = list(cursor)
+        if not rows:
+            raise HTTPException(status_code=400, detail="No alerts to export")
+
+        df = pd.DataFrame(rows)
+        os.makedirs(os.path.join(DATA_DIR, "processed"), exist_ok=True)
+        parquet_path = os.path.join(DATA_DIR, "processed", "waf_dataset_v1.parquet")
+        df.to_parquet(parquet_path, index=False)
+
+        return {
+            "status": "ready",
+            "path": parquet_path,
+            "samples": len(df),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal error during export")
 
 
 if __name__ == "__main__":
