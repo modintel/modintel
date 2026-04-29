@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/netip"
 	"os"
 	"sort"
 	"strings"
@@ -34,6 +35,17 @@ var (
 	bodyCacheMu sync.RWMutex
 )
 
+var httpClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        20,
+		IdleConnTimeout:     90 * time.Second,
+		DisableKeepAlives:   false,
+	},
+}
+
+var aiWorkers = make(chan struct{}, 20)
+
 func cacheKey(method, uri string) string {
 	h := sha256.New()
 	h.Write([]byte(method + "|" + uri))
@@ -55,6 +67,30 @@ func getBodyCache(method, uri string) string {
 		return entry.Body
 	}
 	return ""
+}
+
+func isInternalIP(ip string) bool {
+	if ip == "" {
+		return false
+	}
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return false
+	}
+	networks := []string{"172.20.0.0/16", "10.0.0.0/8", "192.168.0.0/16"}
+	for _, cidr := range networks {
+		prefix, err := netip.ParsePrefix(cidr)
+		if err != nil {
+			continue
+		}
+		if prefix.Contains(addr) && !addr.IsLoopback() {
+			if strings.HasSuffix(ip, ".1") {
+				return false
+			}
+			return true
+		}
+	}
+	return false
 }
 
 func cleanupBodyCache() {
@@ -144,13 +180,12 @@ func enrichWithAI(doc *parsers.AlertDocument) bool {
 		return false
 	}
 
-	maxRetries := 3
+	maxRetries := 1
 	var resp *http.Response
 	for i := 0; i < maxRetries; i++ {
 		req, _ := http.NewRequest("POST", inferenceEngineURL()+"/predict", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err = client.Do(req)
+		resp, err = httpClient.Do(req)
 		if err == nil {
 			break
 		}
@@ -233,8 +268,9 @@ func enrichMiss(doc *parsers.AlertDocument) bool {
 
 	req, _ := http.NewRequest("POST", inferenceEngineURL()+"/predict-miss", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	resp, err := httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		log.Printf("Miss enrichment failed: %v", err)
 		doc.AIStatus = "unavailable"
@@ -332,6 +368,9 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 		if err == nil && existing["ai_status"] == "enriched" {
 			continue
 		}
+		if err == nil && existing["ai_status"] == "pending" {
+			log.Printf("Re-enriching pending alert (key=%s)", alertKey)
+		}
 		if err == nil {
 			log.Printf("Alert exists but not enriched (key=%s), re-enriching...", alertKey)
 		}
@@ -339,6 +378,7 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 		if doc.AnomalyScore <= 0 {
 			continue
 		}
+
 		doc.Source = "coraza"
 
 		if doc.Body == "" {
@@ -348,7 +388,7 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 			}
 		}
 
-		enrichWithAI(doc)
+		doc.AIStatus = "pending"
 
 		docJSON, err := json.Marshal(doc)
 		if err != nil {
@@ -363,27 +403,41 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 		docMap["alert_key"] = alertKey
 		docMap["coraza_flagged"] = true
 
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		res, err := collection.UpdateOne(
-			ctx,
-			bson.M{"alert_key": alertKey},
-			bson.M{"$set": docMap},
-			options.Update().SetUpsert(true),
-		)
-		cancel()
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+		opts := options.Update().SetUpsert(true)
+		res, err := collection.UpdateOne(ctx2, bson.M{"alert_key": alertKey}, bson.M{"$set": docMap}, opts)
+		cancel2()
 
 		if err != nil {
-			log.Printf("Failed to upsert Coraza alert to MongoDB: %v", err)
-		} else {
+			log.Printf("Failed to upsert Coraza alert: %v", err)
+			continue
+		}
+		if res.UpsertedCount > 0 {
 			log.Printf("Coraza alert ingested: %s (matched=%d, upserted=%v)", doc.URI, res.MatchedCount, res.UpsertedID)
 		}
+
+		aiWorkers <- struct{}{}
+		docCopy := *doc
+		key := alertKey
+		go func() {
+			defer func() { <-aiWorkers }()
+			enrichWithAI(&docCopy)
+			if docCopy.AIStatus == "enriched" {
+				aiJSON, _ := json.Marshal(docCopy)
+				var aiMap map[string]interface{}
+				json.Unmarshal(aiJSON, &aiMap)
+				upCtx, upCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer upCancel()
+				collection.UpdateOne(upCtx, bson.M{"alert_key": key}, bson.M{"$set": aiMap})
+			}
+		}()
 	}
 }
 
 func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
-	logFile := "/var/log/caddy/access.json"
-	if envLog := os.Getenv("CADDY_LOG_PATH"); envLog != "" {
-		logFile = envLog
+	logFile := os.Getenv("CADDY_LOG_PATH")
+	if logFile == "" {
+		logFile = "/var/log/caddy/waf-access.json"
 	}
 
 	log.Printf("Starting Caddy access log processor, reading from %s", logFile)
@@ -405,8 +459,9 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 		Location:  &tail.SeekInfo{Offset: 0, Whence: 2},
 	})
 	if err != nil {
-		log.Fatalf("Failed to tail Caddy log file: %v", err)
+		log.Fatalf("Failed to tail Caddy access log: %v", err)
 	}
+	defer t.Stop()
 
 	collection := db.GetCollection("modintel", "alerts")
 
@@ -422,6 +477,10 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 		doc, err := parsers.ParseCaddyAccessLog([]byte(line.Text))
 		if err != nil {
 			log.Printf("Failed to parse Caddy log line: %v", err)
+			continue
+		}
+
+		if isInternalIP(doc.ClientIP) {
 			continue
 		}
 
@@ -484,10 +543,62 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 	}
 }
 
+func backfillPendingAlerts() {
+	collection := db.GetCollection("modintel", "alerts")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cursor, err := collection.Find(ctx, bson.M{"ai_status": "pending"})
+	if err != nil {
+		log.Printf("Backfill: failed to query pending alerts: %v", err)
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var docs []bson.M
+	if err := cursor.All(ctx, &docs); err != nil {
+		log.Printf("Backfill: failed to read pending alerts: %v", err)
+		return
+	}
+
+	if len(docs) == 0 {
+		return
+	}
+
+	log.Printf("Backfill: re-enriching %d pending alerts", len(docs))
+	for _, doc := range docs {
+		k, _ := doc["alert_key"].(string)
+		if k == "" {
+			continue
+		}
+		alertKey := k
+		docRef := doc
+		aiWorkers <- struct{}{}
+		go func() {
+			defer func() { <-aiWorkers }()
+			var alert parsers.AlertDocument
+			b, _ := bson.Marshal(docRef)
+			bson.Unmarshal(b, &alert)
+			enrichWithAI(&alert)
+			if alert.AIStatus == "enriched" {
+				aiJSON, _ := json.Marshal(alert)
+				var aiMap map[string]interface{}
+				json.Unmarshal(aiJSON, &aiMap)
+				upCtx, upCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer upCancel()
+				collection.UpdateOne(upCtx, bson.M{"alert_key": alertKey}, bson.M{"$set": aiMap})
+			}
+		}()
+	}
+	log.Printf("Backfill: queued %d pending alerts for re-enrichment", len(docs))
+}
+
 func main() {
 	_ = godotenv.Load("../../.env")
 
 	db.Connect()
+
+	go backfillPendingAlerts()
 
 	var sigPrefilter *signatures.Prefilter
 	if sigFile := os.Getenv("MODINTEL_SIGNATURES_FILE"); sigFile != "" {
