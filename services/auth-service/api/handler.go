@@ -146,6 +146,8 @@ func (h *Handler) clearAuthCookies(c *gin.Context) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   h.cfg.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
 	})
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     "refresh_token",
@@ -153,12 +155,17 @@ func (h *Handler) clearAuthCookies(c *gin.Context) {
 		Path:     "/api/v1/auth",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   h.cfg.CookieSecure,
+		SameSite: http.SameSiteStrictMode,
 	})
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:   "sse_token",
-		Value:  "",
-		Path:   "/api/events/stream",
-		MaxAge: -1,
+		Name:     "sse_token",
+		Value:    "",
+		Path:     "/api/events/stream",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   h.cfg.CookieSecure,
+		SameSite: http.SameSiteStrictMode,
 	})
 }
 

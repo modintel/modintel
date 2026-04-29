@@ -48,6 +48,7 @@ var SSE = (function () {
         };
 
         this.attachListener('alert', this.handlers.onAlert);
+        this.attachListener('alert_update', this.handlers.onAlertUpdate);
         this.attachListener('stats', this.handlers.onStats);
         this.attachListener('metrics', this.handlers.onMetrics);
         this.attachListener('health', this.handlers.onHealth);

@@ -215,9 +215,13 @@ func watchAlerts() {
 	ctx := context.Background()
 
 	for {
-		cs, err := collection.Watch(ctx, mongo.Pipeline{
-			{{Key: "$match", Value: bson.M{"operationType": "insert"}}},
-		})
+		pipeline := mongo.Pipeline{
+			{{Key: "$match", Value: bson.M{
+				"operationType": bson.M{"$in": []string{"insert", "update"}},
+			}}},
+		}
+		csOpts := options.ChangeStream().SetFullDocument(options.UpdateLookup)
+		cs, err := collection.Watch(ctx, pipeline, csOpts)
 		if err != nil {
 			log.Printf("Change Stream unavailable, falling back to cursor polling: %v", err)
 			pollAlertsCursor(ctx, collection)
@@ -229,7 +233,12 @@ func watchAlerts() {
 
 		for cs.Next(ctx) {
 			var changeEvent struct {
-				FullDocument bson.M `bson:"fullDocument"`
+				OperationType    string `bson:"operationType"`
+				FullDocument     bson.M `bson:"fullDocument"`
+				DocumentKey      bson.M `bson:"documentKey"`
+				UpdateDescription *struct {
+					UpdatedFields bson.M `bson:"updatedFields"`
+				} `bson:"updateDescription"`
 			}
 			if err := cs.Decode(&changeEvent); err != nil {
 				log.Printf("Change Stream decode error: %v", err)
@@ -240,22 +249,46 @@ func watchAlerts() {
 				continue
 			}
 
-			delete(changeEvent.FullDocument, "_id")
-			if ts, ok := changeEvent.FullDocument["timestamp"]; ok {
-				if t, ok := ts.(primitive.DateTime); ok {
-					changeEvent.FullDocument["timestamp"] = t.Time().Format(time.RFC3339)
+			if changeEvent.OperationType == "insert" {
+				delete(changeEvent.FullDocument, "_id")
+				if ts, ok := changeEvent.FullDocument["timestamp"]; ok {
+					if t, ok := ts.(primitive.DateTime); ok {
+						changeEvent.FullDocument["timestamp"] = t.Time().Format(time.RFC3339)
+					}
+				}
+
+				alertJSON, err := json.Marshal(changeEvent.FullDocument)
+				if err != nil {
+					log.Printf("Alert JSON marshal error: %v", err)
+					continue
+				}
+
+				api.Hub.Broadcast(api.SSEEvent{Type: "alert", Data: string(alertJSON)})
+				broadcastUpdatedStats()
+			}
+
+			if changeEvent.OperationType == "update" && changeEvent.UpdateDescription != nil && changeEvent.UpdateDescription.UpdatedFields != nil {
+				if _, ok := changeEvent.UpdateDescription.UpdatedFields["ai_status"]; ok {
+					alertKey := ""
+					if key, ok := changeEvent.FullDocument["alert_key"]; ok {
+						if s, ok := key.(string); ok {
+							alertKey = s
+						}
+					}
+
+					updatePayload := bson.M{
+						"alert_key":     alertKey,
+						"ai_score":      changeEvent.FullDocument["ai_score"],
+						"ai_confidence": changeEvent.FullDocument["ai_confidence"],
+						"ai_priority":   changeEvent.FullDocument["ai_priority"],
+					}
+					data, err := json.Marshal(updatePayload)
+					if err == nil {
+						api.Hub.Broadcast(api.SSEEvent{Type: "alert_update", Data: string(data)})
+					}
+					broadcastUpdatedStats()
 				}
 			}
-
-			alertJSON, err := json.Marshal(changeEvent.FullDocument)
-			if err != nil {
-				log.Printf("Alert JSON marshal error: %v", err)
-				continue
-			}
-
-			api.Hub.Broadcast(api.SSEEvent{Type: "alert", Data: string(alertJSON)})
-
-			broadcastUpdatedStats()
 		}
 
 		if err := cs.Err(); err != nil {

@@ -99,6 +99,7 @@ async function updateLogs(append = false) {
 
         data.data.forEach((alert, i) => {
             const row = document.createElement('tr');
+            if (alert.alert_key) row.dataset.alertKey = alert.alert_key;
             let ts = alert.timestamp || '-';
             if (ts.includes('/')) {
                 ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
@@ -177,6 +178,9 @@ function startSSE() {
         onAlert: function (alert) {
             if (isInitialLoad) return;
             prependAlertRow(alert);
+        },
+        onAlertUpdate: function (update) {
+            updateAlertRow(update);
         },
         onStats: function (stats) {
             updateStatCards(stats);
@@ -268,6 +272,7 @@ function prependAlertRow(alert) {
         : '<span class="anomaly-badge">' + alert.anomaly_score + '</span>';
 
     const row = document.createElement('tr');
+    if (alert.alert_key) row.dataset.alertKey = alert.alert_key;
     row.innerHTML = '<td style="color:var(--fg-muted);">' + tsFormatted + '</td>' +
         '<td>' + alert.client_ip + '</td>' +
         '<td style="font-family:monospace;font-size:0.75rem;">' + alert.uri + '</td>' +
@@ -279,6 +284,27 @@ function prependAlertRow(alert) {
     tbody.insertBefore(row, firstRow);
 
     applyStreamSearch();
+}
+
+function updateAlertRow(update) {
+    if (!update.alert_key) return;
+    var row = document.querySelector('#logs-body tr[data-alert-key="' + update.alert_key.replace(/"/g, '') + '"]');
+    if (!row) return;
+    var cells = row.querySelectorAll('td');
+    if (cells.length < 8) return;
+
+    var scoreVal = update.ai_score;
+    var confVal = update.ai_confidence;
+    var prioVal = update.ai_priority;
+
+    cells[5].innerHTML = scoreVal !== null && scoreVal !== undefined
+        ? '<span class="ai-score">' + (scoreVal * 100).toFixed(1) + '%</span>' : '-';
+
+    cells[6].textContent = confVal !== null && confVal !== undefined
+        ? confVal.toFixed(0) + '%' : '-';
+
+    cells[7].innerHTML = prioVal
+        ? '<span class="priority-' + prioVal.toLowerCase() + '">' + prioVal + '</span>' : '-';
 }
 
 updateStats().then(total => { lastAlertCount = total; });
@@ -328,6 +354,7 @@ async function updateLogsNewOnly() {
                 : `<span class="anomaly-badge">${alert.anomaly_score}</span>`;
 
             const row = document.createElement('tr');
+            if (alert.alert_key) row.dataset.alertKey = alert.alert_key;
             row.innerHTML = `
                 <td style="color:var(--fg-muted);">${tsFormatted}</td>
                 <td>${alert.client_ip}</td>

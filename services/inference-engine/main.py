@@ -389,12 +389,9 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
 
     except Exception as exc:
         logger.error("Inference failure: %s", exc)
-        error_msg = "Internal server error"
-        if os.getenv("DEBUG", "false").lower() == "true":
-            error_msg = str(exc)
         return JSONResponse(
             status_code=500,
-            content={"ai_status": "unavailable", "error": error_msg},
+            content={"ai_status": "unavailable", "error": "Internal server error"},
         )
 
 
