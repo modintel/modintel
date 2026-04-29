@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -36,6 +37,54 @@ _startup_time: float = time.time()
 _prediction_count: int = 0
 _total_latency_ms: float = 0.0
 _recent_latencies: list = []
+_sqli_patterns = re.compile(
+    r"(?:'|\bunion\b|\bselect\b|\binsert\b|\bdrop\b|\bexec\b|--|;)",
+    re.IGNORECASE,
+)
+_xss_patterns = re.compile(
+    r"(?:<script|javascript:|onerror\s*=|onload\s*=|alert\s*\(|document\.cookie)",
+    re.IGNORECASE,
+)
+_traversal_patterns = re.compile(
+    r"(?:\.\./|\.\.\\|%2e%2e/|/etc/passwd|/etc/shadow|win\.ini)",
+    re.IGNORECASE,
+)
+_cmdi_patterns = re.compile(
+    r"(?:\||\x60|\$\(|\bcmd\b|\bping\b|\bnslookup\b|\bwget\b|\bcurl\b)",
+    re.IGNORECASE,
+)
+_suspicious_ua = re.compile(
+    r"(?:sqlmap|nikto|nmap|burp|acunetix|nessus|openvas|w3af|zap)",
+    re.IGNORECASE,
+)
+
+
+def _miss_heuristic_score(event: dict) -> float:
+    score = 0.0
+    uri = (event.get("uri") or "").lower()
+    body = (event.get("body") or "").lower()
+    headers = event.get("headers") or {}
+    ua = (
+        (headers.get("user-agent") or headers.get("User-Agent") or "").lower()
+    )
+    content = uri + " " + body
+
+    if _sqli_patterns.search(content):
+        score += 0.35
+    if _xss_patterns.search(content):
+        score += 0.30
+    if _traversal_patterns.search(content):
+        score += 0.25
+    if _cmdi_patterns.search(content):
+        score += 0.30
+    if _suspicious_ua.search(ua):
+        score += 0.20
+    if len(uri) > 512:
+        score += 0.10
+    if body and len(body) > 1024:
+        score += 0.10
+
+    return min(score, 0.95)
 
 
 def _resolve_model_dir() -> Path:
@@ -416,6 +465,14 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
         feature_vector = extractor.transform(record)
         prob_raw = calibrator.predict_proba(feature_vector)[0][1]
         attack_probability = float(round(prob_raw, 6))
+        heuristic_boost = _miss_heuristic_score(
+            {
+                "uri": event.uri,
+                "body": event.body or "",
+                "headers": event.headers or {},
+            }
+        )
+        attack_probability = round(min(attack_probability + heuristic_boost * 0.3, 0.99), 6)
         entropy, h_norm = _compute_entropy(attack_probability)
         confidence_score = round((1.0 - h_norm) * 100.0, 2)
         band, reasoning = _assign_priority(attack_probability, 0.5, h_norm)
@@ -434,6 +491,7 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
                 "entropy": entropy,
                 "entropy_normalized": h_norm,
                 "advisory_only": True,
+                "heuristic_score": round(heuristic_boost, 3),
                 "model_version": _model_state["model_version"],
             }
         )
