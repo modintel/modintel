@@ -23,7 +23,7 @@ async function loadDatasetSources() {
 function renderDatasets(items) {
     const tbody = document.getElementById('datasets-list');
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--fg-muted);padding:20px;">No datasets yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--fg-muted);padding:20px;">No datasets yet.</td></tr>';
         return;
     }
     tbody.innerHTML = items.map(d => `
@@ -33,8 +33,13 @@ function renderDatasets(items) {
             <td>${d.samples || 0}</td>
             <td>${d.attack_pct || 0}%</td>
             <td>${d.created_at || '—'}</td>
+            <td><button class="btn btn-sm btn-danger delete-dataset-btn" data-id="${d._id}">Delete</button></td>
         </tr>
     `).join('');
+
+    document.querySelectorAll('.delete-dataset-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteDataset(btn.dataset.id));
+    });
 }
 
 function renderSources(sources) {
@@ -113,6 +118,29 @@ async function generateDataset() {
         btn.textContent = 'Generate';
         btn.disabled = false;
     }
+}
+
+async function deleteDataset(id) {
+    showConfirm(
+        'Delete Dataset',
+        'Are you sure you want to delete this dataset? This action cannot be undone.',
+        async () => {
+            try {
+                const res = await apiFetch(`${API_BASE}/datasets/${id}`, {
+                    method: 'DELETE'
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    showModal('Delete Failed', err.error || 'Failed to delete dataset', 'error');
+                    return;
+                }
+                loadDatasets();
+            } catch (e) {
+                console.error('Delete dataset error:', e);
+                showModal('Delete Failed', 'An error occurred while deleting the dataset', 'error');
+            }
+        }
+    );
 }
 
 const generateDatasetBtn = document.getElementById('generate-dataset-btn');
