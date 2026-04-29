@@ -77,7 +77,7 @@ Initial request uses no cursor/offset to get first page:
 - Logs/Alerts: render "Load more" / "Next" using `next_cursor`; no page numbers
 - Rules: render standard page number navigation with "Previous" / "Next" and page indicators
 - Store cursor or page in URL query params for shareability
-- Pair cursor pagination on the "live" view with SSE or WebSocket for realtime new entries
+- Pair cursor pagination on the "live" view with SSE or SSE for realtime new entries
 
 ### Affected Files
 | File | Changes |
@@ -551,7 +551,7 @@ Set sane caps in code:
 | 5 | Access Control Hardening | §5 | Security-critical; blocks staging/UAT rollout if missing |
 | 6 | Error Handling and Crash Recovery | §6 | Reliability baseline; stabilizes all prior work |
 | 7 | Rule Refactor and Custom Rules | §7 | Data ownership fix; unblocks custom rule authoring |
-| 8 | WebSocket Real-Time Alerts | §8 | Replaces polling with sub-second push delivery |
+| 8 | SSE Real-Time Alerts | §8 | Replaces polling with sub-second push delivery |
 
 ---
 
@@ -1049,16 +1049,16 @@ Set sane caps in code:
 
 ---
 
-## 8. WebSocket Real-Time Alerts
+## 8. SSE Real-Time Alerts
 
 ### Goal
-Replace HTTP polling for live alerts with a secure, resilient WebSocket pipeline delivering sub-second updates from Review-API to Dashboard, while preserving fallback behavior.
+Replace HTTP polling for live alerts with a secure, resilient SSE pipeline delivering sub-second updates from Review-API to Dashboard, while preserving fallback behavior.
 
 
 
 ### Current State
 - Dashboard currently polls every 5s (`dashboard/js/monitor.js`), no push channel exists.
-- Review-API has no WebSocket endpoint or broadcast hub.
+- Review-API has no SSE endpoint or broadcast hub.
 - MongoDB watch support depends on replica set configuration, which may not be guaranteed in all environments.
 
 ### Architecture Decision
@@ -1068,8 +1068,8 @@ Replace HTTP polling for live alerts with a secure, resilient WebSocket pipeline
 
 ### Implementation Steps
 
-#### 8.1 Backend - WebSocket Hub and Endpoints
-- Add WebSocket dependency in `services/review-api/go.mod`.
+#### 8.1 Backend - SSE Hub and Endpoints
+- Add SSE dependency in `services/review-api/go.mod`.
 - Create `services/review-api/api/ws_hub.go`:
   - client register/unregister
   - fan-out broadcast channel
@@ -1098,7 +1098,7 @@ Replace HTTP polling for live alerts with a secure, resilient WebSocket pipeline
 - Include minimal payload (`alert_id`, `timestamp`) so Review-API fetches canonical document before broadcast.
 
 #### 8.5 Frontend Migration (Dashboard)
-- Replace primary polling loop with WebSocket client in `dashboard/js/monitor.js` (or `dashboard/js/index.js` as page ownership dictates).
+- Replace primary polling loop with SSE client in `dashboard/js/monitor.js` (or `dashboard/js/index.js` as page ownership dictates).
 - On WS message:
   - prepend alert row
   - update live counters
@@ -1148,13 +1148,13 @@ Add structured logs for connect/disconnect/reconnect/fallback transitions.
 ### Affected Files
 | File | Changes |
 |------|---------|
-| `services/review-api/go.mod` | Add WebSocket dependency |
+| `services/review-api/go.mod` | Add SSE dependency |
 | `services/review-api/api/ws_hub.go` | New file - hub, client lifecycle, broadcast logic |
 | `services/review-api/api/watcher.go` | New file - change stream/polling watcher |
 | `services/review-api/api/handler.go` | Add `/api/ws` and `/api/notify` endpoints |
 | `services/review-api/main.go` | Initialize WS hub + watcher and register routes |
 | `services/log-collector/main.go` | Add non-blocking notify path after insert |
-| `dashboard/js/monitor.js` | Replace primary polling with WebSocket + reconnection/fallback logic |
+| `dashboard/js/monitor.js` | Replace primary polling with SSE + reconnection/fallback logic |
 | `dashboard/css/monitor.css` | Connection state indicator styles |
 | `proxy-waf/Caddyfile` | Ensure WS upgrade headers and route support |
 
