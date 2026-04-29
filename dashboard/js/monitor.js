@@ -1,6 +1,13 @@
 const API_BASE = '/api';
 let currentRange = '1h';
 
+const RANGE_MAX_POINTS = {
+    '1h': 60,
+    '6h': 72,
+    '24h': 96,
+    '7d': 168,
+};
+
 const RANGE_FIELD = {
     '1h': 'time_1h',
     '6h': 'time_6h',
@@ -188,11 +195,13 @@ function applyMetricsData(data) {
     document.getElementById('sys-dbsize').textContent = formatBytes(system.mongodb_database_size_bytes);
 
     const timeField = RANGE_FIELD[currentRange] || 'time_1h';
-    const timeSeries = data[timeField] || data.time_series || [];
-    const requestRates = extractTimeSeriesData(timeSeries, 'requests_per_minute');
+    const timeSeries = data[timeField] || [];
+    const maxPoints = RANGE_MAX_POINTS[currentRange] || 60;
+    const sliced = timeSeries.slice(-maxPoints);
+    const requestRates = extractTimeSeriesData(sliced, 'requests_per_minute');
     updateRequestRateChart(requestRates);
 
-    const labels = generateLabels(timeSeries);
+    const labels = generateLabels(sliced);
     updateChartLabels('request-labels', labels);
     updateChartLabels('error-labels', labels);
 
@@ -201,7 +210,7 @@ function applyMetricsData(data) {
     const p99 = data.p99_latency_ms || 0;
     updateLatencyBars(p50, p95, p99);
 
-    const errorRates = extractTimeSeriesData(timeSeries, 'errors_per_minute');
+    const errorRates = extractTimeSeriesData(sliced, 'errors_per_minute');
     updateErrorRateChart(errorRates);
 
     updateWorkerBars();

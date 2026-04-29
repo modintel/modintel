@@ -1129,18 +1129,41 @@ func GetmonitorMetrics(c *gin.Context) {
 	alertColl := db.GetCollection("modintel", "alerts")
 	rangeType := c.DefaultQuery("range", "1h")
 
+	timeField := "time_1h"
+	switch rangeType {
+	case "6h":
+		timeField = "time_6h"
+	case "24h":
+		timeField = "time_24h"
+	case "7d":
+		timeField = "time_7d"
+	}
+
 	window := parseMetricsWindow(rangeType)
 	startTime := time.Now().UTC().Add(-window)
 
+	var bucketCount int
+	switch rangeType {
+	case "1h":
+		bucketCount = 60
+	case "6h":
+		bucketCount = 72
+	case "24h":
+		bucketCount = 96
+	case "7d":
+		bucketCount = 168
+	default:
+		bucketCount = 60
+	}
+	bucketSize := window / time.Duration(bucketCount)
+
+	values := make([]float64, bucketCount)
+	errValues := make([]float64, bucketCount)
+	counts := make([]int, bucketCount)
+
 	filter := bson.M{"timestamp": bson.M{"$gte": startTime}}
 	opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: 1}}).SetProjection(bson.M{
-		"timestamp":              1,
-		"requests_delta":         1,
-		"errors_delta":           1,
-		"requests_per_minute":    1,
-		"errors_per_minute":      1,
-		"avg_inference_ms":       1,
-		"predictions_per_minute": 1,
+		"timestamp": 1, "requests_per_minute": 1, "errors_per_minute": 1,
 	})
 
 	cursor, err := metricsCollection.Find(ctx, filter, opts)
@@ -1149,25 +1172,38 @@ func GetmonitorMetrics(c *gin.Context) {
 	}
 	defer cursor.Close(ctx)
 
-	var timeSeries []bson.M
 	for cursor.Next(ctx) {
-		var doc bson.M
+		var doc struct {
+			Timestamp time.Time `bson:"timestamp"`
+			ReqPerMin float64   `bson:"requests_per_minute"`
+			ErrPerMin float64   `bson:"errors_per_minute"`
+		}
 		if err := cursor.Decode(&doc); err != nil {
 			continue
 		}
-		timeSeries = append(timeSeries, doc)
+		elapsed := doc.Timestamp.Sub(startTime)
+		idx := int(elapsed / bucketSize)
+		if idx >= 0 && idx < bucketCount {
+			values[idx] += doc.ReqPerMin
+			errValues[idx] += doc.ErrPerMin
+			counts[idx]++
+		}
 	}
 
-	if len(timeSeries) == 0 {
-		now := time.Now().UTC()
-		for i := 0; i < 60; i++ {
-			ts := now.Add(-time.Duration(i) * time.Minute)
-			timeSeries = append(timeSeries, bson.M{
-				"timestamp":           ts,
-				"requests_per_minute": 0,
-				"errors_per_minute":   0,
-			})
+	timeSeries := make([]map[string]interface{}, 0, bucketCount)
+	for i := 0; i < bucketCount; i++ {
+		ts := startTime.Add(time.Duration(i) * bucketSize)
+		reqVal := values[i]
+		errVal := errValues[i]
+		if counts[i] > 0 {
+			reqVal /= float64(counts[i])
+			errVal /= float64(counts[i])
 		}
+		timeSeries = append(timeSeries, map[string]interface{}{
+			"timestamp":           ts,
+			"requests_per_minute": reqVal,
+			"errors_per_minute":   errVal,
+		})
 	}
 
 	totalAlerts, _ := alertColl.CountDocuments(ctx, bson.M{})
@@ -1184,8 +1220,8 @@ func GetmonitorMetrics(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"time_series":              timeSeries,
-		"range":                    rangeType,
+		timeField:                timeSeries,
+		"range":                  rangeType,
 		"total_alerts":             totalAlerts,
 		"ai_enriched_count":        aiEnrichedCount,
 		"ml_miss_count":            mlMissCount,
@@ -1333,6 +1369,22 @@ func toInt64(v interface{}) (int64, bool) {
 
 var serviceStartTime = time.Now()
 
+func getSystemTotalMemoryMB() uint64 {
+	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(line, "MemTotal:") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 {
+					if kb, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+						return kb / 1024
+					}
+				}
+			}
+		}
+	}
+	return 0
+}
+
 func getSystemMetrics(ctx context.Context) systemMetricsData {
 	metrics := systemMetricsData{
 		Hostname:      getHostname(),
@@ -1344,9 +1396,15 @@ func getSystemMetrics(ctx context.Context) systemMetricsData {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	metrics.MemoryUsedMB = m.Alloc / (1024 * 1024)
-	metrics.MemoryTotalMB = m.TotalAlloc / (1024 * 1024)
-	if m.TotalAlloc > 0 {
-		metrics.MemoryPercent = float64(m.Alloc) / float64(m.TotalAlloc) * 100
+
+	sysTotalMB := getSystemTotalMemoryMB()
+	if sysTotalMB > 0 {
+		metrics.MemoryTotalMB = sysTotalMB
+	} else {
+		metrics.MemoryTotalMB = m.TotalAlloc / (1024 * 1024)
+	}
+	if metrics.MemoryTotalMB > 0 {
+		metrics.MemoryPercent = float64(m.Alloc) / float64(metrics.MemoryTotalMB*1024*1024) * 100
 	}
 
 	metrics.CpuPercent = getCPULoad()

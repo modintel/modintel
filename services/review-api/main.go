@@ -132,19 +132,38 @@ func metricsAggregator() {
 }
 
 func buildMetricsTimeSeries(collection *mongo.Collection, rangeType string) []map[string]interface{} {
-	window := 1 * time.Hour
+	var window time.Duration
+	var bucketCount int
 	switch rangeType {
+	case "1h":
+		window = 1 * time.Hour
+		bucketCount = 60
 	case "6h":
 		window = 6 * time.Hour
+		bucketCount = 72
 	case "24h":
 		window = 24 * time.Hour
+		bucketCount = 96
 	case "7d":
 		window = 7 * 24 * time.Hour
+		bucketCount = 168
+	default:
+		window = 1 * time.Hour
+		bucketCount = 60
 	}
 
-	startTime := time.Now().UTC().Add(-window)
+	bucketSize := window / time.Duration(bucketCount)
+	now := time.Now().UTC()
+	startTime := now.Add(-window)
+
+	values := make([]float64, bucketCount)
+	errValues := make([]float64, bucketCount)
+	counts := make([]int, bucketCount)
+
 	filter := bson.M{"timestamp": bson.M{"$gte": startTime}}
-	opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: 1}})
+	opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: 1}}).SetProjection(bson.M{
+		"timestamp": 1, "requests_per_minute": 1, "errors_per_minute": 1,
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -154,19 +173,40 @@ func buildMetricsTimeSeries(collection *mongo.Collection, rangeType string) []ma
 	}
 	defer cursor.Close(ctx)
 
-	var series []map[string]interface{}
 	for cursor.Next(ctx) {
-		var doc bson.M
+		var doc struct {
+			Timestamp  time.Time `bson:"timestamp"`
+			ReqPerMin  float64   `bson:"requests_per_minute"`
+			ErrPerMin  float64   `bson:"errors_per_minute"`
+		}
 		if err := cursor.Decode(&doc); err != nil {
 			continue
 		}
-		entry := map[string]interface{}{
-			"timestamp":           doc["timestamp"],
-			"requests_per_minute": doc["requests_per_minute"],
-			"errors_per_minute":   doc["errors_per_minute"],
+		elapsed := doc.Timestamp.Sub(startTime)
+		idx := int(elapsed / bucketSize)
+		if idx >= 0 && idx < bucketCount {
+			values[idx] += doc.ReqPerMin
+			errValues[idx] += doc.ErrPerMin
+			counts[idx]++
 		}
-		series = append(series, entry)
 	}
+
+	series := make([]map[string]interface{}, 0, bucketCount)
+	for i := 0; i < bucketCount; i++ {
+		ts := startTime.Add(time.Duration(i) * bucketSize)
+		reqVal := values[i]
+		errVal := errValues[i]
+		if counts[i] > 0 {
+			reqVal /= float64(counts[i])
+			errVal /= float64(counts[i])
+		}
+		series = append(series, map[string]interface{}{
+			"timestamp":           ts,
+			"requests_per_minute": reqVal,
+			"errors_per_minute":   errVal,
+		})
+	}
+
 	return series
 }
 
