@@ -197,14 +197,14 @@ func writeInitialMetrics(send func(string, string)) {
 	payload := map[string]interface{}{
 		"avg_inference_ms":    avgInferenceMs,
 		"requests_per_minute": requestsPerMin,
-		"p50_latency_ms":     p50,
-		"p95_latency_ms":     p95,
+		"p50_latency_ms":      p50,
+		"p95_latency_ms":      p95,
 		"p99_latency_ms":      p99,
-		"system":            systemData,
-		"time_1h":           time1h,
-		"time_6h":           time6h,
-		"time_24h":          time24h,
-		"time_7d":           time7d,
+		"system":              systemData,
+		"time_1h":             time1h,
+		"time_6h":             time6h,
+		"time_24h":            time24h,
+		"time_7d":             time7d,
 	}
 	data, _ := json.Marshal(payload)
 	send("metrics", string(data))
@@ -290,9 +290,29 @@ func buildInitialTimeSeries(collection *mongo.Collection, rangeType string) []ma
 
 func writeInitialHealth(send func(string, string)) {
 	statuses := CollectServiceHealth()
+	inferenceMetrics := GetInferenceMetrics()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	systemMetrics := GetSystemMetrics(ctx)
+
 	healthData := map[string]interface{}{
-		"services":  statuses,
-		"timestamp": time.Now().UTC(),
+		"services":               statuses,
+		"timestamp":              time.Now().UTC(),
+		"avg_inference_ms":       inferenceMetrics.AvgLatencyMs,
+		"p50_latency_ms":         inferenceMetrics.P50LatencyMs,
+		"p95_latency_ms":         inferenceMetrics.P95LatencyMs,
+		"p99_latency_ms":         inferenceMetrics.P99LatencyMs,
+		"total_predictions":      inferenceMetrics.TotalPredictions,
+		"predictions_per_minute": inferenceMetrics.PredictionsPerMinute,
+		"requests_per_minute":    inferenceMetrics.PredictionsPerMinute,
+		"system": map[string]interface{}{
+			"mongodb_connections":         systemMetrics.MongoDBConnections,
+			"memory_used_mb":              systemMetrics.MemoryUsedMB,
+			"memory_total_mb":             systemMetrics.MemoryTotalMB,
+			"memory_percent":              systemMetrics.MemoryPercent,
+			"goroutines":                  systemMetrics.Goroutines,
+			"mongodb_database_size_bytes": systemMetrics.MongoDBDatabaseSizeBytes,
+		},
 	}
 	data, _ := json.Marshal(healthData)
 	send("health", string(data))

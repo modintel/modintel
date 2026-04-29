@@ -190,6 +190,15 @@ func SetupRouter() *gin.Engine {
 	r := gin.Default()
 	jwtSecret := os.Getenv("JWT_SECRET")
 
+	r.Use(func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Header("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		c.Header("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http: https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+		c.Next()
+	})
+
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -228,6 +237,36 @@ func SetupRouter() *gin.Engine {
 		api.POST("/datasets/generate", RequireRoles("admin", "analyst"), GenerateDataset)
 		api.DELETE("/datasets/:id", RequireRoles("admin", "analyst"), DeleteDataset)
 	}
+
+	r.Static("/js", "/srv/dashboard/js")
+	r.Static("/css", "/srv/dashboard/css")
+	r.Static("/fonts", "/srv/dashboard/fonts")
+	r.StaticFile("/favicon.svg", "/srv/dashboard/favicon.svg")
+
+	r.GET("/signin.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/signin") })
+	r.GET("/index.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/events") })
+	r.GET("/rules.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/rules") })
+	r.GET("/review.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/review") })
+	r.GET("/training.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/training") })
+	r.GET("/datasets.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/datasets") })
+	r.GET("/reports.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/reports") })
+	r.GET("/monitor.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/monitor") })
+	r.GET("/Monitor.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/monitor") })
+	r.GET("/settings.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/settings") })
+	r.GET("/help.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/help") })
+
+	r.GET("/", func(c *gin.Context) { c.File("/srv/dashboard/index.html") })
+	r.GET("/signin", func(c *gin.Context) { c.File("/srv/dashboard/signin.html") })
+	r.GET("/events", func(c *gin.Context) { c.File("/srv/dashboard/index.html") })
+	r.GET("/rules", func(c *gin.Context) { c.File("/srv/dashboard/rules.html") })
+	r.GET("/review", func(c *gin.Context) { c.File("/srv/dashboard/review.html") })
+	r.GET("/training", func(c *gin.Context) { c.File("/srv/dashboard/training.html") })
+	r.GET("/datasets", func(c *gin.Context) { c.File("/srv/dashboard/datasets.html") })
+	r.GET("/reports", func(c *gin.Context) { c.File("/srv/dashboard/reports.html") })
+	r.GET("/monitor", func(c *gin.Context) { c.File("/srv/dashboard/monitor.html") })
+	r.GET("/settings", func(c *gin.Context) { c.File("/srv/dashboard/settings.html") })
+	r.GET("/help", func(c *gin.Context) { c.File("/srv/dashboard/help.html") })
+
 	return r
 }
 
@@ -1210,7 +1249,7 @@ func GetmonitorMetrics(c *gin.Context) {
 	aiEnrichedCount, _ := alertColl.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
 	mlMissCount, _ := alertColl.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
 
-	inferenceMetrics := getInferenceMetrics()
+	inferenceMetrics := GetInferenceMetrics()
 	systemMetrics := getSystemMetrics(ctx)
 	window_requests, window_errors := requestStats.totals(window, time.Now().UTC())
 
@@ -1220,8 +1259,8 @@ func GetmonitorMetrics(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		timeField:                timeSeries,
-		"range":                  rangeType,
+		timeField:                  timeSeries,
+		"range":                    rangeType,
 		"total_alerts":             totalAlerts,
 		"ai_enriched_count":        aiEnrichedCount,
 		"ml_miss_count":            mlMissCount,
@@ -1278,7 +1317,7 @@ type inferenceMetricsData struct {
 	UptimeSeconds        float64 `json:"inference_uptime_seconds"`
 }
 
-func getInferenceMetrics() inferenceMetricsData {
+func GetInferenceMetrics() inferenceMetricsData {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -1614,10 +1653,6 @@ func GetTotalRequests() uint64 {
 
 func GetTotalErrors() uint64 {
 	return totalErrors.Load()
-}
-
-func GetInferenceMetrics() inferenceMetricsData {
-	return getInferenceMetrics()
 }
 
 func GetSystemMetrics(ctx context.Context) systemMetricsData {

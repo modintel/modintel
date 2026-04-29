@@ -116,15 +116,15 @@ func metricsAggregator() {
 
 		payload := map[string]interface{}{
 			"avg_inference_ms":    inferenceMetrics.AvgLatencyMs,
-			"requests_per_minute":  reqDeltaPerMin,
-			"p50_latency_ms":     inferenceMetrics.P50LatencyMs,
-			"p95_latency_ms":     inferenceMetrics.P95LatencyMs,
-			"p99_latency_ms":     inferenceMetrics.P99LatencyMs,
-			"system":           systemPayload,
-			"time_1h":           timeSeries1h,
-			"time_6h":           timeSeries6h,
-			"time_24h":          timeSeries24h,
-			"time_7d":           timeSeries7d,
+			"requests_per_minute": reqDeltaPerMin,
+			"p50_latency_ms":      inferenceMetrics.P50LatencyMs,
+			"p95_latency_ms":      inferenceMetrics.P95LatencyMs,
+			"p99_latency_ms":      inferenceMetrics.P99LatencyMs,
+			"system":              systemPayload,
+			"time_1h":             timeSeries1h,
+			"time_6h":             timeSeries6h,
+			"time_24h":            timeSeries24h,
+			"time_7d":             timeSeries7d,
 		}
 		data, _ := json.Marshal(payload)
 		api.Hub.Broadcast(api.SSEEvent{Type: "metrics", Data: string(data)})
@@ -175,9 +175,9 @@ func buildMetricsTimeSeries(collection *mongo.Collection, rangeType string) []ma
 
 	for cursor.Next(ctx) {
 		var doc struct {
-			Timestamp  time.Time `bson:"timestamp"`
-			ReqPerMin  float64   `bson:"requests_per_minute"`
-			ErrPerMin  float64   `bson:"errors_per_minute"`
+			Timestamp time.Time `bson:"timestamp"`
+			ReqPerMin float64   `bson:"requests_per_minute"`
+			ErrPerMin float64   `bson:"errors_per_minute"`
 		}
 		if err := cursor.Decode(&doc); err != nil {
 			continue
@@ -340,7 +340,7 @@ func broadcastUpdatedStats() {
 }
 
 func broadcastHealth() {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -368,12 +368,32 @@ func broadcastHealth() {
 
 		if changed {
 			api.LastHealthSnapshot = currentHealth
-			healthPayload := map[string]interface{}{
-				"services":  currentHealth,
-				"timestamp": time.Now().UTC(),
-			}
-			data, _ := json.Marshal(healthPayload)
-			api.Hub.Broadcast(api.SSEEvent{Type: "health", Data: string(data)})
 		}
+
+		inferenceMetrics := api.GetInferenceMetrics()
+		ctx := context.Background()
+		systemMetrics := api.GetSystemMetrics(ctx)
+
+		payload := map[string]interface{}{
+			"services":               currentHealth,
+			"timestamp":              time.Now().UTC(),
+			"avg_inference_ms":       inferenceMetrics.AvgLatencyMs,
+			"p50_latency_ms":         inferenceMetrics.P50LatencyMs,
+			"p95_latency_ms":         inferenceMetrics.P95LatencyMs,
+			"p99_latency_ms":         inferenceMetrics.P99LatencyMs,
+			"total_predictions":      inferenceMetrics.TotalPredictions,
+			"predictions_per_minute": inferenceMetrics.PredictionsPerMinute,
+			"requests_per_minute":    inferenceMetrics.PredictionsPerMinute,
+			"system": map[string]interface{}{
+				"mongodb_connections":         systemMetrics.MongoDBConnections,
+				"memory_used_mb":              systemMetrics.MemoryUsedMB,
+				"memory_total_mb":             systemMetrics.MemoryTotalMB,
+				"memory_percent":              systemMetrics.MemoryPercent,
+				"goroutines":                  systemMetrics.Goroutines,
+				"mongodb_database_size_bytes": systemMetrics.MongoDBDatabaseSizeBytes,
+			},
+		}
+		data, _ := json.Marshal(payload)
+		api.Hub.Broadcast(api.SSEEvent{Type: "health", Data: string(data)})
 	}
 }
