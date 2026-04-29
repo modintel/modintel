@@ -279,19 +279,7 @@ def _top5_shap(
     model = _model_state["model"]
     features_dict = schema.get("features", {})
 
-    try:
-        import shap  # type: ignore
-
-        explainer = shap.TreeExplainer(model)
-        shap_values = explainer.shap_values(feature_vector)
-        if isinstance(shap_values, list):
-            sv = np.array(shap_values[1][0])
-        else:
-            sv = np.array(shap_values[0])
-        if sv.ndim > 1:
-            sv = sv[0]
-    except Exception:
-        sv = np.array(feature_vector[0])
+    sv = np.zeros(feature_vector.shape[1])
 
     pairs = list(zip(feature_names, sv))
     pairs.sort(key=lambda x: abs(x[1]), reverse=True)
@@ -411,6 +399,70 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
             status_code=500,
             content={"ai_status": "unavailable", "error": error_msg},
         )
+
+
+@app.post("/predict/batch")
+async def predict_batch(events: List[CorazaAuditEvent]) -> JSONResponse:
+    global _prediction_count, _total_latency_ms, _recent_latencies
+
+    if not events:
+        return JSONResponse(status_code=400, content={"error": "empty event list"})
+
+    t_start = time.perf_counter()
+
+    if not _model_state["loaded"]:
+        return JSONResponse(status_code=500, content={
+            "results": [{"ai_status": "unavailable", "attack_probability": 0} for _ in events],
+            "count": len(events),
+        })
+
+    t_start = time.perf_counter()
+
+    try:
+        extractor = _model_state["feature_extractor"]
+        calibrator = _model_state["calibrator"]
+
+        records = []
+        for event in events:
+            _validate_input(event)
+            records.append({
+                "method": event.method,
+                "uri": event.uri,
+                "headers": event.headers or {},
+                "body": event.body,
+                "fired_rule_ids": event.fired_rule_ids or [],
+                "rule_severities": event.rule_severities or {},
+                "rule_messages": event.rule_messages or [],
+                "anomaly_score": event.anomaly_score,
+                "inbound_threshold": event.inbound_threshold,
+            })
+
+        feature_matrix = extractor.transform(records)
+        probas = calibrator.predict_proba(feature_matrix)
+        class1_probas = probas[:, 1]
+
+        results = []
+        for i in range(len(records)):
+            results.append({
+                "attack_probability": round(float(class1_probas[i]), 6),
+                "ai_status": "enriched",
+            })
+
+        elapsed = int((time.perf_counter() - t_start) * 1000)
+        _prediction_count += len(events)
+        _total_latency_ms += elapsed
+
+        return JSONResponse(status_code=200, content={
+            "results": results,
+            "count": len(results),
+            "inference_ms": elapsed,
+        })
+    except Exception as exc:
+        logger.error("Batch inference failure: %s", exc)
+        return JSONResponse(status_code=200, content={
+            "results": [{"ai_status": "unavailable", "attack_probability": 0} for _ in events],
+            "count": len(events),
+        })
 
 
 @app.post("/predict-miss")
