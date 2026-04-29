@@ -1511,15 +1511,39 @@ func ReviewAlert(c *gin.Context) {
 	}
 
 	var body struct {
-		HumanLabel string `json:"human_label" binding:"required"`
+		HumanLabel string `json:"human_label"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing human_label"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	if body.HumanLabel != "true_positive" && body.HumanLabel != "false_positive" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "human_label must be true_positive or false_positive"})
+	if body.HumanLabel != "true_positive" && body.HumanLabel != "false_positive" && body.HumanLabel != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "human_label must be true_positive, false_positive, or empty to undo"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	collection := db.GetCollection("modintel", "alerts")
+
+	if body.HumanLabel == "" {
+		undo := bson.M{
+			"$set":   bson.M{"status": "generated"},
+			"$unset": bson.M{"human_label": "", "reviewed_by": "", "reviewed_at": ""},
+		}
+		result, err := collection.UpdateOne(ctx, bson.M{"_id": oid}, undo)
+		if err != nil {
+			log.Printf("Error undoing alert review: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to undo review"})
+			return
+		}
+		if result.MatchedCount == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Alert not found"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "status": "generated", "human_label": nil})
 		return
 	}
 
@@ -1541,18 +1565,12 @@ func ReviewAlert(c *gin.Context) {
 			"reviewed_at": now,
 		},
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	collection := db.GetCollection("modintel", "alerts")
 	result, err := collection.UpdateOne(ctx, bson.M{"_id": oid}, update)
 	if err != nil {
 		log.Printf("Error updating alert review: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update alert"})
 		return
 	}
-
 	if result.MatchedCount == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Alert not found"})
 		return

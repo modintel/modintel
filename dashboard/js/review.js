@@ -113,7 +113,10 @@ function renderAlerts(items) {
                        <button class="btn btn-false btn-sm btn-fp" data-id="${id}" title="False Positive">
                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/></svg>
                        </button>`
-                    : `<span style="font-size: 0.7rem; color: var(--fg-muted);">${label}</span>`}
+                    : `<span style="font-size: 0.7rem; color: var(--fg-muted);">${label}</span>
+                       <button class="btn btn-undo btn-sm" data-id="${id}" title="Undo Review">
+                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                       </button>`}
             </td>
         `;
         tbody.appendChild(tr);
@@ -130,7 +133,21 @@ async function submitReview(id, humanLabel) {
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            alert(err.error || 'Failed to submit review');
+            showModal('Error', err.error || 'Failed to submit review', 'error');
+            return;
+        }
+
+        loadReviewStats();
+
+        if (humanLabel === '') {
+            const row = document.getElementById(`review-row-${id}`);
+            if (row) {
+                row.remove();
+                if (currentStatus === 'reviewed') return;
+                if (document.getElementById('review-body').children.length < 10 && hasMore) {
+                    loadReviewAlerts(false);
+                }
+            }
             return;
         }
 
@@ -144,8 +161,6 @@ async function submitReview(id, humanLabel) {
                 }
             }, 1000);
         }
-
-        loadReviewStats();
     } catch (e) {
         console.error('Error submitting review:', e);
     }
@@ -154,9 +169,13 @@ async function submitReview(id, humanLabel) {
 document.getElementById('load-more-review').addEventListener('click', () => loadReviewAlerts(false));
 
 document.getElementById('review-body').addEventListener('click', (e) => {
-    const btn = e.target.closest('.btn-tp, .btn-fp');
+    const btn = e.target.closest('.btn-tp, .btn-fp, .btn-undo');
     if (!btn) return;
     const id = btn.dataset.id;
+    if (btn.classList.contains('btn-undo')) {
+        showConfirm('Undo Review', 'Remove the review label and return this alert to the pending queue?', () => submitReview(id, ''));
+        return;
+    }
     const label = btn.classList.contains('btn-tp') ? 'true_positive' : 'false_positive';
     submitReview(id, label);
 });

@@ -8,6 +8,13 @@
 .btn-true { color: var(--success); }
 .btn-false { color: var(--danger); }
 
+.btn-undo {
+    color: var(--fg-muted);
+}
+.btn-undo:hover {
+    color: var(--fg);
+}
+
 .review-row-tp {
     border-left: 2px solid var(--success);
     opacity: 0.6;
@@ -92,6 +99,12 @@
 .action-cell {
     display: flex;
     gap: 4px;
+    align-items: center;
+}
+
+.review-row-tp .action-cell,
+.review-row-fp .action-cell {
+    padding-left: 21px;
 }
 
 .action-cell button {
