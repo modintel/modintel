@@ -130,3 +130,37 @@
     background: var(--accent);
     color: var(--accent-fg);
 }
+
+#cut-modal .form-group {
+    margin-bottom: 16px;
+}
+
+#cut-modal .form-group label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--fg-muted);
+    margin-bottom: 4px;
+}
+
+#cut-modal .form-group input {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--fg);
+}
+
+#cut-dataset-btn {
+    padding: 4px 8px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--font);
+}
