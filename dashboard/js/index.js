@@ -166,19 +166,123 @@ async function loadMoreLogs() {
 }
 
 let isInitialLoad = true;
+let sseClient = null;
+let pollingInterval = null;
 
-setInterval(async () => {
-    const currentTotal = await updateStats();
-    if (currentTotal > lastAlertCount) {
-        lastAlertCount = currentTotal;
-        if (!isInitialLoad) {
-            await updateLogsNewOnly();
+function startSSE() {
+    if (sseClient) sseClient.close();
+
+    const indicator = SSE_createIndicator('connection-indicator');
+    sseClient = new SSEClient('/api/events/stream', {
+        onAlert: function (alert) {
+            if (isInitialLoad) return;
+            prependAlertRow(alert);
+        },
+        onStats: function (stats) {
+            updateStatCards(stats);
+            lastAlertCount = stats.total_alerts || 0;
+        },
+        onConnect: function () {
+            if (sseClient && sseClient.fallbackActive) {
+                stopPolling();
+                sseClient.fallbackActive = false;
+            }
+        },
+        onFallback: function () {
+            startPolling();
         }
+    });
+    if (indicator) sseClient.indicator = indicator;
+    sseClient.connect();
+}
+
+function stopSSE() {
+    if (sseClient) {
+        sseClient.close();
+        sseClient = null;
     }
-}, 2000);
+}
+
+function startPolling() {
+    if (pollingInterval) return;
+    pollingInterval = setInterval(async () => {
+        const currentTotal = await updateStats();
+        if (currentTotal > lastAlertCount) {
+            lastAlertCount = currentTotal;
+            if (!isInitialLoad) {
+                await updateLogsNewOnly();
+            }
+        }
+    }, 2000);
+}
+
+function stopPolling() {
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+}
+
+function updateStatCards(stats) {
+    document.getElementById('stat-total').textContent = stats.total_alerts || 0;
+    document.getElementById('stat-ai-count').textContent = stats.coraza_count || 0;
+    document.getElementById('stat-misses').textContent = stats.ml_miss_count || 0;
+
+    const priorityEl = document.getElementById('stat-priority');
+    if (stats.latest_priority && stats.latest_priority !== '-') {
+        priorityEl.textContent = stats.latest_priority;
+        priorityEl.className = 'stat-value priority-' + stats.latest_priority.toLowerCase();
+    } else {
+        priorityEl.textContent = '-';
+        priorityEl.className = 'stat-value';
+    }
+}
+
+function prependAlertRow(alert) {
+    const tbody = document.getElementById('logs-body');
+    const firstRow = tbody.querySelector('tr');
+    const firstAlertTs = firstRow ? firstRow.querySelector('td')?.textContent : null;
+
+    let ts = alert.timestamp || '-';
+    if (ts.includes('-') || ts.includes('Z')) {
+        ts = ts;
+    } else if (ts.includes('/')) {
+        ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
+    }
+    const tsFormatted = new Date(ts).toLocaleTimeString();
+
+    if (firstAlertTs && tsFormatted <= firstAlertTs) return;
+
+    const source = alert.source || 'coraza';
+    const isMiss = source === 'ml_miss_detector';
+    const rules = formatRules(alert.triggered_rules);
+    const aiScoreVal = alert.ai_score;
+    const aiScore = aiScoreVal !== null && aiScoreVal !== undefined
+        ? '<span class="ai-score">' + (aiScoreVal * 100).toFixed(1) + '%</span>' : '-';
+    const aiPriority = alert.ai_priority
+        ? '<span class="priority-' + alert.ai_priority.toLowerCase() + '">' + alert.ai_priority + '</span>' : '-';
+    const aiConf = alert.ai_confidence !== null && alert.ai_confidence !== undefined
+        ? alert.ai_confidence.toFixed(0) + '%' : '-';
+    const scoreDisplay = isMiss && aiScoreVal !== null && aiScoreVal !== undefined
+        ? '<span class="ai-score">*' + (aiScoreVal * 100).toFixed(1) + '%</span>'
+        : '<span class="anomaly-badge">' + alert.anomaly_score + '</span>';
+
+    const row = document.createElement('tr');
+    row.innerHTML = '<td style="color:var(--fg-muted);">' + tsFormatted + '</td>' +
+        '<td>' + alert.client_ip + '</td>' +
+        '<td style="font-family:monospace;font-size:0.75rem;">' + alert.uri + '</td>' +
+        '<td style="text-align: center;">' + scoreDisplay + '</td>' +
+        '<td style="text-align: center;">' + rules + '</td>' +
+        '<td style="text-align: center;">' + aiScore + '</td>' +
+        '<td style="text-align: center;">' + aiConf + '</td>' +
+        '<td style="text-align: center;">' + aiPriority + '</td>';
+    tbody.insertBefore(row, firstRow);
+
+    applyStreamSearch();
+}
 
 updateStats().then(total => { lastAlertCount = total; });
-updateLogs().then(() => { isInitialLoad = false; });
+updateLogs().then(() => { isInitialLoad = false; startSSE(); });
 
 async function updateLogsNewOnly() {
     try {
@@ -300,10 +404,7 @@ if (syncBtn) {
 const lockBtn = document.getElementById('lock-btn');
 if (lockBtn) {
     lockBtn.addEventListener('click', () => {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-        window.location.href = '/signin';
+        window.logout();
     });
 }
 
