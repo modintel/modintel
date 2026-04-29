@@ -308,7 +308,7 @@
     justify-content: flex-end;
     gap: 3px;
     height: 40px;
-    margin-top: 8px;
+    margin-top: 24px;
     width: 100%;
 }
 
@@ -329,7 +329,7 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     overflow: hidden;
-    margin-top: 8px;
+    margin-top: 24px;
 }
 
 .memory-bar {
