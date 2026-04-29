@@ -225,6 +225,38 @@ function applyMetricsData(data) {
     document.getElementById('storage-bar').style.width = `${storagePercent}%`;
 }
 
+function applyMetricsLiveStats(data) {
+    document.getElementById('stat-latency').textContent = `${(data.avg_inference_ms || 0).toFixed(1)}ms`;
+
+    if (data.requests_per_minute !== undefined) {
+        document.getElementById('stat-rpm').textContent = (data.requests_per_minute || 0).toFixed(1);
+    }
+
+    const p50 = data.p50_latency_ms || 0;
+    const p95 = data.p95_latency_ms || 0;
+    const p99 = data.p99_latency_ms || 0;
+    updateLatencyBars(p50, p95, p99);
+
+    const system = data.system;
+    if (system) {
+        document.getElementById('mongodb-connections').textContent = system.mongodb_connections || 1;
+        document.getElementById('memory-used').textContent = `${system.memory_used_mb || 0} / ${system.memory_total_mb || 0} MB`;
+        document.getElementById('goroutines').textContent = system.goroutines || 0;
+        document.getElementById('sys-dbsize').textContent = formatBytes(system.mongodb_database_size_bytes);
+
+        updateWorkerBars();
+        updateMongoBars();
+
+        const memoryPercent = system.memory_percent || 0;
+        document.getElementById('memory-bar').style.width = `${memoryPercent}%`;
+
+        const dbSize = system.mongodb_database_size_bytes || 0;
+        const totalStorageMB = 1_000;
+        const storagePercent = Math.min((dbSize / (totalStorageMB * 1_024 * 1_024)) * 100, 100);
+        document.getElementById('storage-bar').style.width = `${storagePercent}%`;
+    }
+}
+
 function applyHealthData(services) {
     if (!services) return;
     updateServiceStatus('status-log-collector', services['log-collector'] || 'unknown');
@@ -314,6 +346,9 @@ function startSSE() {
         },
         onHealth: function (data) {
             applyHealthData(data.services);
+            if (data.avg_inference_ms !== undefined) {
+                applyMetricsLiveStats(data);
+            }
         },
         onConnect: function () {
             if (sseClient && sseClient.fallbackActive) {

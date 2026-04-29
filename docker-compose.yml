@@ -95,6 +95,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./proxy-waf/overrides:/waf-overrides
+      - ./dashboard:/srv/dashboard:ro
     environment:
       - MONGO_URI=${MONGO_URI}
       - JWT_SECRET=${JWT_SECRET}

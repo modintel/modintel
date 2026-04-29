@@ -463,7 +463,7 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 	if err != nil {
 		log.Fatalf("Failed to tail Caddy access log: %v", err)
 	}
-	defer t.Stop()
+	defer func() { _ = t.Stop() }()
 
 	collection := db.GetCollection("modintel", "alerts")
 
