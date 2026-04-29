@@ -178,6 +178,40 @@ document.querySelectorAll('.filter-row button').forEach(btn => {
 loadReviewStats();
 loadReviewAlerts(true);
 
+const cutBtn = document.getElementById('cut-dataset-btn');
+const cutModal = document.getElementById('cut-modal');
+if (cutBtn && cutModal) {
+    cutBtn.addEventListener('click', () => {
+        cutModal.classList.add('open');
+    });
+
+    document.getElementById('cut-modal-cancel').addEventListener('click', () => {
+        cutModal.classList.remove('open');
+    });
+    cutModal.querySelector('.modal-backdrop').addEventListener('click', () => {
+        cutModal.classList.remove('open');
+    });
+
+    document.getElementById('cut-modal-confirm').addEventListener('click', async () => {
+        const name = document.getElementById('cut-dataset-name').value.trim() || 'reviewed_export';
+        cutModal.classList.remove('open');
+
+        try {
+            const res = await apiFetch(`${API_BASE}/training/datasets/cut`, { method: 'POST' });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                showModal('Export Failed', err.detail || 'Failed to export dataset', 'error');
+                return;
+            }
+            const data = await res.json();
+            showModal('Dataset Created', `${data.samples} alerts exported (${data.true_positives} TP, ${data.false_positives} FP)`, 'info');
+            loadReviewStats();
+        } catch (e) {
+            showModal('Error', 'Failed to export dataset', 'error');
+        }
+    });
+}
+
 const lockBtn = document.getElementById('lock-btn');
 if (lockBtn) {
     lockBtn.addEventListener('click', () => {
