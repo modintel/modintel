@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"modintel/services/review-api/api"
 	"modintel/services/review-api/db"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -17,6 +20,7 @@ var lastTotalErrors uint64
 
 func main() {
 	db.Connect()
+	api.InitHub()
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -24,14 +28,18 @@ func main() {
 	}
 
 	go metricsAggregator()
+	go watchAlerts()
+	go broadcastHealth()
 
 	log.Printf("Starting Review API on port %s", port)
 	router := api.SetupRouter()
 	log.Fatal(router.Run(":" + port))
 }
 
+const metricsWindow = 60 * time.Second
+
 func metricsAggregator() {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(metricsWindow)
 	defer ticker.Stop()
 
 	collection := db.GetCollection("modintel", "metrics")
@@ -43,7 +51,7 @@ func metricsAggregator() {
 		inferenceMetrics := api.GetInferenceMetrics()
 		systemMetrics := api.GetSystemMetrics(ctx)
 
-		ts := time.Now().UTC().Truncate(10 * time.Second)
+		ts := time.Now().UTC().Truncate(metricsWindow)
 
 		reqDelta := int(0)
 		errDelta := int(0)
@@ -60,8 +68,8 @@ func metricsAggregator() {
 		lastTotalRequests = totalRequests
 		lastTotalErrors = totalErrors
 
-		reqDeltaPerMin := float64(reqDelta) * 6
-		errDeltaPerMin := float64(errDelta) * 6
+		reqDeltaPerMin := float64(reqDelta)
+		errDeltaPerMin := float64(errDelta)
 
 		doc := bson.M{
 			"timestamp":                   ts,
@@ -76,6 +84,8 @@ func metricsAggregator() {
 			"predictions_per_minute":      inferenceMetrics.PredictionsPerMinute,
 			"mongodb_connections":         systemMetrics.MongoDBConnections,
 			"memory_used_mb":              systemMetrics.MemoryUsedMB,
+			"memory_total_mb":             systemMetrics.MemoryTotalMB,
+			"memory_percent":              systemMetrics.MemoryPercent,
 			"goroutines":                  systemMetrics.Goroutines,
 			"mongodb_database_size_bytes": systemMetrics.MongoDBDatabaseSizeBytes,
 			"total_alerts":                systemMetrics.TotalAlerts,
@@ -88,6 +98,242 @@ func metricsAggregator() {
 		_, err := collection.ReplaceOne(ctx, filter, doc, opts)
 		if err != nil {
 			log.Printf("Metrics aggregation error: %v", err)
+		}
+
+		systemPayload := map[string]interface{}{
+			"mongodb_connections":         systemMetrics.MongoDBConnections,
+			"memory_used_mb":              systemMetrics.MemoryUsedMB,
+			"memory_total_mb":             systemMetrics.MemoryTotalMB,
+			"memory_percent":              systemMetrics.MemoryPercent,
+			"goroutines":                  systemMetrics.Goroutines,
+			"mongodb_database_size_bytes": systemMetrics.MongoDBDatabaseSizeBytes,
+		}
+
+		timeSeries1h := buildMetricsTimeSeries(collection, "1h")
+		timeSeries6h := buildMetricsTimeSeries(collection, "6h")
+		timeSeries24h := buildMetricsTimeSeries(collection, "24h")
+		timeSeries7d := buildMetricsTimeSeries(collection, "7d")
+
+		payload := map[string]interface{}{
+			"avg_inference_ms":    inferenceMetrics.AvgLatencyMs,
+			"requests_per_minute":  reqDeltaPerMin,
+			"p50_latency_ms":     inferenceMetrics.P50LatencyMs,
+			"p95_latency_ms":     inferenceMetrics.P95LatencyMs,
+			"p99_latency_ms":     inferenceMetrics.P99LatencyMs,
+			"system":           systemPayload,
+			"time_1h":           timeSeries1h,
+			"time_6h":           timeSeries6h,
+			"time_24h":          timeSeries24h,
+			"time_7d":           timeSeries7d,
+		}
+		data, _ := json.Marshal(payload)
+		api.Hub.Broadcast(api.SSEEvent{Type: "metrics", Data: string(data)})
+	}
+}
+
+func buildMetricsTimeSeries(collection *mongo.Collection, rangeType string) []map[string]interface{} {
+	window := 1 * time.Hour
+	switch rangeType {
+	case "6h":
+		window = 6 * time.Hour
+	case "24h":
+		window = 24 * time.Hour
+	case "7d":
+		window = 7 * 24 * time.Hour
+	}
+
+	startTime := time.Now().UTC().Add(-window)
+	filter := bson.M{"timestamp": bson.M{"$gte": startTime}}
+	opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: 1}})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cursor, err := collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil
+	}
+	defer cursor.Close(ctx)
+
+	var series []map[string]interface{}
+	for cursor.Next(ctx) {
+		var doc bson.M
+		if err := cursor.Decode(&doc); err != nil {
+			continue
+		}
+		entry := map[string]interface{}{
+			"timestamp":           doc["timestamp"],
+			"requests_per_minute": doc["requests_per_minute"],
+			"errors_per_minute":   doc["errors_per_minute"],
+		}
+		series = append(series, entry)
+	}
+	return series
+}
+
+func watchAlerts() {
+	collection := db.GetCollection("modintel", "alerts")
+	ctx := context.Background()
+
+	for {
+		cs, err := collection.Watch(ctx, mongo.Pipeline{
+			{{Key: "$match", Value: bson.M{"operationType": "insert"}}},
+		})
+		if err != nil {
+			log.Printf("Change Stream unavailable, falling back to cursor polling: %v", err)
+			pollAlertsCursor(ctx, collection)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		log.Println("Change Stream watching alerts collection")
+
+		for cs.Next(ctx) {
+			var changeEvent struct {
+				FullDocument bson.M `bson:"fullDocument"`
+			}
+			if err := cs.Decode(&changeEvent); err != nil {
+				log.Printf("Change Stream decode error: %v", err)
+				continue
+			}
+
+			if changeEvent.FullDocument == nil {
+				continue
+			}
+
+			delete(changeEvent.FullDocument, "_id")
+			if ts, ok := changeEvent.FullDocument["timestamp"]; ok {
+				if t, ok := ts.(primitive.DateTime); ok {
+					changeEvent.FullDocument["timestamp"] = t.Time().Format(time.RFC3339)
+				}
+			}
+
+			alertJSON, err := json.Marshal(changeEvent.FullDocument)
+			if err != nil {
+				log.Printf("Alert JSON marshal error: %v", err)
+				continue
+			}
+
+			api.Hub.Broadcast(api.SSEEvent{Type: "alert", Data: string(alertJSON)})
+
+			broadcastUpdatedStats()
+		}
+
+		if err := cs.Err(); err != nil {
+			log.Printf("Change Stream error: %v", err)
+		}
+		cs.Close(ctx)
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func pollAlertsCursor(ctx context.Context, collection *mongo.Collection) {
+	var lastID primitive.ObjectID
+
+	opts := options.FindOne().SetSort(bson.D{{Key: "_id", Value: -1}})
+	var latest bson.M
+	if err := collection.FindOne(ctx, bson.M{}, opts).Decode(&latest); err == nil {
+		if id, ok := latest["_id"].(primitive.ObjectID); ok {
+			lastID = id
+		}
+	}
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		filter := bson.M{"_id": bson.M{"$gt": lastID}}
+		findOpts := options.Find().SetSort(bson.D{{Key: "_id", Value: 1}})
+		cursor, err := collection.Find(ctx, filter, findOpts)
+		if err != nil {
+			continue
+		}
+
+		for cursor.Next(ctx) {
+			var doc bson.M
+			if err := cursor.Decode(&doc); err != nil {
+				continue
+			}
+			if id, ok := doc["_id"].(primitive.ObjectID); ok {
+				lastID = id
+			}
+			delete(doc, "_id")
+			if ts, ok := doc["timestamp"]; ok {
+				if t, ok := ts.(primitive.DateTime); ok {
+					doc["timestamp"] = t.Time().Format(time.RFC3339)
+				}
+			}
+			alertJSON, _ := json.Marshal(doc)
+			api.Hub.Broadcast(api.SSEEvent{Type: "alert", Data: string(alertJSON)})
+		}
+		cursor.Close(ctx)
+		broadcastUpdatedStats()
+	}
+}
+
+func broadcastUpdatedStats() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	collection := db.GetCollection("modintel", "alerts")
+
+	total, _ := collection.CountDocuments(ctx, bson.M{})
+	corazaCount, _ := collection.CountDocuments(ctx, bson.M{"source": bson.M{"$in": []string{"coraza", "waf_blocked"}}})
+	mlMissCount, _ := collection.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
+
+	opts := options.FindOne().SetSort(bson.D{{Key: "timestamp", Value: -1}})
+	var result bson.M
+	latestPriority := "-"
+	if err := collection.FindOne(ctx, bson.M{"ai_priority": bson.M{"$type": "string"}}, opts).Decode(&result); err == nil {
+		if priority, ok := result["ai_priority"].(string); ok && priority != "" {
+			latestPriority = priority
+		}
+	}
+
+	payload := map[string]interface{}{
+		"total_alerts":    total,
+		"coraza_count":    corazaCount,
+		"ml_miss_count":   mlMissCount,
+		"latest_priority": latestPriority,
+	}
+	data, _ := json.Marshal(payload)
+	api.Hub.Broadcast(api.SSEEvent{Type: "stats", Data: string(data)})
+}
+
+func broadcastHealth() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		currentHealth := api.CollectServiceHealth()
+
+		if api.LastHealthSnapshot == nil {
+			api.LastHealthSnapshot = make(map[string]string)
+		}
+
+		changed := len(api.LastHealthSnapshot) == 0
+		if !changed {
+			for svc, status := range currentHealth {
+				if prev, ok := api.LastHealthSnapshot[svc]; !ok || prev != status {
+					changed = true
+					break
+				}
+			}
+			for svc := range api.LastHealthSnapshot {
+				if _, ok := currentHealth[svc]; !ok {
+					changed = true
+					break
+				}
+			}
+		}
+
+		if changed {
+			api.LastHealthSnapshot = currentHealth
+			healthPayload := map[string]interface{}{
+				"services":  currentHealth,
+				"timestamp": time.Now().UTC(),
+			}
+			data, _ := json.Marshal(healthPayload)
+			api.Hub.Broadcast(api.SSEEvent{Type: "health", Data: string(data)})
 		}
 	}
 }
