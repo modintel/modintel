@@ -64,9 +64,7 @@ def _miss_heuristic_score(event: dict) -> float:
     uri = (event.get("uri") or "").lower()
     body = (event.get("body") or "").lower()
     headers = event.get("headers") or {}
-    ua = (
-        (headers.get("user-agent") or headers.get("User-Agent") or "").lower()
-    )
+    ua = (headers.get("user-agent") or headers.get("User-Agent") or "").lower()
     content = uri + " " + body
 
     if _sqli_patterns.search(content):
@@ -276,7 +274,6 @@ def _top5_shap(
     feature_vector: np.ndarray, feature_names: List[str], schema: Dict
 ) -> List[ShapContribution]:
 
-    model = _model_state["model"]
     features_dict = schema.get("features", {})
 
     sv = np.zeros(feature_vector.shape[1])
@@ -411,10 +408,16 @@ async def predict_batch(events: List[CorazaAuditEvent]) -> JSONResponse:
     t_start = time.perf_counter()
 
     if not _model_state["loaded"]:
-        return JSONResponse(status_code=500, content={
-            "results": [{"ai_status": "unavailable", "attack_probability": 0} for _ in events],
-            "count": len(events),
-        })
+        return JSONResponse(
+            status_code=500,
+            content={
+                "results": [
+                    {"ai_status": "unavailable", "attack_probability": 0}
+                    for _ in events
+                ],
+                "count": len(events),
+            },
+        )
 
     t_start = time.perf_counter()
 
@@ -425,17 +428,19 @@ async def predict_batch(events: List[CorazaAuditEvent]) -> JSONResponse:
         records = []
         for event in events:
             _validate_input(event)
-            records.append({
-                "method": event.method,
-                "uri": event.uri,
-                "headers": event.headers or {},
-                "body": event.body,
-                "fired_rule_ids": event.fired_rule_ids or [],
-                "rule_severities": event.rule_severities or {},
-                "rule_messages": event.rule_messages or [],
-                "anomaly_score": event.anomaly_score,
-                "inbound_threshold": event.inbound_threshold,
-            })
+            records.append(
+                {
+                    "method": event.method,
+                    "uri": event.uri,
+                    "headers": event.headers or {},
+                    "body": event.body,
+                    "fired_rule_ids": event.fired_rule_ids or [],
+                    "rule_severities": event.rule_severities or {},
+                    "rule_messages": event.rule_messages or [],
+                    "anomaly_score": event.anomaly_score,
+                    "inbound_threshold": event.inbound_threshold,
+                }
+            )
 
         feature_matrix = extractor.transform(records)
         probas = calibrator.predict_proba(feature_matrix)
@@ -443,26 +448,37 @@ async def predict_batch(events: List[CorazaAuditEvent]) -> JSONResponse:
 
         results = []
         for i in range(len(records)):
-            results.append({
-                "attack_probability": round(float(class1_probas[i]), 6),
-                "ai_status": "enriched",
-            })
+            results.append(
+                {
+                    "attack_probability": round(float(class1_probas[i]), 6),
+                    "ai_status": "enriched",
+                }
+            )
 
         elapsed = int((time.perf_counter() - t_start) * 1000)
         _prediction_count += len(events)
         _total_latency_ms += elapsed
 
-        return JSONResponse(status_code=200, content={
-            "results": results,
-            "count": len(results),
-            "inference_ms": elapsed,
-        })
+        return JSONResponse(
+            status_code=200,
+            content={
+                "results": results,
+                "count": len(results),
+                "inference_ms": elapsed,
+            },
+        )
     except Exception as exc:
         logger.error("Batch inference failure: %s", exc)
-        return JSONResponse(status_code=200, content={
-            "results": [{"ai_status": "unavailable", "attack_probability": 0} for _ in events],
-            "count": len(events),
-        })
+        return JSONResponse(
+            status_code=200,
+            content={
+                "results": [
+                    {"ai_status": "unavailable", "attack_probability": 0}
+                    for _ in events
+                ],
+                "count": len(events),
+            },
+        )
 
 
 @app.post("/predict-miss")
@@ -524,7 +540,9 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
                 "headers": event.headers or {},
             }
         )
-        attack_probability = round(min(attack_probability + heuristic_boost * 0.3, 0.99), 6)
+        attack_probability = round(
+            min(attack_probability + heuristic_boost * 0.3, 0.99), 6
+        )
         entropy, h_norm = _compute_entropy(attack_probability)
         confidence_score = round((1.0 - h_norm) * 100.0, 2)
         band, reasoning = _assign_priority(attack_probability, 0.5, h_norm)
