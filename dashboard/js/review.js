@@ -215,10 +215,7 @@ if (cutBtn && cutModal) {
 const lockBtn = document.getElementById('lock-btn');
 if (lockBtn) {
     lockBtn.addEventListener('click', () => {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-        window.location.href = '/signin';
+        window.logout();
     });
 }
 
