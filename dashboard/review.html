@@ -99,6 +99,9 @@
                         Review Queue
                     </div>
                 </div>
+                <div class="header-right-group">
+                    <button class="btn btn-sm" id="cut-dataset-btn" type="button">Export</button>
+                </div>
             </div>
             <div class="log-scroll">
                 <table class="review-table">
@@ -123,8 +126,26 @@
             </div>
         </div>
     </div>
+
+    <div id="cut-modal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <h3>Create Dataset</h3>
+            <p>Export reviewed alerts as a training dataset.</p>
+            <div class="form-group">
+                <label>Dataset Name</label>
+                <input type="text" id="cut-dataset-name" placeholder="e.g. training_run_apr28">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="cut-modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="cut-modal-confirm">Export</button>
+            </div>
+        </div>
+    </div>
+
     <script src="js/auth.js"></script>
     <script src="js/boot.js"></script>
+    <script src="js/modal.js"></script>
     <script src="js/review.js"></script>
 </body>
 
