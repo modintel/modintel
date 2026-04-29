@@ -21,6 +21,7 @@ type Config struct {
 	RateLimitBurst      int
 	RateLimitWindow     time.Duration
 	TrustedProxyCIDRs   []string
+	CookieSecure        bool
 	BootstrapAdminEmail string
 	BootstrapAdminPass  string
 	BootstrapAdminRole  string
@@ -39,6 +40,7 @@ func Load() Config {
 		BcryptCost:          getIntEnv("BCRYPT_COST", 12),
 		RateLimitAuthPerMin: getIntEnv("RATE_LIMIT_AUTH", 5),
 		TrustedProxyCIDRs:   []string{},
+		CookieSecure:        getEnv("COOKIE_SECURE", "false") == "true",
 		BootstrapAdminEmail: strings.ToLower(strings.TrimSpace(getEnv("AUTH_BOOTSTRAP_ADMIN_EMAIL", ""))),
 		BootstrapAdminPass:  getEnv("AUTH_BOOTSTRAP_ADMIN_PASSWORD", ""),
 		BootstrapAdminRole:  getEnv("AUTH_BOOTSTRAP_ADMIN_ROLE", "admin"),
