@@ -29,19 +29,12 @@
         }
     }
 
-    function storeAuthData(token, user, remember) {
-        localStorage.setItem('access_token', token);
-        if (remember && user && user.refresh_token) {
-            localStorage.setItem('refresh_token', user.refresh_token);
-        }
+    function storeAuthData(user) {
         localStorage.setItem('user', JSON.stringify(user));
     }
 
     function handleLoginSuccess(data, remember) {
-        storeAuthData(data.access_token, {
-            ...data.user,
-            refresh_token: data.refresh_token,
-        }, remember);
+        storeAuthData(data.user);
         hideAlert();
         signinForm.style.display = 'none';
         if (loadingDots) loadingDots.style.display = 'flex';
@@ -55,6 +48,7 @@
         try {
             const response = await fetch(AUTH_SERVICE_URL, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                 },
@@ -107,29 +101,17 @@
     }
 
     async function checkExistingAuth() {
-        const token = localStorage.getItem('access_token');
-        if (!token) {
-            return;
-        }
-
         try {
             const response = await fetch('/api/v1/auth/me', {
                 method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
+                credentials: 'same-origin',
             });
-
             if (response.ok) {
                 window.location.href = DASHBOARD_URL;
                 return;
             }
         } catch (_) {
         }
-
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
     }
 
     async function init() {
