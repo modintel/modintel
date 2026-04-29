@@ -2,6 +2,7 @@
     'use strict';
 
     const SIGNIN_ROUTE = '/signin';
+    let refreshPromise = null;
 
     function getAccessToken() {
         return localStorage.getItem('access_token');
@@ -20,6 +21,15 @@
             return false;
         }
         return true;
+    }
+
+    function getTokenExpiry(token) {
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            return payload.exp ? payload.exp * 1000 : null;
+        } catch (_) {
+            return null;
+        }
     }
 
     async function apiFetch(url, options = {}) {
@@ -50,28 +60,64 @@
     }
 
     async function tryRefreshToken() {
+        if (refreshPromise) return refreshPromise;
+
         const refreshToken = localStorage.getItem('refresh_token');
         if (!refreshToken) return false;
 
-        try {
-            const resp = await fetch('/api/v1/auth/refresh', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refreshToken }),
-            });
+        refreshPromise = (async () => {
+            try {
+                const resp = await fetch('/api/v1/auth/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refreshToken }),
+                });
 
-            if (!resp.ok) return false;
+                if (!resp.ok) return false;
 
-            const data = await resp.json();
-            const accessToken = data.access_token || (data.data && data.data.access_token);
-            if (accessToken) {
-                localStorage.setItem('access_token', accessToken);
-                return true;
+                const data = await resp.json();
+                const accessToken = data.access_token || (data.data && data.data.access_token);
+                if (accessToken) {
+                    localStorage.setItem('access_token', accessToken);
+                    return true;
+                }
+                return false;
+            } catch (_) {
+                return false;
+            } finally {
+                refreshPromise = null;
             }
-            return false;
-        } catch (_) {
-            return false;
-        }
+        })();
+
+        return refreshPromise;
+    }
+
+    function startProactiveRefresh() {
+        const interval = setInterval(async () => {
+            const token = getAccessToken();
+            if (!token) {
+                clearInterval(interval);
+                return;
+            }
+
+            const expiry = getTokenExpiry(token);
+            if (!expiry) {
+                clearInterval(interval);
+                return;
+            }
+
+            const remaining = expiry - Date.now();
+            if (remaining < 120000) {
+                const ok = await tryRefreshToken();
+                if (!ok) {
+                    clearInterval(interval);
+                    clearAuth();
+                    if (window.location.pathname !== SIGNIN_ROUTE) {
+                        window.location.href = SIGNIN_ROUTE;
+                    }
+                }
+            }
+        }, 30000);
     }
 
     async function logout() {
@@ -124,6 +170,10 @@
                 });
             });
         });
+    }
+
+    if (window.location.pathname !== SIGNIN_ROUTE) {
+        startProactiveRefresh();
     }
 
     window.getAccessToken = getAccessToken;
