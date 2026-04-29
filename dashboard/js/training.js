@@ -59,18 +59,28 @@ function renderHistory(items) {
                     ? '<span class="badge-active">Active</span>'
                     : `<button class="btn btn-sm deploy-btn" data-version="${item.version}">Deploy</button>`}
             </td>
+            <td>
+                ${!item.active
+                    ? `<button class="btn btn-sm btn-danger delete-model-btn" data-version="${item.version}">Delete</button>`
+                    : ''}
+            </td>
         </tr>
     `).join('');
 
     document.querySelectorAll('.deploy-btn').forEach(btn => {
         btn.addEventListener('click', () => deployModel(btn.dataset.version));
     });
+
+    document.querySelectorAll('.delete-model-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteModel(btn.dataset.version));
+    });
 }
 
 async function pollTrainingJob() {
     try {
         const statusRes = await fetch(`${API_BASE}/training/status`, {
-            headers: authHeaders()
+            headers: authHeaders(),
+            credentials: 'same-origin'
         });
         const statusData = await statusRes.json();
 
@@ -91,8 +101,7 @@ async function pollTrainingJob() {
 }
 
 function authHeaders() {
-    const token = localStorage.getItem('access_token');
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
+    return {};
 }
 
 async function trainModel() {
@@ -184,6 +193,30 @@ async function deployModel(version) {
     } catch (e) {
         console.error('Deploy error:', e);
     }
+}
+
+async function deleteModel(version) {
+    showConfirm(
+        'Delete Model',
+        `Are you sure you want to delete model ${version}? This will also remove its files from disk.`,
+        async () => {
+            try {
+                const res = await apiFetch(`${API_BASE}/training/history/${version}`, {
+                    method: 'DELETE'
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    showModal('Delete Failed', err.detail || 'Failed to delete model', 'error');
+                    return;
+                }
+                loadTrainingStatus();
+                loadTrainingHistory();
+            } catch (e) {
+                console.error('Delete error:', e);
+                showModal('Delete Failed', 'An error occurred while deleting the model', 'error');
+            }
+        }
+    );
 }
 
 const trainModelBtn = document.getElementById('train-model-btn');
