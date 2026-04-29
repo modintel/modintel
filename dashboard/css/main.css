@@ -633,3 +633,45 @@ textarea:focus {
         line-height: 1.25;
     }
 }
+
+.connection-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-muted);
+    margin-top: 0.25rem;
+    margin-bottom: 0.75rem;
+}
+
+.connection-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--border);
+}
+
+.connection-dot.connected {
+    background: #22c55e;
+    box-shadow: 0 0 4px #22c55e;
+}
+
+.connection-dot.reconnecting {
+    background: var(--accent);
+    animation: pulse-dot 1s ease-in-out infinite;
+}
+
+.connection-dot.disconnected {
+    background: #dc2626;
+}
+
+.connection-dot.fallback {
+    background: #eab308;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
