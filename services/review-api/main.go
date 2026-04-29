@@ -233,9 +233,9 @@ func watchAlerts() {
 
 		for cs.Next(ctx) {
 			var changeEvent struct {
-				OperationType    string `bson:"operationType"`
-				FullDocument     bson.M `bson:"fullDocument"`
-				DocumentKey      bson.M `bson:"documentKey"`
+				OperationType     string `bson:"operationType"`
+				FullDocument      bson.M `bson:"fullDocument"`
+				DocumentKey       bson.M `bson:"documentKey"`
 				UpdateDescription *struct {
 					UpdatedFields bson.M `bson:"updatedFields"`
 				} `bson:"updateDescription"`
