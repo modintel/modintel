@@ -91,7 +91,9 @@
 	}
 
 	handle /api/* {
-		reverse_proxy review-api:8082
+		reverse_proxy review-api:8082 {
+			flush_interval -1
+		}
 	}
 
 	handle_path /inference/* {
