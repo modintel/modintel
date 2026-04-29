@@ -106,8 +106,8 @@
 
 .account-section {
     display: flex;
-    align-items: center;
-    gap: 12px;
+    align-items: stretch;
+    gap: 0;
     padding: 16px;
     background: var(--bg-panel);
     border: 1px solid var(--border);
@@ -115,14 +115,85 @@
     margin-bottom: 16px;
 }
 
+.account-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
 .account-info {
     flex: 0 1 auto;
     min-width: 0;
 }
 
-.account-section #logout-btn {
+.account-profile #logout-btn {
     margin-left: 12px;
     white-space: nowrap;
+}
+
+.account-divider {
+    width: 1px;
+    align-self: stretch;
+    background: linear-gradient(to bottom, transparent, var(--border) 20%, var(--border) 80%, transparent);
+    margin: 4px 8px;
+    flex-shrink: 0;
+}
+
+.account-invite {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: center;
+}
+
+.invite-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.invite-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--fg);
+}
+
+.invite-desc {
+    font-size: 0.6875rem;
+    color: var(--fg-muted);
+}
+
+.invite-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    max-width: 40%;
+}
+
+.invite-input {
+    flex: 1;
+    padding: 7px 10px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--fg);
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.invite-input:focus {
+    border-color: var(--accent);
+}
+
+.invite-form .btn {
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .account-avatar {
@@ -237,4 +308,26 @@
     background: var(--danger-subtle);
     color: var(--danger);
     border-color: rgba(220, 38, 38, 0.3);
+}
+
+@media (max-width: 768px) {
+    .account-section {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .account-divider {
+        width: 100%;
+        height: 1px;
+        background: linear-gradient(to right, transparent, var(--border) 20%, var(--border) 80%, transparent);
+        margin: 16px 0;
+    }
+
+    .account-profile {
+        flex-wrap: wrap;
+    }
+
+    .account-profile #logout-btn {
+        margin-left: auto;
+    }
 }
