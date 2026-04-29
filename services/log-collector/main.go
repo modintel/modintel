@@ -84,10 +84,7 @@ func isInternalIP(ip string) bool {
 			continue
 		}
 		if prefix.Contains(addr) && !addr.IsLoopback() {
-			if strings.HasSuffix(ip, ".1") {
-				return false
-			}
-			return true
+			return !strings.HasSuffix(ip, ".1")
 		}
 	}
 	return false
@@ -425,10 +422,15 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 			if docCopy.AIStatus == "enriched" {
 				aiJSON, _ := json.Marshal(docCopy)
 				var aiMap map[string]interface{}
-				json.Unmarshal(aiJSON, &aiMap)
+				if err := json.Unmarshal(aiJSON, &aiMap); err != nil {
+					log.Printf("AI re-enrich: failed to unmarshal: %v", err)
+					return
+				}
 				upCtx, upCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer upCancel()
-				collection.UpdateOne(upCtx, bson.M{"alert_key": key}, bson.M{"$set": aiMap})
+				if _, err := collection.UpdateOne(upCtx, bson.M{"alert_key": key}, bson.M{"$set": aiMap}); err != nil {
+					log.Printf("AI re-enrich: failed to update: %v", err)
+				}
 			}
 		}()
 	}
@@ -577,16 +579,28 @@ func backfillPendingAlerts() {
 		go func() {
 			defer func() { <-aiWorkers }()
 			var alert parsers.AlertDocument
-			b, _ := bson.Marshal(docRef)
-			bson.Unmarshal(b, &alert)
+			b, err := bson.Marshal(docRef)
+			if err != nil {
+				log.Printf("Backfill: failed to marshal: %v", err)
+				return
+			}
+			if err := bson.Unmarshal(b, &alert); err != nil {
+				log.Printf("Backfill: failed to unmarshal: %v", err)
+				return
+			}
 			enrichWithAI(&alert)
 			if alert.AIStatus == "enriched" {
 				aiJSON, _ := json.Marshal(alert)
 				var aiMap map[string]interface{}
-				json.Unmarshal(aiJSON, &aiMap)
+				if err := json.Unmarshal(aiJSON, &aiMap); err != nil {
+					log.Printf("Backfill: failed to unmarshal aiJSON: %v", err)
+					return
+				}
 				upCtx, upCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer upCancel()
-				collection.UpdateOne(upCtx, bson.M{"alert_key": alertKey}, bson.M{"$set": aiMap})
+				if _, err := collection.UpdateOne(upCtx, bson.M{"alert_key": alertKey}, bson.M{"$set": aiMap}); err != nil {
+					log.Printf("Backfill: failed to update: %v", err)
+				}
 			}
 		}()
 	}

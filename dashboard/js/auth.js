@@ -201,4 +201,5 @@
     window.logout = logout;
     window.revokeAllSessions = revokeAllSessions;
     window.attachLogoutButtons = attachLogoutButtons;
+    window.tryRefreshToken = tryRefreshToken;
 })();

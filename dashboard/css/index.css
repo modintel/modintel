@@ -3,6 +3,23 @@
     padding: 0 !important;
 }
 
+.panel-default .hero {
+    padding-bottom: 0.25rem !important;
+}
+
+.panel-default .hero p {
+    margin-bottom: 0.25rem;
+}
+
+.panel-default .connection-indicator {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+.panel-default .hero-actions {
+    margin-top: 0.5rem;
+}
+
 .search-wrap {
     position: relative;
     display: inline-flex;
