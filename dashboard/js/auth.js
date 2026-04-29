@@ -4,56 +4,65 @@
     const SIGNIN_ROUTE = '/signin';
     let refreshPromise = null;
 
-    function getAccessToken() {
-        return localStorage.getItem('access_token');
-    }
-
-    function clearAuth() {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-    }
-
-    function requireAuth() {
-        const token = getAccessToken();
-        if (!token && window.location.pathname !== SIGNIN_ROUTE) {
-            window.location.href = SIGNIN_ROUTE;
-            return false;
-        }
-        return true;
-    }
-
-    function getTokenExpiry(token) {
+    function getUser() {
         try {
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            return payload.exp ? payload.exp * 1000 : null;
+            return JSON.parse(localStorage.getItem('user'));
         } catch (_) {
             return null;
         }
     }
 
-    async function apiFetch(url, options = {}) {
-        const token = getAccessToken();
-        const headers = new Headers(options.headers || {});
-        if (token) {
-            headers.set('Authorization', `Bearer ${token}`);
-        }
+    function clearAuth() {
+        localStorage.removeItem('user');
+    }
 
+    function getAccessToken() {
+        return null;
+    }
+
+    function clearAuth() {
+        localStorage.removeItem('user');
+    }
+
+    async function requireAuth() {
+        const user = getUser();
+        if (!user && window.location.pathname !== SIGNIN_ROUTE) {
+            try {
+                const resp = await fetch('/api/v1/auth/me', { credentials: 'same-origin' });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const userData = data.data || data;
+                    localStorage.setItem('user', JSON.stringify(userData.user || userData));
+                    return true;
+                }
+            } catch (_) {
+            }
+            window.location.href = SIGNIN_ROUTE;
+            return false;
+        }
+        return !!user;
+    }
+
+    async function apiFetch(url, options = {}) {
         let response = await fetch(url, {
             ...options,
-            headers,
+            headers: options.headers || {},
+            credentials: 'same-origin',
         });
 
         if (response.status === 401 && window.location.pathname !== SIGNIN_ROUTE) {
             const refreshed = await tryRefreshToken();
             if (refreshed) {
-                headers.set('Authorization', `Bearer ${getAccessToken()}`);
-                response = await fetch(url, { ...options, headers });
+                response = await fetch(url, {
+                    ...options,
+                    headers: options.headers || {},
+                    credentials: 'same-origin',
+                });
                 return response;
             }
             clearAuth();
             window.location.href = SIGNIN_ROUTE;
-            throw new Error(`HTTP ${response.status}`);
+            throw new Error('HTTP 401');
         }
 
         return response;
@@ -61,25 +70,15 @@
 
     async function tryRefreshToken() {
         if (refreshPromise) return refreshPromise;
-
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (!refreshToken) return false;
-
         refreshPromise = (async () => {
             try {
                 const resp = await fetch('/api/v1/auth/refresh', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ refresh_token: refreshToken }),
+                    credentials: 'same-origin',
                 });
-
-                if (!resp.ok) return false;
-
-                const data = await resp.json();
-                const accessToken = data.access_token || (data.data && data.data.access_token);
-                if (accessToken) {
-                    localStorage.setItem('access_token', accessToken);
-                    return true;
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.success) return true;
                 }
                 return false;
             } catch (_) {
@@ -88,53 +87,83 @@
                 refreshPromise = null;
             }
         })();
-
         return refreshPromise;
     }
 
-    function startProactiveRefresh() {
-        const interval = setInterval(async () => {
-            const token = getAccessToken();
-            if (!token) {
-                clearInterval(interval);
-                return;
-            }
-
-            const expiry = getTokenExpiry(token);
-            if (!expiry) {
-                clearInterval(interval);
-                return;
-            }
-
-            const remaining = expiry - Date.now();
-            if (remaining < 120000) {
-                const ok = await tryRefreshToken();
-                if (!ok) {
-                    clearInterval(interval);
-                    clearAuth();
-                    if (window.location.pathname !== SIGNIN_ROUTE) {
-                        window.location.href = SIGNIN_ROUTE;
-                    }
+    async function requireAuth() {
+        const user = getUser();
+        if (!user && window.location.pathname !== SIGNIN_ROUTE) {
+            try {
+                const resp = await fetch('/api/v1/auth/me', { credentials: 'same-origin' });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const userData = data.data || data;
+                    localStorage.setItem('user', JSON.stringify(userData.user || userData));
+                    return true;
                 }
+            } catch (_) {
             }
-        }, 30000);
+            window.location.href = SIGNIN_ROUTE;
+            return false;
+        }
+        return !!user;
+    }
+
+    async function apiFetch(url, options = {}) {
+        let response = await fetch(url, {
+            ...options,
+            headers: options.headers || {},
+            credentials: 'same-origin',
+        });
+
+        if (response.status === 401 && window.location.pathname !== SIGNIN_ROUTE) {
+            const refreshed = await tryRefreshToken();
+            if (refreshed) {
+                response = await fetch(url, {
+                    ...options,
+                    headers: options.headers || {},
+                    credentials: 'same-origin',
+                });
+                return response;
+            }
+            clearAuth();
+            window.location.href = SIGNIN_ROUTE;
+            throw new Error('HTTP 401');
+        }
+
+        return response;
+    }
+
+    async function tryRefreshToken() {
+        if (refreshPromise) return refreshPromise;
+        refreshPromise = (async () => {
+            try {
+                const resp = await fetch('/api/v1/auth/refresh', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.success) return true;
+                }
+                return false;
+            } catch (_) {
+                return false;
+            } finally {
+                refreshPromise = null;
+            }
+        })();
+        return refreshPromise;
     }
 
     async function logout() {
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (refreshToken) {
-            try {
-                await apiFetch('/api/v1/auth/logout', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ refresh_token: refreshToken }),
-                });
-            } catch (_) {
-            }
+        try {
+            await fetch('/api/v1/auth/logout', {
+                method: 'POST',
+                credentials: 'same-origin',
+            });
+        } catch (_) {
         }
-
         clearAuth();
         if (window.location.pathname !== SIGNIN_ROUTE) {
             window.location.href = SIGNIN_ROUTE;
@@ -142,13 +171,7 @@
     }
 
     async function revokeAllSessions() {
-        await apiFetch('/api/v1/auth/sessions/revoke-all', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({}),
-        });
+        await apiFetch('/api/v1/auth/sessions/revoke-all', { method: 'POST' });
     }
 
     function attachLogoutButtons() {
@@ -156,9 +179,7 @@
         const seen = new Set();
         selectors.forEach((selector) => {
             document.querySelectorAll(selector).forEach((el) => {
-                if (seen.has(el)) {
-                    return;
-                }
+                if (seen.has(el)) return;
                 seen.add(el);
                 el.addEventListener('click', async (event) => {
                     event.preventDefault();
@@ -172,11 +193,8 @@
         });
     }
 
-    if (window.location.pathname !== SIGNIN_ROUTE) {
-        startProactiveRefresh();
-    }
-
     window.getAccessToken = getAccessToken;
+    window.getUser = getUser;
     window.clearAuth = clearAuth;
     window.requireAuth = requireAuth;
     window.apiFetch = apiFetch;
