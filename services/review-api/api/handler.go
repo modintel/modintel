@@ -203,6 +203,7 @@ func SetupRouter() *gin.Engine {
 
 	r.GET("/health", HealthCheck)
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	r.GET("/api/events/stream", SSEAuth(jwtSecret), SSEStreamHandler)
 	r.GET("/api/whoami", AuthMiddleware(jwtSecret), GetWhoAmI)
 
 	api := r.Group("/api")
@@ -225,6 +226,7 @@ func SetupRouter() *gin.Engine {
 		api.GET("/datasets", RequireRoles("admin", "analyst", "viewer"), GetDatasets)
 		api.GET("/datasets/sources", RequireRoles("admin", "analyst", "viewer"), GetDatasetSources)
 		api.POST("/datasets/generate", RequireRoles("admin", "analyst"), GenerateDataset)
+		api.DELETE("/datasets/:id", RequireRoles("admin", "analyst"), DeleteDataset)
 	}
 	return r
 }
@@ -1079,6 +1081,7 @@ func GetmonitorHealth(c *gin.Context) {
 	services["log-collector"] = checkHTTPService("http://log-collector:8081/health", 3*time.Second)
 	services["inference-engine"] = checkHTTPService("http://inference-engine:8083/health", 3*time.Second)
 	services["proxy-waf"] = checkTCPService("proxy-waf", 8080, 3*time.Second)
+	services["auth-service"] = checkHTTPService("http://auth-service:8084/health", 3*time.Second)
 
 	c.JSON(http.StatusOK, gin.H{
 		"services":  services,
@@ -1586,7 +1589,9 @@ func GetDatasets(c *gin.Context) {
 	}
 
 	for i := range items {
-		items[i]["_id"] = fmt.Sprintf("%v", items[i]["_id"])
+		if oid, ok := items[i]["_id"].(primitive.ObjectID); ok {
+			items[i]["_id"] = oid.Hex()
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"items": items})
@@ -1693,4 +1698,35 @@ func GenerateDataset(c *gin.Context) {
 		"samples": doc["samples"],
 		"status":  "ready",
 	})
+}
+
+func DeleteDataset(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Dataset id is required"})
+		return
+	}
+
+	oid, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid dataset id"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	collection := db.GetCollection("modintel", "datasets")
+	result, err := collection.DeleteOne(ctx, bson.M{"_id": oid})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete dataset"})
+		return
+	}
+
+	if result.DeletedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Dataset not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "deleted", "id": id})
 }
