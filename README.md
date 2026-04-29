@@ -161,7 +161,7 @@ See [todo.md](todo.md) and open GitHub issues (#14–#21):
 - **#18** Dashboard Access Control Hardening
 - **#19** Unified Error Handling & Crash Recovery
 - **#20** Rule Management Refactor
-- **#21** Real-Time Alerts with WebSocket
+- **#21** Real-Time Alerts with SSE
 
 ## License
 
