@@ -152,7 +152,6 @@ td {
 .rule-editor input:focus,
 .rule-editor select:focus,
 .rule-editor textarea:focus {
-    outline: none;
     border-color: var(--accent);
 }
 
