@@ -169,7 +169,9 @@ async function loadSessions() {
         renderSessions(sessions);
     } catch (err) {
         renderSessions([]);
-        showModal('Session Error', 'Failed to load active sessions.', 'error');
+        if (err.message !== 'HTTP 401') {
+            showModal('Session Error', 'Failed to load active sessions.', 'error');
+        }
     }
 }
 
@@ -238,6 +240,8 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelBtn.addEventListener('click', () => setProfileEditable(false));
     }
 
-    loadProfile();
-    loadSessions();
+    if (getUser()) {
+        loadProfile();
+        loadSessions();
+    }
 });
