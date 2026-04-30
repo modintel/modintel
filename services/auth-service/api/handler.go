@@ -52,6 +52,11 @@ type CreateUserRequest struct {
 	LastName  string `json:"last_name"`
 }
 
+type InviteUserRequest struct {
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
 type UpdateUserRequest struct {
 	Role      string `json:"role"`
 	FirstName string `json:"first_name"`
@@ -102,6 +107,7 @@ func SetupRouter(cfg config.Config, database *db.Database) *gin.Engine {
 		users.GET("", h.requireRoles("admin"), h.listUsers)
 		users.GET(":id", h.requireRoles("admin"), h.getUser)
 		users.POST("", h.requireRoles("admin"), h.createUser)
+		users.POST("/invite", h.requireRoles("admin"), h.inviteUser)
 		users.PUT(":id", h.requireRoles("admin"), h.updateUser)
 		users.DELETE(":id", h.requireRoles("admin"), h.deactivateUser)
 	}
@@ -662,6 +668,75 @@ func (h *Handler) createUser(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"success": true, "data": userDTO(user)})
+}
+
+func (h *Handler) inviteUser(c *gin.Context) {
+	var req InviteUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errResp("Invalid request payload", "AUTH_400"))
+		return
+	}
+
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	req.Role = strings.ToLower(strings.TrimSpace(req.Role))
+	if req.Role == "" {
+		req.Role = "analyst"
+	}
+
+	if req.Email == "" {
+		c.JSON(http.StatusBadRequest, errResp("email is required", "AUTH_400"))
+		return
+	}
+	if !isValidEmail(req.Email) {
+		c.JSON(http.StatusBadRequest, errResp("invalid email format", "AUTH_400"))
+		return
+	}
+	if !isValidRole(req.Role) {
+		c.JSON(http.StatusBadRequest, errResp("invalid role", "AUTH_400"))
+		return
+	}
+
+	tempBytes := make([]byte, 12)
+	if _, err := rand.Read(tempBytes); err != nil {
+		c.JSON(http.StatusInternalServerError, errResp("Failed generating credentials", "AUTH_500"))
+		return
+	}
+	tempPassword := hex.EncodeToString(tempBytes)
+
+	hash, err := auth.HashPassword(tempPassword, h.cfg.BcryptCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errResp("Failed hashing password", "AUTH_500"))
+		return
+	}
+
+	now := time.Now().UTC()
+	insert := bson.M{
+		"email":          req.Email,
+		"password_hash":  hash,
+		"role":           req.Role,
+		"is_active":      true,
+		"email_verified": false,
+		"created_at":     now,
+		"updated_at":     now,
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	res, err := h.users.InsertOne(ctx, insert)
+	if err != nil {
+		c.JSON(http.StatusConflict, errResp("user already exists", "AUTH_409"))
+		return
+	}
+
+	id := res.InsertedID.(primitive.ObjectID)
+	c.JSON(http.StatusCreated, gin.H{
+		"success":    true,
+		"user_id":    id.Hex(),
+		"email":      req.Email,
+		"role":       req.Role,
+		"password":   tempPassword,
+	})
 }
 
 func (h *Handler) updateUser(c *gin.Context) {
