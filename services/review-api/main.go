@@ -70,6 +70,7 @@ func metricsAggregator() {
 
 		reqDeltaPerMin := float64(reqDelta)
 		errDeltaPerMin := float64(errDelta)
+		api.LastRequestsPerMin = reqDeltaPerMin
 
 		doc := bson.M{
 			"timestamp":                   ts,
@@ -416,7 +417,7 @@ func broadcastHealth() {
 			"p99_latency_ms":         inferenceMetrics.P99LatencyMs,
 			"total_predictions":      inferenceMetrics.TotalPredictions,
 			"predictions_per_minute": inferenceMetrics.PredictionsPerMinute,
-			"requests_per_minute":    inferenceMetrics.PredictionsPerMinute,
+			"requests_per_minute":    api.LastRequestsPerMin,
 			"system": map[string]interface{}{
 				"mongodb_connections":         systemMetrics.MongoDBConnections,
 				"memory_used_mb":              systemMetrics.MemoryUsedMB,
