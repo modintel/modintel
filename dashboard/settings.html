@@ -54,51 +54,55 @@
                 </div>
             </div>
 
-            <div class="section">
-                <h3>Notifications</h3>
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label">Email Alerts</div>
-                        <div class="setting-desc">Receive email for high-priority alerts</div>
+            <div class="section" id="waf-paranoia">
+                <div class="paranoia-header">
+                    <h3>WAF Paranoia</h3>
+                    <div class="paranoia-toggle">
+                        <span class="toggle-label">Blocking</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="rule-engine-enabled" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
                     </div>
-                    <label class="toggle">
-                        <input type="checkbox" id="email-alerts">
-                        <span class="toggle-slider"></span>
-                    </label>
                 </div>
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label">Daily Summary</div>
-                        <div class="setting-desc">Receive daily attack summary report</div>
+                <div class="paranoia-body">
+                    <div class="paranoia-rows">
+                        <div class="paranoia-row">
+                            <label>Detection Paranoia <span class="paranoia-hint">(1-4)</span></label>
+                            <div class="paranoia-input-group">
+                                <button class="paranoia-stepper" data-target="paranoia-level" data-dir="down">−</button>
+                                <input type="number" id="paranoia-level" min="1" max="4" value="4">
+                                <button class="paranoia-stepper" data-target="paranoia-level" data-dir="up">+</button>
+                            </div>
+                        </div>
+                        <div class="paranoia-row">
+                            <label>Blocking Paranoia <span class="paranoia-hint">(1-4)</span></label>
+                            <div class="paranoia-input-group">
+                                <button class="paranoia-stepper" data-target="blocking-paranoia" data-dir="down">−</button>
+                                <input type="number" id="blocking-paranoia" min="1" max="4" value="4">
+                                <button class="paranoia-stepper" data-target="blocking-paranoia" data-dir="up">+</button>
+                            </div>
+                        </div>
+                        <div class="paranoia-row">
+                            <label>Anomaly Threshold <span class="paranoia-hint">(1-20)</span></label>
+                            <div class="paranoia-input-group">
+                                <button class="paranoia-stepper" data-target="anomaly-inbound" data-dir="down">−</button>
+                                <input type="number" id="anomaly-inbound" min="1" max="20" value="3">
+                                <button class="paranoia-stepper" data-target="anomaly-inbound" data-dir="up">+</button>
+                            </div>
+                        </div>
                     </div>
-                    <label class="toggle">
-                        <input type="checkbox" id="daily-summary" checked>
-                        <span class="toggle-slider"></span>
-                    </label>
+                    <div class="paranoia-presets">
+                        <button class="btn btn-sm" data-preset="custom">Custom</button>
+                        <button class="btn btn-sm" data-preset="4">P4 — Paranoid</button>
+                        <button class="btn btn-sm" data-preset="3">P3 — Strict</button>
+                        <button class="btn btn-sm" data-preset="2">P2 — Moderate</button>
+                        <button class="btn btn-sm" data-preset="1">P1 — Minimal</button>
+                    </div>
                 </div>
-            </div>
-
-            <div class="section">
-                <h3>System</h3>
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label">Auto-refresh</div>
-                        <div class="setting-desc">Automatically refresh dashboard data</div>
-                    </div>
-                    <label class="toggle">
-                        <input type="checkbox" id="auto-refresh" checked>
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label">AI Enrichment</div>
-                        <div class="setting-desc">Enable ML inference on new alerts</div>
-                    </div>
-                    <label class="toggle">
-                        <input type="checkbox" id="ai-enrichment" checked>
-                        <span class="toggle-slider"></span>
-                    </label>
+                <div class="form-actions">
+                    <button class="btn btn-secondary" id="paranoia-refresh-btn">Refresh</button>
+                    <button class="btn btn-primary" id="paranoia-save-btn">Save & Restart WAF</button>
                 </div>
             </div>
         </div>
