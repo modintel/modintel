@@ -1,15 +1,15 @@
 const API_BASE = '/api';
-let currentGraphRange = 'day';
-let currentView = 'waf';
+let currentGraphRange = localStorage.getItem('indexGraphRange') || 'day';
+let currentView = localStorage.getItem('indexView') || 'waf';
 const MAX_VISIBLE_RULES = 5;
 let logsCursor = null;
 let logsHasMore = true;
 let logsLoading = false;
 let lastAlertCount = 0;
 const priorityFilters = {
-    p1: true,
-    p2: true,
-    p3: true
+    p1: localStorage.getItem('indexPriority_p1') !== 'false',
+    p2: localStorage.getItem('indexPriority_p2') !== 'false',
+    p3: localStorage.getItem('indexPriority_p3') !== 'false',
 };
 
 function formatRules(rules) {
@@ -537,6 +537,7 @@ function renderGraphLabels(range, labels) {
 
 async function updateGraph(range) {
     currentGraphRange = range;
+    localStorage.setItem('indexGraphRange', range);
     try {
         const res = await apiFetch(`${API_BASE}/trend?range=${range}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -555,13 +556,26 @@ document.querySelectorAll('.graph-btn').forEach(btn => {
     btn.addEventListener('click', () => updateGraph(btn.dataset.range));
 });
 
-updateGraph('day');
+(function restoreIndexFilters() {
+    document.querySelectorAll('.graph-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.range === currentGraphRange);
+    });
+    document.querySelectorAll('.view-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.view === currentView);
+    });
+    document.querySelectorAll('.priority-btn').forEach(function (btn) {
+        btn.classList.toggle('active', priorityFilters[btn.dataset.priority]);
+    });
+})();
+
+updateGraph(currentGraphRange);
 
 document.querySelectorAll('.view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentView = btn.dataset.view;
+        localStorage.setItem('indexView', currentView);
         logsCursor = null;
         updateLogs();
     });
@@ -571,6 +585,7 @@ document.querySelectorAll('.priority-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         btn.classList.toggle('active');
         priorityFilters[btn.dataset.priority] = btn.classList.contains('active');
+        localStorage.setItem('indexPriority_' + btn.dataset.priority, btn.classList.contains('active'));
         logsCursor = null;
         updateLogs();
     });
