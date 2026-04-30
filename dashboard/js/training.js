@@ -1,6 +1,28 @@
 const API_BASE = '/api';
 let trainingPollInterval = null;
 
+async function loadDatasets() {
+    var select = document.getElementById('train-dataset');
+    try {
+        var res = await apiFetch(API_BASE + '/datasets');
+        var data = await res.json();
+        var items = data.items || [];
+        select.innerHTML = '';
+        if (items.length === 0) {
+            select.innerHTML = '<option value="">No datasets found</option>';
+            return;
+        }
+        items.forEach(function (ds) {
+            var opt = document.createElement('option');
+            opt.value = ds.name;
+            opt.textContent = ds.name + (ds.type ? ' (' + ds.type + ')' : '');
+            select.appendChild(opt);
+        });
+    } catch (e) {
+        select.innerHTML = '<option value="">Failed to load datasets</option>';
+    }
+}
+
 document.getElementById('val-split').addEventListener('input', function() {
     document.getElementById('val-split-val').textContent = this.value + '%';
 });
@@ -224,5 +246,6 @@ if (trainModelBtn) {
     trainModelBtn.addEventListener('click', trainModel);
 }
 
+loadDatasets();
 loadTrainingStatus();
 loadTrainingHistory();
