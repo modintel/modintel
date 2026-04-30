@@ -1,7 +1,7 @@
 const API_BASE = '/api';
-let currentStatus = 'generated';
-let currentPriority = '';
-let currentSource = '';
+let currentStatus = localStorage.getItem('reviewFilter_status') || 'generated';
+let currentPriority = localStorage.getItem('reviewFilter_priority') || '';
+let currentSource = localStorage.getItem('reviewFilter_source') || '';
 let nextCursor = '';
 let hasMore = false;
 let isLoading = false;
@@ -113,13 +113,13 @@ function renderAlerts(items) {
             <td style="font-size: 0.6875rem;">${formatTimestamp(alert.timestamp)}</td>
             <td>${escapeHtml(alert.method || '—')}</td>
             <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(alert.uri || '')}">${escapeHtml(alert.uri || '—')}</td>
-            <td>${alert.http_status || alert.status || '—'}</td>
-            <td>${aiScore}</td>
-            <td>${escapeHtml(alert.ai_priority || '—')}</td>
-            <td>${alert.source === 'ml_miss_detector' ? 'L2' : 'L1'}</td>
             <td class="body-cell">
                 ${alert.body ? `<button class="btn btn-sm btn-body" data-id="${id}" title="Toggle request body">View</button>` : '—'}
             </td>
+            <td>${aiScore}</td>
+            <td>${escapeHtml(alert.ai_priority || '—')}</td>
+            <td>${alert.source === 'ml_miss_detector' ? 'L2' : 'L1'}</td>
+            <td>${alert.status === 'generated' ? 'Pending' : alert.status === 'reviewed' ? 'Reviewed' : alert.status || '—'}</td>
             <td>${label}</td>
             <td class="action-cell">
                 ${alert.status === 'generated'
@@ -234,9 +234,9 @@ document.querySelectorAll('.filter-row button').forEach(btn => {
         document.querySelectorAll(`.filter-row button[data-filter="${filterGroup}"]`).forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
 
-        if (filterGroup === 'status') currentStatus = btn.dataset.value;
-        if (filterGroup === 'priority') currentPriority = btn.dataset.value;
-        if (filterGroup === 'source') currentSource = btn.dataset.value;
+        if (filterGroup === 'status') { currentStatus = btn.dataset.value; localStorage.setItem('reviewFilter_status', btn.dataset.value); }
+        if (filterGroup === 'priority') { currentPriority = btn.dataset.value; localStorage.setItem('reviewFilter_priority', btn.dataset.value); }
+        if (filterGroup === 'source') { currentSource = btn.dataset.value; localStorage.setItem('reviewFilter_source', btn.dataset.value); }
 
         loadReviewAlerts(true);
     });
@@ -244,6 +244,21 @@ document.querySelectorAll('.filter-row button').forEach(btn => {
 
 loadReviewStats();
 loadReviewAlerts(true);
+
+(function restoreFilters() {
+    var filters = {
+        status: currentStatus,
+        priority: currentPriority,
+        source: currentSource,
+    };
+    Object.keys(filters).forEach(function (group) {
+        var val = filters[group];
+        if (val === undefined) return;
+        document.querySelectorAll('.filter-row button[data-filter="' + group + '"]').forEach(function (btn) {
+            btn.classList.toggle('active', btn.dataset.value === val);
+        });
+    });
+})();
 
 const cutBtn = document.getElementById('cut-dataset-btn');
 const cutModal = document.getElementById('cut-modal');
