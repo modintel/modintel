@@ -279,8 +279,170 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const saveParanoiaBtn = document.getElementById('paranoia-save-btn');
+    if (saveParanoiaBtn) {
+        saveParanoiaBtn.addEventListener('click', saveParanoiaConfig);
+    }
+
     if (getUser()) {
         loadProfile();
         loadSessions();
+        loadParanoiaConfig();
+        scrollToParanoia();
     }
+});
+
+function scrollToParanoia() {
+    if (window.location.hash === "#waf-paranoia") {
+        var el = document.getElementById("waf-paranoia");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+}
+
+document.querySelectorAll(".paranoia-stepper").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+        var target = document.getElementById(this.dataset.target);
+        var val = parseInt(target.value, 10) || 0;
+        var dir = this.dataset.dir;
+        var min = parseInt(target.min, 10);
+        var max = parseInt(target.max, 10);
+        if (dir === "up" && val < max) target.value = val + 1;
+        if (dir === "down" && val > min) target.value = val - 1;
+        highlightActivePreset();
+    });
+});
+
+async function loadParanoiaConfig() {
+    try {
+        const res = await apiFetch('/api/waf/paranoia');
+        if (!res.ok) return;
+        const payload = await res.json();
+        const data = payload?.data;
+        if (!data) return;
+        document.getElementById('paranoia-level').value = data.paranoia;
+        document.getElementById('blocking-paranoia').value = data.blocking_paranoia;
+        document.getElementById('anomaly-inbound').value = data.anomaly_inbound;
+        const toggle = document.getElementById('rule-engine-enabled');
+        if (toggle) {
+            toggle.checked = data.rule_engine === 'On';
+            if (!toggle.hasAttribute('data-listener-added')) {
+                toggle.addEventListener('change', () => {
+                    updateParanoiaInputsState();
+                    saveParanoiaConfig();
+                });
+                toggle.setAttribute('data-listener-added', 'true');
+            }
+        }
+        updateParanoiaInputsState();
+        highlightActivePreset();
+    } catch (e) {
+        console.error('Failed to load paranoia config', e);
+    }
+}
+
+function updateParanoiaInputsState() {
+    const toggle = document.getElementById('rule-engine-enabled');
+    const isBlocking = toggle && toggle.checked;
+    const inputs = [
+        document.getElementById('paranoia-level'),
+        document.getElementById('blocking-paranoia'),
+        document.getElementById('anomaly-inbound'),
+        document.querySelector('.paranoia-stepper')
+    ];
+    const rows = document.querySelectorAll('.paranoia-row');
+    const presets = document.querySelector('.paranoia-presets');
+    const saveBtn = document.getElementById('paranoia-save-btn');
+    const refreshBtn = document.getElementById('paranoia-refresh-btn');
+
+    if (isBlocking) {
+        inputs.forEach(el => { if (el) el.removeAttribute('readonly'); if (el) el.removeAttribute('disabled'); });
+        document.querySelectorAll('.paranoia-stepper').forEach(el => el.removeAttribute('disabled'));
+        document.querySelectorAll('.paranoia-row').forEach(el => el.style.opacity = '1');
+        if (presets) presets.style.opacity = '1';
+        if (saveBtn) saveBtn.removeAttribute('disabled');
+        if (refreshBtn) refreshBtn.removeAttribute('disabled');
+    } else {
+        inputs.forEach(el => { if (el) el.setAttribute('readonly', ''); if (el) el.setAttribute('disabled', ''); });
+        document.querySelectorAll('.paranoia-stepper').forEach(el => el.setAttribute('disabled', ''));
+        document.querySelectorAll('.paranoia-row').forEach(el => el.style.opacity = '0.5');
+        if (presets) presets.style.opacity = '0.5';
+        if (saveBtn) saveBtn.setAttribute('disabled', '');
+        if (refreshBtn) refreshBtn.setAttribute('disabled', '');
+    }
+}
+
+async function saveParanoiaConfig() {
+    const paranoia = parseInt(document.getElementById('paranoia-level').value, 10);
+    const blocking = parseInt(document.getElementById('blocking-paranoia').value, 10);
+    const anomaly = parseInt(document.getElementById('anomaly-inbound').value, 10);
+    const toggle = document.getElementById('rule-engine-enabled');
+    const ruleEngine = toggle && toggle.checked ? 'On' : 'DetectionOnly';
+
+    try {
+        const res = await apiFetch('/api/waf/paranoia', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                paranoia: paranoia,
+                blocking_paranoia: blocking,
+                anomaly_inbound: anomaly,
+                rule_engine: ruleEngine
+            })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${res.status}`);
+        }
+        const payload = await res.json();
+        showModal('WAF Updated', `Paranoia level set to ${payload.data.paranoia}. WAF restarting...`);
+    } catch (e) {
+        showModal('Error', e.message || 'Failed to save WAF config.', 'error');
+    }
+}
+
+function highlightActivePreset() {
+    const paranoia = parseInt(document.getElementById('paranoia-level')?.value, 10);
+    const blocking = parseInt(document.getElementById('blocking-paranoia')?.value, 10);
+    const anomaly = parseInt(document.getElementById('anomaly-inbound')?.value, 10);
+
+    const presets = {
+        1: { p: 1, b: 1, a: 12 },
+        2: { p: 2, b: 2, a: 8 },
+        3: { p: 3, b: 3, a: 5 },
+        4: { p: 4, b: 4, a: 3 }
+    };
+
+    let activePreset = 'custom';
+    for (const [level, vals] of Object.entries(presets)) {
+        if (vals.p === paranoia && vals.b === blocking && vals.a === anomaly) {
+            activePreset = level;
+            break;
+        }
+    }
+
+    document.querySelectorAll('.paranoia-presets .btn').forEach(btn => {
+        const preset = btn.dataset.preset;
+        if (preset === activePreset) {
+            btn.classList.add('active');
+            btn.style.backgroundColor = '#fff';
+            btn.style.borderColor = '#ff570a';
+            btn.style.color = '#ff570a';
+        } else {
+            btn.classList.remove('active');
+            btn.style.backgroundColor = '';
+            btn.style.borderColor = '';
+            btn.style.color = '';
+        }
+    });
+}
+
+document.querySelectorAll(".paranoia-presets .btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+        var level = parseInt(this.dataset.preset, 10);
+        if (isNaN(level)) return;
+        document.getElementById("paranoia-level").value = level;
+        document.getElementById("blocking-paranoia").value = level;
+        document.getElementById("anomaly-inbound").value = level === 1 ? 12 : (level === 2 ? 8 : (level === 3 ? 5 : 3));
+        highlightActivePreset();
+    });
 });
