@@ -103,18 +103,6 @@
     font-size: 0.8125rem;
 }
 
-.data-table th {
-    text-align: left;
-    padding: 10px 12px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--fg-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-panel);
-}
-
 .data-table td {
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
