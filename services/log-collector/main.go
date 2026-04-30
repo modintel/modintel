@@ -511,6 +511,7 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 
 		if wafPassed {
 			doc.Source = "ml_miss_detector"
+			doc.Status = "generated"
 			doc.TriggeredRules = matchedSigs
 			enrichMiss(doc)
 
