@@ -221,6 +221,34 @@ async function revokeAllSessionsAction() {
     );
 }
 
+async function sendInvite() {
+    const email = document.getElementById('invite-email').value.trim();
+    const role = document.getElementById('invite-role').value;
+    if (!email) {
+        showModal('Invite Error', 'Please enter an email address.', 'error');
+        return;
+    }
+    try {
+        const res = await apiFetch('/api/v1/users/invite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, role }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showModal('Invite Failed', err.error || 'Failed to invite user', 'error');
+            return;
+        }
+        const data = await res.json();
+        document.getElementById('invite-email').value = '';
+        showModal('User Invited',
+            `${data.email} added as ${data.role}. Temporary password: ${data.password}`,
+            'info');
+    } catch (e) {
+        showModal('Invite Error', 'Failed to send invite.', 'error');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const refreshBtn = document.getElementById('refresh-sessions-btn');
     const revokeAllBtn = document.getElementById('revoke-all-sessions-btn');
@@ -238,6 +266,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (cancelBtn) {
         cancelBtn.addEventListener('click', () => setProfileEditable(false));
+    }
+
+    const inviteBtn = document.getElementById('invite-btn');
+    if (inviteBtn) {
+        inviteBtn.addEventListener('click', sendInvite);
+    }
+    const inviteEmail = document.getElementById('invite-email');
+    if (inviteEmail && inviteBtn) {
+        inviteEmail.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendInvite();
+        });
     }
 
     if (getUser()) {
