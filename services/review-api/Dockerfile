@@ -1,5 +1,7 @@
 FROM golang:1.26-alpine
 
+RUN apk add --no-cache docker-cli docker-compose
+
 WORKDIR /app
 
 COPY go.mod go.sum ./
