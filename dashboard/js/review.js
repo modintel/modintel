@@ -5,6 +5,7 @@ let currentSource = '';
 let nextCursor = '';
 let hasMore = false;
 let isLoading = false;
+const alertBodies = {};
 
 function getAlertId(alert) {
     if (!alert) return '';
@@ -24,6 +25,16 @@ function formatTimestamp(ts) {
 function escapeHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function formatBodyHtml(body) {
+    if (!body) return '';
+    try {
+        var parsed = JSON.parse(body);
+        return '<pre class="body-json">' + escapeHtml(JSON.stringify(parsed, null, 2)) + '</pre>';
+    } catch (e) {
+        return '<pre class="body-text">' + escapeHtml(body) + '</pre>';
+    }
 }
 
 async function loadReviewStats() {
@@ -80,7 +91,7 @@ async function loadReviewAlerts(reset) {
 function renderAlerts(items) {
     const tbody = document.getElementById('review-body');
     if (!items.length && tbody.children.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="color: var(--fg-muted); text-align: center; padding: 32px;">No alerts to review.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="color: var(--fg-muted); text-align: center; padding: 32px;">No alerts to review.</td></tr>';
         return;
     }
 
@@ -96,6 +107,8 @@ function renderAlerts(items) {
         const label = alert.human_label === 'true_positive' ? 'TP' :
                      alert.human_label === 'false_positive' ? 'FP' : '—';
 
+        if (alert.body) alertBodies[id] = alert.body;
+
         tr.innerHTML = `
             <td style="font-size: 0.6875rem;">${formatTimestamp(alert.timestamp)}</td>
             <td>${escapeHtml(alert.method || '—')}</td>
@@ -104,6 +117,9 @@ function renderAlerts(items) {
             <td>${aiScore}</td>
             <td>${escapeHtml(alert.ai_priority || '—')}</td>
             <td>${alert.source === 'ml_miss_detector' ? 'L2' : 'L1'}</td>
+            <td class="body-cell">
+                ${alert.body ? `<button class="btn btn-sm btn-body" data-id="${id}" title="Toggle request body">View</button>` : '—'}
+            </td>
             <td>${label}</td>
             <td class="action-cell">
                 ${alert.status === 'generated'
@@ -138,8 +154,11 @@ async function submitReview(id, humanLabel) {
         }
 
         loadReviewStats();
+        delete alertBodies[id];
 
         if (humanLabel === '') {
+            var expandRow = document.getElementById('body-expand-' + id);
+            if (expandRow) expandRow.remove();
             const row = document.getElementById(`review-row-${id}`);
             if (row) {
                 row.remove();
@@ -150,6 +169,9 @@ async function submitReview(id, humanLabel) {
             }
             return;
         }
+
+        var expandRow = document.getElementById('body-expand-' + id);
+        if (expandRow) expandRow.remove();
 
         const row = document.getElementById(`review-row-${id}`);
         if (row) {
@@ -166,12 +188,38 @@ async function submitReview(id, humanLabel) {
     }
 }
 
+function toggleBodyRow(id) {
+    var row = document.getElementById('review-row-' + id);
+    if (!row) return;
+    var expandId = 'body-expand-' + id;
+    var existing = document.getElementById(expandId);
+    if (existing) {
+        existing.remove();
+        var btn = row.querySelector('.btn-body');
+        if (btn) btn.textContent = 'View';
+        return;
+    }
+    var body = alertBodies[id];
+    if (!body) return;
+    var expandRow = document.createElement('tr');
+    expandRow.id = expandId;
+    expandRow.className = 'body-expand-row';
+    expandRow.innerHTML = '<td colspan="10"><div class="body-expand-content">' + formatBodyHtml(body) + '</div></td>';
+    row.insertAdjacentElement('afterend', expandRow);
+    var btn = row.querySelector('.btn-body');
+    if (btn) btn.textContent = 'Hide';
+}
+
 document.getElementById('load-more-review').addEventListener('click', () => loadReviewAlerts(false));
 
 document.getElementById('review-body').addEventListener('click', (e) => {
-    const btn = e.target.closest('.btn-tp, .btn-fp, .btn-undo');
+    const btn = e.target.closest('.btn-tp, .btn-fp, .btn-undo, .btn-body');
     if (!btn) return;
     const id = btn.dataset.id;
+    if (btn.classList.contains('btn-body')) {
+        toggleBodyRow(id);
+        return;
+    }
     if (btn.classList.contains('btn-undo')) {
         showConfirm('Undo Review', 'Remove the review label and return this alert to the pending queue?', () => submitReview(id, ''));
         return;
