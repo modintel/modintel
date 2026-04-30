@@ -40,9 +40,10 @@ services:
     environment:
       - BACKEND=juice-shop:3000
       - CORAZA_AUDIT_LOG=/var/log/coraza/audit.json
-      - PARANOIA=4
-      - BLOCKING_PARANOIA=4
-      - ANOMALY_INBOUND=3
+      - CORAZA_RULE_ENGINE=On
+      - PARANOIA=2
+      - BLOCKING_PARANOIA=2
+      - ANOMALY_INBOUND=8
     networks:
       - modintel-net
     restart: always
@@ -94,6 +95,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./proxy-waf/overrides:/waf-overrides
+      - .:/project:rw
       - ./dashboard:/srv/dashboard:ro
     environment:
       - MONGO_URI=${MONGO_URI}
