@@ -6,6 +6,15 @@
     border-radius: 4px;
 }
 
+.panel-left {
+    display: flex;
+    flex-direction: column;
+}
+
+#waf-paranoia {
+    margin-top: auto;
+}
+
 .section h3 {
     margin: 0 0 16px;
     font-size: 0.875rem;
@@ -356,4 +365,210 @@
     .account-profile #logout-btn {
         margin-left: auto;
     }
+}
+
+.paranoia-body {
+    display: flex;
+    flex-direction: row;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.paranoia-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.paranoia-header h3 {
+    margin: 0;
+}
+
+.paranoia-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.toggle-label {
+    font-size: 0.75rem;
+    color: var(--fg-subtle);
+    font-weight: 500;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 32px;
+    height: 16px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 16px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 12px;
+    width: 12px;
+    left: 2px;
+    top: 2px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: #ff570a;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    left: 18px;
+}
+
+.paranoia-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    flex: 1;
+}
+
+.paranoia-presets {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    justify-content: center;
+}
+
+.paranoia-presets .btn-sm {
+    padding: 4px 10px;
+    font-size: 0.6875rem;
+}
+
+.paranoia-row label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--fg);
+    margin-bottom: 6px;
+}
+
+.paranoia-hint {
+    font-weight: 400;
+    font-size: 0.6875rem;
+    color: var(--fg-muted);
+}
+
+.paranoia-input-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.paranoia-input-group input {
+    width: 22px;
+    padding: 1px;
+    text-align: center;
+    font-size: 0.5625rem;
+    font-weight: 600;
+    border: none;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    -moz-appearance: textfield;
+}
+
+.paranoia-stepper {
+    width: 18px;
+    height: 20px;
+    border: none;
+    background: var(--bg-panel);
+    color: var(--fg);
+    font-size: 0.5625rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+
+.paranoia-input-group input {
+    width: 48px;
+    padding: 6px 4px;
+    text-align: center;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    border: none;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    -moz-appearance: textfield;
+}
+
+.paranoia-input-group input::-webkit-outer-spin-button,
+.paranoia-input-group input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.paranoia-stepper {
+    width: 32px;
+    height: 34px;
+    border: none;
+    background: var(--bg-panel);
+    color: var(--fg);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+
+.paranoia-stepper:hover {
+    background: var(--border);
+}
+
+.paranoia-presets {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+
+.paranoia-presets .btn-sm {
+    padding: 4px 10px;
+    font-size: 0.6875rem;
+}
+
+#waf-paranoia:target {
+    animation: paranoia-glow 3s ease-out;
+}
+
+@keyframes paranoia-glow {
+    0% { box-shadow: 0 0 0 3px var(--accent), 0 0 12px rgba(255, 87, 10, 0.3); }
+    100% { box-shadow: 0 0 0 0 transparent; }
 }
