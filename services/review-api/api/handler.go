@@ -928,23 +928,23 @@ func GetLogs(c *gin.Context) {
 	opts := options.Find().
 		SetSort(bson.D{{Key: "_id", Value: -1}}).
 		SetLimit(int64(params.Limit + 1)).
-SetProjection(bson.M{
+		SetProjection(bson.M{
 			"_id":                    1,
 			"timestamp":              1,
 			"client_ip":              1,
-			"uri":                   1,
+			"uri":                    1,
 			"anomaly_score":          1,
 			"triggered_rules":        1,
 			"ai_status":              1,
 			"ai_score":               1,
-			"ai_confidence":         1,
-			"ai_priority":           1,
+			"ai_confidence":          1,
+			"ai_priority":            1,
 			"ai_explanation":         1,
 			"ai_model_version":       1,
 			"ai_entropy":             1,
 			"ai_confidence_interval": 1,
 			"status":                 1,
-			"source":                1,
+			"source":                 1,
 		})
 	cursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
@@ -1309,10 +1309,34 @@ func GetmonitorHealth(c *gin.Context) {
 	}
 
 	wg.Add(4)
-	go func() { defer wg.Done(); s := checkHTTPService("http://log-collector:8081/health", 3*time.Second); mu.Lock(); services["log-collector"] = s; mu.Unlock() }()
-	go func() { defer wg.Done(); s := checkHTTPService("http://inference-engine:8083/health", 3*time.Second); mu.Lock(); services["inference-engine"] = s; mu.Unlock() }()
-	go func() { defer wg.Done(); s := checkTCPService("proxy-waf", 8080, 3*time.Second); mu.Lock(); services["proxy-waf"] = s; mu.Unlock() }()
-	go func() { defer wg.Done(); s := checkHTTPService("http://auth-service:8084/health", 3*time.Second); mu.Lock(); services["auth-service"] = s; mu.Unlock() }()
+	go func() {
+		defer wg.Done()
+		s := checkHTTPService("http://log-collector:8081/health", 3*time.Second)
+		mu.Lock()
+		services["log-collector"] = s
+		mu.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		s := checkHTTPService("http://inference-engine:8083/health", 3*time.Second)
+		mu.Lock()
+		services["inference-engine"] = s
+		mu.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		s := checkTCPService("proxy-waf", 8080, 3*time.Second)
+		mu.Lock()
+		services["proxy-waf"] = s
+		mu.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		s := checkHTTPService("http://auth-service:8084/health", 3*time.Second)
+		mu.Lock()
+		services["auth-service"] = s
+		mu.Unlock()
+	}()
 	wg.Wait()
 
 	c.JSON(http.StatusOK, gin.H{
