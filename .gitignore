@@ -19,24 +19,21 @@ venv/
 .pytest_cache/
 *.exe
 
-# Binaries
 services/log-collector/log-collector
 services/log-collector/log-collector.exe
 !services/log-collector/main.go
 !services/log-collector/go.mod
 !services/log-collector/go.sum
 
-# ML artifacts
 data/
 ml-pipeline/data/
 ml-pipeline/models/
 ml-pipeline/notebooks/.ipynb_checkpoints/
 
-# Generated WAF overrides
 proxy-waf/overrides/managed-overrides.conf
 
-#md files
 modintel_regex.signatures
 concurrency.md
 rules.md
+agents.md
 invite.md
