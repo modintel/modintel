@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pymongo import MongoClient
@@ -388,7 +388,7 @@ def _restart_inference_engine(version: str):
 
 
 @app.post("/api/training/datasets/cut")
-async def cut_reviewed_dataset(body: dict = {}):
+async def cut_reviewed_dataset(body: dict = Body({})):
     try:
         import pandas as pd
     except ImportError:
@@ -427,7 +427,6 @@ async def cut_reviewed_dataset(body: dict = {}):
         datasets_coll = get_db()["datasets"]
         doc = {
             "name": dataset_name,
-            "type": "Mixed",
             "type": "Mixed",
             "samples": total,
             "attack_pct": attack_pct,
