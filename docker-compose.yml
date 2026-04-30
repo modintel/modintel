@@ -36,7 +36,6 @@ services:
       - ./proxy-waf/coraza.conf:/opt/coraza/config.d/user.conf
       - ./proxy-waf/custom_rules.conf:/opt/coraza/config.d/custom.conf
       - ./proxy-waf/overrides:/opt/coraza/overrides
-      - ./dashboard:/srv/dashboard:ro
       - modintel_waf-logs:/var/log/coraza
     environment:
       - BACKEND=juice-shop:3000
