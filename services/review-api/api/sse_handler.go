@@ -337,10 +337,34 @@ func CollectServiceHealth() map[string]string {
 	}
 
 	wg.Add(4)
-	go func() { defer wg.Done(); s := checkHTTPService("http://log-collector:8081/health", 3*time.Second); mu.Lock(); services["log-collector"] = s; mu.Unlock() }()
-	go func() { defer wg.Done(); s := checkHTTPService("http://inference-engine:8083/health", 3*time.Second); mu.Lock(); services["inference-engine"] = s; mu.Unlock() }()
-	go func() { defer wg.Done(); s := checkTCPService("proxy-waf", 8080, 3*time.Second); mu.Lock(); services["proxy-waf"] = s; mu.Unlock() }()
-	go func() { defer wg.Done(); s := checkHTTPService("http://auth-service:8084/health", 3*time.Second); mu.Lock(); services["auth-service"] = s; mu.Unlock() }()
+	go func() {
+		defer wg.Done()
+		s := checkHTTPService("http://log-collector:8081/health", 3*time.Second)
+		mu.Lock()
+		services["log-collector"] = s
+		mu.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		s := checkHTTPService("http://inference-engine:8083/health", 3*time.Second)
+		mu.Lock()
+		services["inference-engine"] = s
+		mu.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		s := checkTCPService("proxy-waf", 8080, 3*time.Second)
+		mu.Lock()
+		services["proxy-waf"] = s
+		mu.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		s := checkHTTPService("http://auth-service:8084/health", 3*time.Second)
+		mu.Lock()
+		services["auth-service"] = s
+		mu.Unlock()
+	}()
 	wg.Wait()
 
 	return services
