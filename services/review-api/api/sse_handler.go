@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -304,7 +305,7 @@ func writeInitialHealth(send func(string, string)) {
 		"p99_latency_ms":         inferenceMetrics.P99LatencyMs,
 		"total_predictions":      inferenceMetrics.TotalPredictions,
 		"predictions_per_minute": inferenceMetrics.PredictionsPerMinute,
-		"requests_per_minute":    inferenceMetrics.PredictionsPerMinute,
+		"requests_per_minute":    GetRequestsPerMin(),
 		"system": map[string]interface{}{
 			"mongodb_connections":         systemMetrics.MongoDBConnections,
 			"memory_used_mb":              systemMetrics.MemoryUsedMB,
@@ -325,6 +326,9 @@ func CollectServiceHealth() map[string]string {
 		"review-api": "ok",
 	}
 
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -332,10 +336,12 @@ func CollectServiceHealth() map[string]string {
 		services["review-api"] = "degraded"
 	}
 
-	services["log-collector"] = checkHTTPService("http://log-collector:8081/health", 3*time.Second)
-	services["inference-engine"] = checkHTTPService("http://inference-engine:8083/health", 3*time.Second)
-	services["proxy-waf"] = checkTCPService("proxy-waf", 8080, 3*time.Second)
-	services["auth-service"] = checkHTTPService("http://auth-service:8084/health", 3*time.Second)
+	wg.Add(4)
+	go func() { defer wg.Done(); s := checkHTTPService("http://log-collector:8081/health", 3*time.Second); mu.Lock(); services["log-collector"] = s; mu.Unlock() }()
+	go func() { defer wg.Done(); s := checkHTTPService("http://inference-engine:8083/health", 3*time.Second); mu.Lock(); services["inference-engine"] = s; mu.Unlock() }()
+	go func() { defer wg.Done(); s := checkTCPService("proxy-waf", 8080, 3*time.Second); mu.Lock(); services["proxy-waf"] = s; mu.Unlock() }()
+	go func() { defer wg.Done(); s := checkHTTPService("http://auth-service:8084/health", 3*time.Second); mu.Lock(); services["auth-service"] = s; mu.Unlock() }()
+	wg.Wait()
 
 	return services
 }
