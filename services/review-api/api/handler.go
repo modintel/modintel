@@ -64,6 +64,7 @@ var (
 	requestStats     = newRequestWindowStats()
 	ruleIDPattern    = regexp.MustCompile(`^[0-9]+$`)
 	restartInFlight  atomic.Bool
+	wafConfigPath    = "/waf-overrides/waf-config.json"
 	dockerHTTPClient = &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -136,6 +137,27 @@ func (s *requestWindowStats) totals(window time.Duration, now time.Time) (uint64
 	}
 
 	return requests, errors
+}
+
+func (s *requestWindowStats) liveRPM(now time.Time) float64 {
+	currentMinute := now.UTC().Truncate(time.Minute).Unix()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var total uint64
+	var count int
+	for i := int64(1); i <= 2; i++ {
+		m := currentMinute - i*60
+		if bucket, ok := s.buckets[m]; ok {
+			total += bucket.Requests
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+	return float64(total) / float64(count)
 }
 
 type WAFRule struct {
@@ -228,6 +250,8 @@ func SetupRouter() *gin.Engine {
 		api.GET("/stats", RequireRoles("admin", "analyst", "viewer"), GetStats)
 		api.GET("/trend", RequireRoles("admin", "analyst", "viewer"), GetTrend)
 		api.GET("/config", RequireRoles("admin", "analyst", "viewer"), GetConfig)
+		api.GET("/waf/paranoia", RequireRoles("admin"), GetWAFParanoia)
+		api.PUT("/waf/paranoia", RequireRoles("admin"), UpdateWAFParanoia)
 		api.GET("/monitor/health", RequireRoles("admin", "analyst", "viewer"), GetmonitorHealth)
 		api.GET("/monitor/metrics", RequireRoles("admin", "analyst", "viewer"), GetmonitorMetrics)
 		api.POST("/system/restart/proxy-waf", RequireRoles("admin"), RestartProxyWAF)
@@ -575,6 +599,169 @@ func GetConfig(c *gin.Context) {
 	})
 }
 
+type WAFParanoiaConfig struct {
+	Paranoia         int    `json:"paranoia"`
+	BlockingParanoia int    `json:"blocking_paranoia"`
+	AnomalyInbound   int    `json:"anomaly_inbound"`
+	RuleEngine       string `json:"rule_engine"`
+}
+
+func GetWAFParanoia(c *gin.Context) {
+	cfg := readParanoiaConfig()
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": cfg})
+}
+
+type UpdateWAFParanoiaRequest struct {
+	Paranoia         *int    `json:"paranoia"`
+	BlockingParanoia *int    `json:"blocking_paranoia"`
+	AnomalyInbound   *int    `json:"anomaly_inbound"`
+	RuleEngine       *string `json:"rule_engine"`
+}
+
+func UpdateWAFParanoia(c *gin.Context) {
+	var req UpdateWAFParanoiaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	cfg := readParanoiaConfig()
+
+	if req.Paranoia != nil {
+		if *req.Paranoia < 1 || *req.Paranoia > 4 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "paranoia must be 1-4"})
+			return
+		}
+		cfg.Paranoia = *req.Paranoia
+	}
+
+	if req.BlockingParanoia != nil {
+		if *req.BlockingParanoia < 1 || *req.BlockingParanoia > 4 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "blocking_paranoia must be 1-4"})
+			return
+		}
+		cfg.BlockingParanoia = *req.BlockingParanoia
+	}
+
+	if req.AnomalyInbound != nil {
+		if *req.AnomalyInbound < 1 || *req.AnomalyInbound > 20 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "anomaly_inbound must be 1-20"})
+			return
+		}
+		cfg.AnomalyInbound = *req.AnomalyInbound
+	}
+
+	if req.RuleEngine != nil {
+		valid := *req.RuleEngine == "On" || *req.RuleEngine == "DetectionOnly"
+		if !valid {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "rule_engine must be 'On' or 'DetectionOnly'"})
+			return
+		}
+		cfg.RuleEngine = *req.RuleEngine
+	}
+
+	if err := writeParanoiaConfig(cfg); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save config"})
+		return
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		containerID, err := dockerFindComposeServiceContainer(ctx, "proxy-waf")
+		if err != nil {
+			log.Printf("failed to find proxy-waf container: %v", err)
+			return
+		}
+		dockerRestartContainer(ctx, containerID)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": cfg})
+}
+
+func readParanoiaConfig() WAFParanoiaConfig {
+	cfg := WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On"}
+	data, err := os.ReadFile(wafConfigPath)
+	if err != nil {
+		return cfg
+	}
+	json.Unmarshal(data, &cfg)
+	if cfg.Paranoia < 1 {
+		cfg.Paranoia = 4
+	}
+	if cfg.BlockingParanoia < 1 {
+		cfg.BlockingParanoia = 4
+	}
+	if cfg.AnomalyInbound < 1 {
+		cfg.AnomalyInbound = 3
+	}
+	if cfg.RuleEngine == "" {
+		cfg.RuleEngine = "On"
+	}
+	return cfg
+}
+
+func writeParanoiaConfig(cfg WAFParanoiaConfig) error {
+	dir := filepath.Dir(wafConfigPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(wafConfigPath, data, 0644); err != nil {
+		return err
+	}
+
+	corazaPath := "/project/proxy-waf/coraza.conf"
+	corazaContent, err := os.ReadFile(corazaPath)
+	if err != nil {
+		return err
+	}
+	corazaLines := strings.Split(string(corazaContent), "\n")
+	var newCorazaLines []string
+	ruleEngineSet := false
+	for _, line := range corazaLines {
+		if strings.HasPrefix(strings.TrimSpace(line), "SecRuleEngine") {
+			newCorazaLines = append(newCorazaLines, fmt.Sprintf("SecRuleEngine %s", cfg.RuleEngine))
+			ruleEngineSet = true
+		} else {
+			newCorazaLines = append(newCorazaLines, line)
+		}
+	}
+	if !ruleEngineSet {
+		newCorazaLines = append([]string{fmt.Sprintf("SecRuleEngine %s", cfg.RuleEngine)}, newCorazaLines...)
+	}
+	if err := os.WriteFile(corazaPath, []byte(strings.Join(newCorazaLines, "\n")), 0644); err != nil {
+		return err
+	}
+
+	composePath := "/project/docker-compose.yml"
+	content, err := os.ReadFile(composePath)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(content), "\n")
+	var newLines []string
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "- PARANOIA=") {
+			newLines = append(newLines, fmt.Sprintf("      - PARANOIA=%d", cfg.Paranoia))
+		} else if strings.HasPrefix(strings.TrimSpace(line), "- BLOCKING_PARANOIA=") {
+			newLines = append(newLines, fmt.Sprintf("      - BLOCKING_PARANOIA=%d", cfg.BlockingParanoia))
+		} else if strings.HasPrefix(strings.TrimSpace(line), "- ANOMALY_INBOUND=") {
+			newLines = append(newLines, fmt.Sprintf("      - ANOMALY_INBOUND=%d", cfg.AnomalyInbound))
+		} else if strings.HasPrefix(strings.TrimSpace(line), "- CORAZA_RULE_ENGINE=") {
+			newLines = append(newLines, fmt.Sprintf("      - CORAZA_RULE_ENGINE=%s", cfg.RuleEngine))
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+
+	return os.WriteFile(composePath, []byte(strings.Join(newLines, "\n")), 0644)
+}
+
 func GetWhoAmI(c *gin.Context) {
 	claimsAny, exists := c.Get("access_claims")
 	if !exists {
@@ -741,22 +928,23 @@ func GetLogs(c *gin.Context) {
 	opts := options.Find().
 		SetSort(bson.D{{Key: "_id", Value: -1}}).
 		SetLimit(int64(params.Limit + 1)).
-		SetProjection(bson.M{
+SetProjection(bson.M{
 			"_id":                    1,
 			"timestamp":              1,
 			"client_ip":              1,
-			"uri":                    1,
+			"uri":                   1,
 			"anomaly_score":          1,
 			"triggered_rules":        1,
 			"ai_status":              1,
 			"ai_score":               1,
-			"ai_confidence":          1,
-			"ai_priority":            1,
+			"ai_confidence":         1,
+			"ai_priority":           1,
 			"ai_explanation":         1,
 			"ai_model_version":       1,
 			"ai_entropy":             1,
 			"ai_confidence_interval": 1,
-			"source":                 1,
+			"status":                 1,
+			"source":                1,
 		})
 	cursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
@@ -1113,14 +1301,19 @@ func GetmonitorHealth(c *gin.Context) {
 		"review-api": "ok",
 	}
 
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
 	if err := db.Client.Ping(ctx, nil); err != nil {
 		services["review-api"] = "degraded"
 	}
 
-	services["log-collector"] = checkHTTPService("http://log-collector:8081/health", 3*time.Second)
-	services["inference-engine"] = checkHTTPService("http://inference-engine:8083/health", 3*time.Second)
-	services["proxy-waf"] = checkTCPService("proxy-waf", 8080, 3*time.Second)
-	services["auth-service"] = checkHTTPService("http://auth-service:8084/health", 3*time.Second)
+	wg.Add(4)
+	go func() { defer wg.Done(); s := checkHTTPService("http://log-collector:8081/health", 3*time.Second); mu.Lock(); services["log-collector"] = s; mu.Unlock() }()
+	go func() { defer wg.Done(); s := checkHTTPService("http://inference-engine:8083/health", 3*time.Second); mu.Lock(); services["inference-engine"] = s; mu.Unlock() }()
+	go func() { defer wg.Done(); s := checkTCPService("proxy-waf", 8080, 3*time.Second); mu.Lock(); services["proxy-waf"] = s; mu.Unlock() }()
+	go func() { defer wg.Done(); s := checkHTTPService("http://auth-service:8084/health", 3*time.Second); mu.Lock(); services["auth-service"] = s; mu.Unlock() }()
+	wg.Wait()
 
 	c.JSON(http.StatusOK, gin.H{
 		"services":  services,
@@ -1272,7 +1465,7 @@ func GetmonitorMetrics(c *gin.Context) {
 		"predictions_per_minute":   inferenceMetrics.PredictionsPerMinute,
 		"model_version":            inferenceMetrics.ModelVersion,
 		"inference_uptime_seconds": inferenceMetrics.UptimeSeconds,
-		"requests_per_minute":      inferenceMetrics.PredictionsPerMinute,
+		"requests_per_minute":      GetRequestsPerMin(),
 		"error_rate":               errorRate,
 		"error_rate_window":        window.String(),
 		"window_requests":          window_requests,
@@ -1671,6 +1864,16 @@ func GetTotalRequests() uint64 {
 
 func GetTotalErrors() uint64 {
 	return totalErrors.Load()
+}
+
+var LastRequestsPerMin float64
+
+func GetRequestsPerMin() float64 {
+	live := requestStats.liveRPM(time.Now())
+	if live > 0 {
+		return live
+	}
+	return LastRequestsPerMin
 }
 
 func GetSystemMetrics(ctx context.Context) systemMetricsData {
