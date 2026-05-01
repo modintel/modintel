@@ -140,7 +140,7 @@ do {
     foreach ($atk in $attacks) {
         $result = Invoke-Attack $atk
         if ($result -eq "blocked") { $blocked++ } else { $passed++ }
-        Start-Sleep -Milliseconds 100
+        Start-Sleep -Milliseconds 300
     }
 
     $totalBlocked += $blocked

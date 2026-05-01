@@ -181,7 +181,7 @@
     display: flex;
     gap: 8px;
     align-items: center;
-    max-width: 55%;
+    max-width: 45%;
 }
 
 .invite-input {
@@ -202,7 +202,7 @@
 }
 
 .invite-role {
-    width: 110px;
+    width: 70px;
     flex-shrink: 0;
     padding: 7px 8px;
     font-size: 0.8125rem;
