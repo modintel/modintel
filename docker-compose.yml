@@ -35,15 +35,17 @@ services:
       - ./proxy-waf/Caddyfile:/config/caddy/Caddyfile
       - ./proxy-waf/coraza.conf:/opt/coraza/config.d/user.conf
       - ./proxy-waf/custom_rules.conf:/opt/coraza/config.d/custom.conf
+      - ./proxy-waf/crs-setup.conf:/opt/coraza/config/crs-setup.conf
       - ./proxy-waf/overrides:/opt/coraza/overrides
       - modintel_waf-logs:/var/log/coraza
     environment:
       - BACKEND=juice-shop:3000
       - CORAZA_AUDIT_LOG=/var/log/coraza/audit.json
       - CORAZA_RULE_ENGINE=On
-      - PARANOIA=2
-      - BLOCKING_PARANOIA=2
-      - ANOMALY_INBOUND=8
+      - PARANOIA=4
+      - BLOCKING_PARANOIA=4
+      - ANOMALY_INBOUND=3
+      - MANUAL_MODE=true
     networks:
       - modintel-net
     restart: always
