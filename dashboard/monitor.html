@@ -172,6 +172,33 @@
                             <span class="latency-value" id="latency-p99-value">0ms</span>
                         </div>
                     </div>
+                    <div class="cpu-section">
+                        <div class="ring-gauges">
+                            <div class="ring-gauge">
+                                <svg viewBox="0 0 36 36" class="ring-svg">
+                                    <path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                    <path class="ring-fill ring-cpu" id="cpu-ring" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" stroke-dasharray="0, 100" />
+                                </svg>
+                                <div class="ring-label">
+                                    <span class="ring-value" id="cpu-percent">0%</span>
+                                    <span class="ring-name">CPU</span>
+                                </div>
+                            </div>
+                            <div class="ring-gauge">
+                                <svg viewBox="0 0 36 36" class="ring-svg">
+                                    <path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                    <path class="ring-fill ring-gpu" id="gpu-ring" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" stroke-dasharray="0, 100" />
+                                </svg>
+                                <div class="ring-label">
+                                    <span class="ring-value" id="gpu-percent">N/A</span>
+                                    <span class="ring-name">GPU</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="cpu-models">
+                            <span class="cpu-model-tag" id="model-active">—</span>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="metric-card wide">
