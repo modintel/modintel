@@ -1,5 +1,25 @@
 const API_BASE = '/api';
 let trainingPollInterval = null;
+let selectedTrainingVersions = new Set();
+
+async function loadModelTypes() {
+    var select = document.getElementById('model-type');
+    try {
+        var res = await apiFetch(API_BASE + '/training/model-types');
+        var data = await res.json();
+        var models = data.models || [];
+        select.innerHTML = '';
+        models.forEach(function (model) {
+            var opt = document.createElement('option');
+            opt.value = model.value;
+            opt.textContent = model.label;
+            select.appendChild(opt);
+        });
+        select.value = 'random_forest';
+    } catch (e) {
+        select.innerHTML = '<option value="random_forest" selected>Random Forest</option><option value="xgboost">XGBoost</option><option value="logistic">Logistic Regression</option><option value="svm">SVM</option>';
+    }
+}
 
 async function loadDatasets() {
     var select = document.getElementById('train-dataset');
@@ -64,12 +84,13 @@ async function loadTrainingHistory() {
 function renderHistory(items) {
     const tbody = document.getElementById('training-history');
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--fg-muted);padding:20px;">No training history yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--fg-muted);padding:20px;">No training history yet.</td></tr>';
+        updateTrainingActions();
         return;
     }
     tbody.innerHTML = items.map(item => `
         <tr>
-            <td>${item.version}</td>
+            <td><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;">${item.version}</td>
             <td>${item.model_type}</td>
             <td>${item.dataset}</td>
             <td>${item.precision}%</td>
@@ -96,6 +117,70 @@ function renderHistory(items) {
     document.querySelectorAll('.delete-model-btn').forEach(btn => {
         btn.addEventListener('click', () => deleteModel(btn.dataset.version));
     });
+
+    document.querySelectorAll('.training-checkbox').forEach(cb => {
+        cb.addEventListener('change', () => {
+            toggleTrainingSelection(cb.dataset.version, cb.checked);
+        });
+    });
+
+    updateSelectAllTraining();
+    updateTrainingActions();
+}
+
+function toggleTrainingSelection(version, checked) {
+    if (checked) {
+        selectedTrainingVersions.add(version);
+    } else {
+        selectedTrainingVersions.delete(version);
+    }
+    updateSelectAllTraining();
+    updateTrainingActions();
+}
+
+function updateSelectAllTraining() {
+    const selectAll = document.getElementById('select-all-training');
+    const checkboxes = document.querySelectorAll('.training-checkbox');
+    const checkedBoxes = document.querySelectorAll('.training-checkbox:checked');
+    selectAll.checked = checkboxes.length > 0 && checkboxes.length === checkedBoxes.length;
+    selectAll.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < checkboxes.length;
+}
+
+function updateTrainingActions() {
+    const actions = document.getElementById('training-actions');
+    actions.style.display = selectedTrainingVersions.size > 0 ? 'block' : 'none';
+}
+
+async function deleteSelectedTraining() {
+    const versions = Array.from(selectedTrainingVersions);
+    if (versions.length === 0) return;
+
+    showConfirm(
+        'Delete Models',
+        `Are you sure you want to delete ${versions.length} selected model(s)? This will remove their files from disk.`,
+        async () => {
+            const errors = [];
+            for (const version of versions) {
+                try {
+                    const res = await apiFetch(`${API_BASE}/training/history/${version}`, {
+                        method: 'DELETE'
+                    });
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        errors.push(`${version}: ${err.detail || 'Failed'}`);
+                    }
+                } catch (e) {
+                    errors.push(`${version}: ${e.message}`);
+                }
+            }
+            selectedTrainingVersions.clear();
+            loadTrainingStatus();
+            loadTrainingHistory();
+            if (errors.length > 0) {
+                showModal('Delete Results', errors.join('\n'), 'warning');
+            }
+        }
+    );
 }
 
 async function pollTrainingJob() {
@@ -246,6 +331,20 @@ if (trainModelBtn) {
     trainModelBtn.addEventListener('click', trainModel);
 }
 
-loadDatasets();
-loadTrainingStatus();
-loadTrainingHistory();
+document.getElementById('select-all-training').addEventListener('change', function() {
+    const checked = this.checked;
+    document.querySelectorAll('.training-checkbox').forEach(cb => {
+        cb.checked = checked;
+        toggleTrainingSelection(cb.closest('td').querySelector('input').dataset.version, checked);
+    });
+});
+
+document.getElementById('delete-selected-training-btn').addEventListener('click', deleteSelectedTraining);
+
+(async () => {
+    await requireAuth();
+    await loadModelTypes();
+    await loadDatasets();
+    await loadTrainingStatus();
+    await loadTrainingHistory();
+})();

@@ -72,9 +72,46 @@ function showConfirm(title, message, onConfirm, onCancel) {
     };
 }
 
-function closeModal() {
-    const modal = document.getElementById('app-modal');
-    if (modal) {
-        modal.classList.remove('open');
+function showPrompt(title, message, defaultValue, onConfirm, onCancel) {
+    let modal = document.getElementById('app-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'app-modal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
     }
+
+    modal.innerHTML = `
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <h3>${title}</h3>
+            <p>${message}</p>
+            <input type="text" id="modal-input" class="modal-input" value="${defaultValue || ''}" />
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="modal-confirm">OK</button>
+            </div>
+        </div>
+    `;
+
+    modal.classList.add('open');
+
+    const inputEl = document.getElementById('modal-input');
+    inputEl.focus();
+    inputEl.select();
+
+    document.getElementById('modal-confirm').onclick = () => {
+        modal.classList.remove('open');
+        if (onConfirm) onConfirm(inputEl.value);
+    };
+
+    document.getElementById('modal-cancel').onclick = () => {
+        modal.classList.remove('open');
+        if (onCancel) onCancel();
+    };
+
+    modal.querySelector('.modal-backdrop').onclick = () => {
+        modal.classList.remove('open');
+        if (onCancel) onCancel();
+    };
 }

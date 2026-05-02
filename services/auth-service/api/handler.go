@@ -140,7 +140,7 @@ func (h *Handler) setRefreshTokenCookie(c *gin.Context, token string, expiry tim
 		Path:     "/api/v1/auth",
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		Secure:   h.cfg.CookieSecure,
 	})
 }

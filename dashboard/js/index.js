@@ -218,7 +218,7 @@ function startPolling() {
                 await updateLogsNewOnly();
             }
         }
-    }, 2000);
+    }, 1000);
 }
 
 function stopPolling() {
@@ -313,7 +313,7 @@ updateLogs().then(() => { isInitialLoad = false; startSSE(); });
 
 async function updateLogsNewOnly() {
     try {
-        const url = `${API_BASE}/logs?limit=10`;
+        let url = `${API_BASE}/logs?limit=10`;
         if (currentView === 'miss') {
             url += '&source=ml_miss_detector';
         }

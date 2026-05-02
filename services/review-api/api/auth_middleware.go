@@ -39,6 +39,10 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 		}
 
 		if tokenStr == "" {
+			tokenStr = c.Query("token")
+		}
+
+		if tokenStr == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
 			c.Abort()
 			return

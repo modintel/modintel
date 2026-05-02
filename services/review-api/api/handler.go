@@ -262,6 +262,7 @@ func SetupRouter() *gin.Engine {
 		api.GET("/datasets", RequireRoles("admin", "analyst", "viewer"), GetDatasets)
 		api.GET("/datasets/sources", RequireRoles("admin", "analyst", "viewer"), GetDatasetSources)
 		api.POST("/datasets/generate", RequireRoles("admin", "analyst"), GenerateDataset)
+		api.POST("/datasets/merge", RequireRoles("admin", "analyst"), MergeDatasets)
 		api.DELETE("/datasets/:id", RequireRoles("admin", "analyst"), DeleteDataset)
 	}
 
@@ -2131,33 +2132,147 @@ func GenerateDataset(c *gin.Context) {
 	})
 }
 
+
 func DeleteDataset(c *gin.Context) {
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Dataset id is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dataset id is required"})
 		return
 	}
 
-	oid, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid dataset id"})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
 	collection := db.GetCollection("modintel", "datasets")
+
+	oid, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dataset id"})
+		return
+	}
+
 	result, err := collection.DeleteOne(ctx, bson.M{"_id": oid})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete dataset"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete dataset"})
 		return
 	}
-
 	if result.DeletedCount == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Dataset not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "dataset not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "deleted", "id": id})
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+type MergeDatasetsRequest struct {
+	IDs  []string `json:"ids" binding:"required"`
+	Name string   `json:"name" binding:"required"`
+}
+
+func MergeDatasets(c *gin.Context) {
+	var req MergeDatasetsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
+		return
+	}
+
+	if len(req.IDs) < 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least 2 dataset IDs are required"})
+		return
+	}
+
+	if strings.TrimSpace(req.Name) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	collection := db.GetCollection("modintel", "datasets")
+
+	// Convert IDs to ObjectIDs
+	var objectIDs []primitive.ObjectID
+	for _, id := range req.IDs {
+		oid, err := primitive.ObjectIDFromHex(strings.TrimSpace(id))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dataset ID: " + id})
+			return
+		}
+		objectIDs = append(objectIDs, oid)
+	}
+
+	// Fetch datasets to merge
+	cursor, err := collection.Find(ctx, bson.M{"_id": bson.M{"$in": objectIDs}})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch datasets"})
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var datasets []bson.M
+	if err := cursor.All(ctx, &datasets); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode datasets"})
+		return
+	}
+
+	if len(datasets) != len(objectIDs) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "some datasets not found"})
+		return
+	}
+
+	// Calculate merged stats
+	totalSamples := 0
+	attackSamples := 0
+	for _, ds := range datasets {
+		if samples, ok := ds["samples"].(int32); ok {
+			totalSamples += int(samples)
+		}
+		if attackPct, ok := ds["attack_pct"].(int32); ok {
+			samples := int32(0)
+			if s, ok := ds["samples"].(int32); ok {
+				samples = s
+			}
+			attackSamples += int(float64(samples) * float64(attackPct) / 100)
+		}
+	}
+
+	mergedAttackPct := float64(0)
+	if totalSamples > 0 {
+		mergedAttackPct = float64(attackSamples) / float64(totalSamples) * 100
+	}
+
+	// Create merged dataset
+	now := time.Now().UTC()
+	mergedDoc := bson.M{
+		"name":       strings.TrimSpace(req.Name),
+		"type":       "Mixed",
+		"samples":    int64(totalSamples),
+		"attack_pct": mergedAttackPct,
+		"created_at": now,
+		"source":     "merged",
+		"status":     "ready",
+	}
+
+	// Insert merged dataset
+	insertResult, err := collection.InsertOne(ctx, mergedDoc)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create merged dataset"})
+		return
+	}
+
+	// Delete original datasets
+	_, err = collection.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": objectIDs}})
+	if err != nil {
+		// Note: merged dataset is already created, but originals not deleted
+		log.Printf("Warning: failed to delete original datasets after merge: %v", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"id":         insertResult.InsertedID.(primitive.ObjectID).Hex(),
+		"name":       req.Name,
+		"samples":    totalSamples,
+		"attack_pct": mergedAttackPct,
+	})
 }
