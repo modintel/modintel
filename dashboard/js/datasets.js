@@ -1,10 +1,69 @@
 const API_BASE = '/api';
 
+let selectedDatasets = new Set();
+
+function updateDatasetActions() {
+    const actionsDiv = document.getElementById('dataset-actions');
+    actionsDiv.style.display = selectedDatasets.size > 0 ? 'block' : 'none';
+}
+
+function toggleDatasetSelection(id, checked) {
+    if (checked) {
+        selectedDatasets.add(id);
+    } else {
+        selectedDatasets.delete(id);
+    }
+    updateSelectAllCheckbox();
+    updateDatasetActions();
+}
+
+function updateSelectAllCheckbox() {
+    const selectAllCheckbox = document.getElementById('select-all-datasets');
+    const checkboxes = document.querySelectorAll('.dataset-checkbox');
+    const checkedBoxes = document.querySelectorAll('.dataset-checkbox:checked');
+    selectAllCheckbox.checked = checkboxes.length > 0 && checkedBoxes.length === checkboxes.length;
+    selectAllCheckbox.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < checkboxes.length;
+}
+
+function handleSelectAllChange() {
+    const selectAllCheckbox = document.getElementById('select-all-datasets');
+    const checkboxes = document.querySelectorAll('.dataset-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = selectAllCheckbox.checked;
+        toggleDatasetSelection(cb.dataset.id, selectAllCheckbox.checked);
+    });
+}
+
+function deleteSelectedDatasets() {
+    const selectedIds = Array.from(selectedDatasets);
+    if (selectedIds.length === 0) return;
+
+    showConfirm(
+        'Delete Selected Datasets',
+        `Are you sure you want to delete ${selectedIds.length} dataset(s)? This action cannot be undone.`,
+        async () => {
+            alert('Delete selected datasets: ' + selectedIds.join(', '));
+        }
+    );
+}
+
+function mergeSelectedDatasets() {
+    const selectedIds = Array.from(selectedDatasets);
+    if (selectedIds.length < 2) {
+        showModal('Merge Datasets', 'Please select at least 2 datasets to merge.', 'error');
+        return;
+    }
+
+    alert('Merge selected datasets: ' + selectedIds.join(', '));
+}
+
 async function loadDatasets() {
     try {
         const res = await apiFetch(`${API_BASE}/datasets`);
         const data = await res.json();
         renderDatasets(data.items || []);
+        updateSelectAllCheckbox();
+        updateDatasetActions();
     } catch (e) {
         console.error('Error loading datasets:', e);
     }
@@ -23,11 +82,12 @@ async function loadDatasetSources() {
 function renderDatasets(items) {
     const tbody = document.getElementById('datasets-list');
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--fg-muted);padding:20px;">No datasets yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--fg-muted);padding:20px;">No datasets yet.</td></tr>';
         return;
     }
     tbody.innerHTML = items.map(d => `
         <tr>
+            <td><input type="checkbox" class="dataset-checkbox" data-id="${d._id}"></td>
             <td>${d.name || '—'}</td>
             <td>${d.type || '—'}</td>
             <td>${d.samples || 0}</td>
@@ -39,6 +99,12 @@ function renderDatasets(items) {
 
     document.querySelectorAll('.delete-dataset-btn').forEach(btn => {
         btn.addEventListener('click', () => deleteDataset(btn.dataset.id));
+    });
+
+    document.querySelectorAll('.dataset-checkbox').forEach(cb => {
+        cb.addEventListener('change', () => {
+            toggleDatasetSelection(cb.dataset.id, cb.checked);
+        });
     });
 }
 
@@ -146,6 +212,21 @@ async function deleteDataset(id) {
 const generateDatasetBtn = document.getElementById('generate-dataset-btn');
 if (generateDatasetBtn) {
     generateDatasetBtn.addEventListener('click', generateDataset);
+}
+
+const selectAllCheckbox = document.getElementById('select-all-datasets');
+if (selectAllCheckbox) {
+    selectAllCheckbox.addEventListener('change', handleSelectAllChange);
+}
+
+const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+if (deleteSelectedBtn) {
+    deleteSelectedBtn.addEventListener('click', deleteSelectedDatasets);
+}
+
+const mergeSelectedBtn = document.getElementById('merge-selected-btn');
+if (mergeSelectedBtn) {
+    mergeSelectedBtn.addEventListener('click', mergeSelectedDatasets);
 }
 
 loadDatasets();
