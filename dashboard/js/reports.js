@@ -108,6 +108,7 @@ function renderPieChart(alerts) {
     var r = Math.min(cx, cy) - 10;
     var angle = -Math.PI / 2;
     var legendHtml = "";
+    var slices = [];
 
     entries.forEach(function (item, i) {
         var pct = item[1] / total;
@@ -123,6 +124,7 @@ function renderPieChart(alerts) {
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
+        slices.push({ start: angle, end: angle + sweep, label: item[0], count: item[1], pct: pct });
         angle += sweep;
 
         legendHtml += '<div class="pie-legend-item">' +
@@ -133,6 +135,48 @@ function renderPieChart(alerts) {
     });
 
     legend.innerHTML = legendHtml;
+
+    var tooltip = document.getElementById("global-chart-tooltip");
+    if (!tooltip) {
+        tooltip = document.createElement("div");
+        tooltip.id = "global-chart-tooltip";
+        tooltip.style.cssText = "position:fixed;display:none;background:#fafafa;border:1px solid rgba(0,0,0,0.08);color:#121212;font-size:0.7rem;padding:4px 8px;border-radius:4px;pointer-events:none;z-index:99999;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.15);font-family:var(--font,sans-serif);";
+        document.body.appendChild(tooltip);
+    }
+
+    canvas.onmousemove = function (e) {
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left - cx;
+        var my = e.clientY - rect.top - cy;
+        var dist = Math.sqrt(mx * mx + my * my);
+
+        if (dist > r || dist < 2) {
+            tooltip.style.display = "none";
+            canvas.style.cursor = "default";
+            return;
+        }
+
+        var mouseAngle = Math.atan2(my, mx);
+        if (mouseAngle < -Math.PI / 2) mouseAngle += 2 * Math.PI;
+
+        for (var i = 0; i < slices.length; i++) {
+            var s = slices[i];
+            if (mouseAngle >= s.start && mouseAngle < s.end) {
+                tooltip.textContent = s.label + ": " + s.count + " (" + (s.pct * 100).toFixed(1) + "%)";
+                tooltip.style.display = "block";
+                tooltip.style.left = (e.clientX + 12) + "px";
+                tooltip.style.top = (e.clientY - 10) + "px";
+                canvas.style.cursor = "pointer";
+                return;
+            }
+        }
+        tooltip.style.display = "none";
+        canvas.style.cursor = "default";
+    };
+
+    canvas.onmouseleave = function () {
+        tooltip.style.display = "none";
+    };
 }
 
 function getGeoCache() {
@@ -254,9 +298,32 @@ function renderTrendChart(trendData) {
     var html = "";
     for (var i = 0; i < values.length; i++) {
         var pct = Math.max(2, Math.round((values[i] / maxVal) * 100));
-        html += '<div class="trend-bar" style="height:' + pct + '%" title="' + escapeAttr(trendData.labels[i] || "") + ': ' + values[i] + '"></div>';
+        html += '<div class="trend-bar" style="height:' + pct + '%" data-label="' + escapeAttr(trendData.labels[i] || "") + '" data-value="' + values[i] + '"></div>';
     }
     box.innerHTML = html;
+
+    var tooltip = document.getElementById("global-chart-tooltip");
+    if (!tooltip) {
+        tooltip = document.createElement("div");
+        tooltip.id = "global-chart-tooltip";
+        tooltip.style.cssText = "position:fixed;display:none;background:#fafafa;border:1px solid rgba(0,0,0,0.08);color:#121212;font-size:0.7rem;padding:4px 8px;border-radius:4px;pointer-events:none;z-index:99999;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.15);font-family:var(--font,sans-serif);";
+        document.body.appendChild(tooltip);
+    }
+
+    var bars = box.querySelectorAll(".trend-bar");
+    bars.forEach(function (bar) {
+        bar.addEventListener("mouseenter", function () {
+            tooltip.textContent = bar.dataset.label + ": " + bar.dataset.value;
+            tooltip.style.display = "block";
+        });
+        bar.addEventListener("mousemove", function (e) {
+            tooltip.style.left = (e.clientX + 12) + "px";
+            tooltip.style.top = (e.clientY - 10) + "px";
+        });
+        bar.addEventListener("mouseleave", function () {
+            tooltip.style.display = "none";
+        });
+    });
 }
 
 function renderTopIps(alerts, geoResults) {
