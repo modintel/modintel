@@ -588,6 +588,17 @@ textarea:focus {
     gap: 0.5rem;
 }
 
+.modal-input {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--fg);
+    margin-bottom: 1rem;
+}
+
 .modal-title-error {
     color: var(--danger);
 }

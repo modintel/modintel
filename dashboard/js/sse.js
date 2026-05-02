@@ -9,6 +9,8 @@ var SSE = (function () {
         this.fallbackActive = false;
         this.indicator = null;
         this.reconnectTimer = null;
+        this.pollingTimer = null;
+        this.failedReconnects = 0;
     }
 
     SSEClient.prototype.connect = function () {
@@ -19,12 +21,15 @@ var SSE = (function () {
 
         this.es.onopen = function () {
             self.active = true;
+            self.failedReconnects = 0;
+            self.stopPolling();
             self.setState('connected');
             if (self.handlers.onConnect) self.handlers.onConnect();
         };
 
         this.es.onerror = function () {
             self.active = false;
+            self.failedReconnects++;
             self.setState('reconnecting');
             if (self.es) self.es.close();
             self.es = null;
@@ -35,6 +40,10 @@ var SSE = (function () {
                         self.reconnectTimer = setTimeout(function () { self.connect(); }, RECONNECT_DELAY);
                         return;
                     }
+                    if (self.failedReconnects >= 3) {
+                        self.startPolling();
+                        return;
+                    }
                     if (self.handlers.onFallback) {
                         self.fallbackActive = true;
                         self.setState('disconnected');
@@ -42,6 +51,10 @@ var SSE = (function () {
                     }
                 });
             } else {
+                if (self.failedReconnects >= 3) {
+                    self.startPolling();
+                    return;
+                }
                 clearTimeout(self.reconnectTimer);
                 self.reconnectTimer = setTimeout(function () { self.connect(); }, RECONNECT_DELAY);
             }
@@ -66,10 +79,30 @@ var SSE = (function () {
         });
     };
 
+    SSEClient.prototype.startPolling = function () {
+        if (this.pollingTimer) return;
+        console.log('SSE: Switching to polling mode for logs due to repeated connection failures');
+        this.setState('fallback');
+        this.pollingTimer = setInterval(() => {
+            if (this.handlers.onConnect) this.handlers.onConnect();
+        }, 2000);
+    };
+
+    SSEClient.prototype.stopPolling = function () {
+        if (this.pollingTimer) {
+            clearInterval(this.pollingTimer);
+            this.pollingTimer = null;
+        }
+    };
+
     SSEClient.prototype.close = function () {
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
+        }
+        if (this.pollingTimer) {
+            clearInterval(this.pollingTimer);
+            this.pollingTimer = null;
         }
         if (this.es) {
             this.es.close();

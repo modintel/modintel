@@ -42,7 +42,17 @@ function deleteSelectedDatasets() {
         'Delete Selected Datasets',
         `Are you sure you want to delete ${selectedIds.length} dataset(s)? This action cannot be undone.`,
         async () => {
-            alert('Delete selected datasets: ' + selectedIds.join(', '));
+            try {
+                // Delete each selected dataset
+                const deletePromises = selectedIds.map(id =>
+                    apiFetch(`${API_BASE}/datasets/${id}`, { method: 'DELETE' })
+                );
+                await Promise.all(deletePromises);
+                loadDatasets();
+            } catch (e) {
+                console.error('Delete selected datasets error:', e);
+                showModal('Delete Failed', 'An error occurred while deleting the datasets', 'error');
+            }
         }
     );
 }
@@ -54,12 +64,48 @@ function mergeSelectedDatasets() {
         return;
     }
 
-    alert('Merge selected datasets: ' + selectedIds.join(', '));
+    showPrompt(
+        'Merge Datasets',
+        'Enter a name for the merged dataset:',
+        'merged_' + new Date().toISOString().slice(0, 10).replace(/-/g, ''),
+        (name) => {
+            if (!name || name.trim() === '') {
+                return;
+            }
+
+            showConfirm(
+                'Merge Selected Datasets',
+                `Are you sure you want to merge ${selectedIds.length} datasets into "${name.trim()}"?`,
+                async () => {
+                    try {
+                        const res = await apiFetch(`${API_BASE}/datasets/merge`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ ids: selectedIds, name: name.trim() })
+                        });
+                        if (!res.ok) {
+                            const err = await res.json().catch(() => ({}));
+                            showModal('Merge Failed', err.error || 'Failed to merge datasets', 'error');
+                            return;
+                        }
+                        loadDatasets();
+                    } catch (e) {
+                        console.error('Merge datasets error:', e);
+                        showModal('Merge Failed', 'An error occurred while merging the datasets', 'error');
+                    }
+                }
+            );
+        }
+    );
 }
 
 async function loadDatasets() {
     try {
         const res = await apiFetch(`${API_BASE}/datasets`);
+        if (!res.ok) {
+            console.error('Failed to load datasets:', res.status, res.statusText);
+            return;
+        }
         const data = await res.json();
         renderDatasets(data.items || []);
         updateSelectAllCheckbox();
@@ -82,13 +128,12 @@ async function loadDatasetSources() {
 function renderDatasets(items) {
     const tbody = document.getElementById('datasets-list');
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--fg-muted);padding:20px;">No datasets yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--fg-muted);padding:20px;">No datasets yet.</td></tr>';
         return;
     }
     tbody.innerHTML = items.map(d => `
         <tr>
-            <td><input type="checkbox" class="dataset-checkbox" data-id="${d._id}"></td>
-            <td>${d.name || '—'}</td>
+            <td><input type="checkbox" class="dataset-checkbox" data-id="${d._id}" style="margin-right: 8px;">${d.name || '—'}</td>
             <td>${d.type || '—'}</td>
             <td>${d.samples || 0}</td>
             <td>${d.attack_pct || 0}%</td>
@@ -214,20 +259,23 @@ if (generateDatasetBtn) {
     generateDatasetBtn.addEventListener('click', generateDataset);
 }
 
-const selectAllCheckbox = document.getElementById('select-all-datasets');
-if (selectAllCheckbox) {
-    selectAllCheckbox.addEventListener('change', handleSelectAllChange);
-}
+(async () => {
+    await requireAuth();
+    await loadDatasets();
+    loadDatasetSources();
 
-const deleteSelectedBtn = document.getElementById('delete-selected-btn');
-if (deleteSelectedBtn) {
-    deleteSelectedBtn.addEventListener('click', deleteSelectedDatasets);
-}
+    const selectAllCheckbox = document.getElementById('select-all-datasets');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', handleSelectAllChange);
+    }
 
-const mergeSelectedBtn = document.getElementById('merge-selected-btn');
-if (mergeSelectedBtn) {
-    mergeSelectedBtn.addEventListener('click', mergeSelectedDatasets);
-}
+    const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+    if (deleteSelectedBtn) {
+        deleteSelectedBtn.addEventListener('click', deleteSelectedDatasets);
+    }
 
-loadDatasets();
-loadDatasetSources();
+    const mergeSelectedBtn = document.getElementById('merge-selected-btn');
+    if (mergeSelectedBtn) {
+        mergeSelectedBtn.addEventListener('click', mergeSelectedDatasets);
+    }
+})();

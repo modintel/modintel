@@ -130,4 +130,7 @@
 
 input[type="checkbox"] {
     accent-color: #ff570a;
+    transform: scale(0.8);
+    position: relative;
+    top: 2px;
 }

@@ -34,23 +34,23 @@ def get_db():
     return db
 
 
-class TrainingRequest(BaseModel):
-    dataset: str
-    model_type: str
-    val_split: int
+# class TrainingRequest(BaseModel):
+#     dataset: str
+#     model_type: str
+#     val_split: int
 
 
-class TrainingResult(BaseModel):
-    version: str
-    model_type: str
-    dataset: str
-    precision: float
-    recall: float
-    fpr: float
-    f1_score: float
-    auroc: float
-    trained_at: str
-    active: bool = False
+# class TrainingResult(BaseModel):
+#     version: str
+#     model_type: str
+#     dataset: str
+#     precision: float
+#     recall: float
+#     fpr: float
+#     f1_score: float
+#     auroc: float
+#     trained_at: str
+#     active: bool = False
 
 
 class ModelStatus(BaseModel):
@@ -82,13 +82,13 @@ class TrainingJob:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    get_db()
+    # get_db()
     yield
     if client:
         client.close()
 
 
-app = FastAPI(title="ModIntel Training API", lifespan=lifespan)
+app = FastAPI(title="ModIntel Training API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -102,6 +102,11 @@ app.add_middleware(
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/test")
+async def test():
+    return {"ok": True}
 
 
 @app.get("/api/training/status", response_model=ModelStatus)
@@ -118,13 +123,16 @@ async def get_training_status():
     )
 
 
-@app.get("/api/training/history")
-async def get_training_history():
-    collection = get_db()["training_history"]
-    records = list(collection.find().sort("trained_at", -1).limit(50))
-    for r in records:
-        r["_id"] = str(r["_id"])
-    return {"items": records}
+@app.get("/api/training/model-types")
+async def get_model_types():
+    return {
+        "models": [
+            {"value": "random_forest", "label": "Random Forest"},
+            {"value": "xgboost", "label": "XGBoost"},
+            {"value": "logistic", "label": "Logistic Regression"},
+            {"value": "svm", "label": "SVM"},
+        ]
+    }
 
 
 @app.get("/api/training/jobs/{job_id}")
@@ -140,7 +148,7 @@ _current_job: Optional[TrainingJob] = None
 def _run_training(job: TrainingJob):
     global training_active, current_job_id
     try:
-        parquet_path = os.path.join(DATA_DIR, "processed", "waf_dataset_v1.parquet")
+        parquet_path = os.path.join(DATA_DIR, "processed", f"{job.dataset}.parquet")
         if not os.path.isfile(parquet_path):
             job.status = "failed"
             job.error = f"Dataset not found at {parquet_path}. Generate it first from the Datasets page."
@@ -149,6 +157,7 @@ def _run_training(job: TrainingJob):
         env = os.environ.copy()
         env["ML_PIPELINE_DATA_DIR"] = DATA_DIR
         env["ML_PIPELINE_MODELS_DIR"] = MODELS_DIR
+        env["ML_PIPELINE_PARQUET_PATH"] = parquet_path
 
         result = subprocess.run(
             ["python", "-u", TRAIN_SCRIPT],
@@ -416,7 +425,7 @@ async def cut_reviewed_dataset(body: dict = Body({})):
 
         df = pd.DataFrame(rows)
         os.makedirs(os.path.join(DATA_DIR, "processed"), exist_ok=True)
-        parquet_path = os.path.join(DATA_DIR, "processed", "waf_dataset_v1.parquet")
+        parquet_path = os.path.join(DATA_DIR, "processed", f"{dataset_name}.parquet")
         df.to_parquet(parquet_path, index=False)
 
         tp_count = df[df["human_label"] == "true_positive"].shape[0] if "human_label" in df.columns else 0
@@ -459,6 +468,7 @@ async def export_dataset():
         raise HTTPException(status_code=500, detail="pandas not available")
 
     try:
+        dataset_name = "export"
         collection = get_db()["alerts"]
         cursor = collection.find(
             {"source": {"$in": ["coraza", "ml_miss_detector", "waf_blocked"]}},
@@ -481,7 +491,7 @@ async def export_dataset():
 
         df = pd.DataFrame(rows)
         os.makedirs(os.path.join(DATA_DIR, "processed"), exist_ok=True)
-        parquet_path = os.path.join(DATA_DIR, "processed", "waf_dataset_v1.parquet")
+        parquet_path = os.path.join(DATA_DIR, "processed", f"{dataset_name}.parquet")
         df.to_parquet(parquet_path, index=False)
 
         return {

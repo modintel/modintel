@@ -113,15 +113,18 @@
             </div>
         </div>
         <div class="panel-right" style="overflow-y: auto;">
-            <div class="panel-right-header">
+            <div class="panel-right-header" style="display: flex; justify-content: space-between; align-items: center;">
                 <div
                     style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
                     Training History</div>
+                <div id="training-actions" style="display: none;">
+                    <button class="btn btn-sm btn-danger" id="delete-selected-training-btn" type="button">Delete Selected</button>
+                </div>
             </div>
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Version</th>
+                        <th style="width: 10%;"><input type="checkbox" id="select-all-training" style="margin-right: 8px;">Version</th>
                         <th>Model</th>
                         <th>Dataset</th>
                         <th>Precision</th>
@@ -132,39 +135,9 @@
                         <th>Delete</th>
                     </tr>
                 </thead>
-                <tbody id="training-history">
+<tbody id="training-history">
                     <tr>
-                        <td>v3</td>
-                        <td>Random Forest</td>
-                        <td>Combined</td>
-                        <td>96.2%</td>
-                        <td>94.8%</td>
-                        <td>3.1%</td>
-                        <td>2026-04-08</td>
-                        <td><span class="badge active">Active</span></td>
-                        <td></td>
-                    </tr>
-                    <tr>
-                        <td>v2</td>
-                        <td>Random Forest</td>
-                        <td>Synthetic</td>
-                        <td>89.5%</td>
-                        <td>91.2%</td>
-                        <td>8.4%</td>
-                        <td>2026-04-05</td>
-                        <td><button class="btn btn-sm">Deploy</button></td>
-                        <td><button class="btn btn-sm btn-danger">Delete</button></td>
-                    </tr>
-                    <tr>
-                        <td>v1</td>
-                        <td>Logistic Regression</td>
-                        <td>Synthetic</td>
-                        <td>82.1%</td>
-                        <td>85.6%</td>
-                        <td>12.3%</td>
-                        <td>2026-04-01</td>
-                        <td><button class="btn btn-sm">Deploy</button></td>
-                        <td><button class="btn btn-sm btn-danger">Delete</button></td>
+                        <td colspan="9" style="text-align:center;color:var(--fg-muted);padding:20px;">Loading training history...</td>
                     </tr>
                 </tbody>
             </table>
