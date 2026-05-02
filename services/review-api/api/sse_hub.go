@@ -25,7 +25,7 @@ func InitHub() {
 }
 
 func (h *SSEHub) Register(id string) chan SSEEvent {
-	ch := make(chan SSEEvent, 64)
+	ch := make(chan SSEEvent, 256)
 	h.mu.Lock()
 	h.clients[id] = ch
 	h.mu.Unlock()
