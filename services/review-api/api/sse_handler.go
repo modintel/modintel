@@ -182,6 +182,7 @@ func writeInitialMetrics(send func(string, string)) {
 			"memory_percent":              doc["memory_percent"],
 			"goroutines":                  doc["goroutines"],
 			"mongodb_database_size_bytes": doc["mongodb_database_size_bytes"],
+			"cpu_percent":                 doc["cpu_percent"],
 		}
 		avgInferenceMs = doc["avg_inference_ms"]
 		requestsPerMin = doc["requests_per_minute"]
@@ -305,6 +306,7 @@ func writeInitialHealth(send func(string, string)) {
 		"p99_latency_ms":         inferenceMetrics.P99LatencyMs,
 		"total_predictions":      inferenceMetrics.TotalPredictions,
 		"predictions_per_minute": inferenceMetrics.PredictionsPerMinute,
+		"model_version":          inferenceMetrics.ModelVersion,
 		"requests_per_minute":    GetRequestsPerMin(),
 		"system": map[string]interface{}{
 			"mongodb_connections":         systemMetrics.MongoDBConnections,
@@ -313,6 +315,7 @@ func writeInitialHealth(send func(string, string)) {
 			"memory_percent":              systemMetrics.MemoryPercent,
 			"goroutines":                  systemMetrics.Goroutines,
 			"mongodb_database_size_bytes": systemMetrics.MongoDBDatabaseSizeBytes,
+			"cpu_percent":                 systemMetrics.CpuPercent,
 		},
 	}
 	data, _ := json.Marshal(healthData)
