@@ -65,6 +65,9 @@ var (
 	ruleIDPattern    = regexp.MustCompile(`^[0-9]+$`)
 	restartInFlight  atomic.Bool
 	wafConfigPath    = "/waf-overrides/waf-config.json"
+	cpuMu            sync.Mutex
+	cpuLastTotal     uint64
+	cpuLastIdle      uint64
 	dockerHTTPClient = &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -1624,6 +1627,8 @@ func GetInferenceMetrics() inferenceMetricsData {
 	}
 	if v, ok := result["model_version"].(string); ok {
 		metrics.ModelVersion = v
+	} else if v, ok := result["model_version"].(float64); ok {
+		metrics.ModelVersion = fmt.Sprintf("v%.0f", v)
 	}
 	if v, ok := result["uptime_seconds"].(float64); ok {
 		metrics.UptimeSeconds = v
@@ -1948,6 +1953,51 @@ func GetSystemMetrics(ctx context.Context) systemMetricsData {
 }
 
 func getCPULoad() float64 {
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return 0.0
+	}
+
+	var total, idle uint64
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.HasPrefix(line, "cpu ") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			return 0.0
+		}
+		for i := 1; i < len(fields); i++ {
+			val, _ := strconv.ParseUint(fields[i], 10, 64)
+			total += val
+			if i == 4 {
+				idle = val
+			}
+		}
+		break
+	}
+
+	if total == 0 {
+		return 0.0
+	}
+
+	now := time.Now().UnixNano()
+	cpuMu.Lock()
+	defer cpuMu.Unlock()
+
+	if cpuLastTotal > 0 {
+		dTotal := total - cpuLastTotal
+		dIdle := idle - cpuLastIdle
+		if dTotal > 0 {
+			cpuLastTotal = total
+			cpuLastIdle = idle
+			return (1.0 - float64(dIdle)/float64(dTotal)) * 100.0
+		}
+	}
+
+	cpuLastTotal = total
+	cpuLastIdle = idle
+	_ = now
 	return 0.0
 }
 
