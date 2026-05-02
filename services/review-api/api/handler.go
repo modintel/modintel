@@ -2132,7 +2132,6 @@ func GenerateDataset(c *gin.Context) {
 	})
 }
 
-
 func DeleteDataset(c *gin.Context) {
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {

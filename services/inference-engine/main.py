@@ -595,7 +595,11 @@ async def metrics() -> JSONResponse:
     for lat in _recent_latencies[-100:]:
         recent_latencies.append(round(lat, 3))
 
-    avg_latency = round(sum(recent_latencies) / len(recent_latencies), 3) if recent_latencies else 0.0
+    avg_latency = (
+        round(sum(recent_latencies) / len(recent_latencies), 3)
+        if recent_latencies
+        else 0.0
+    )
 
     p50 = round(np.percentile(recent_latencies, 50) if recent_latencies else 0, 3)
     p95 = round(np.percentile(recent_latencies, 95) if recent_latencies else 0, 3)
