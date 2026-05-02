@@ -131,16 +131,21 @@
                 </div>
             </div>
         </div>
-        <div class="panel-right" style="overflow-y: auto;">
-            <div class="panel-right-header">
-                <div
-                    style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
-                    Active Datasets</div>
-            </div>
+            <div class="panel-right" style="overflow-y: auto;">
+                <div class="panel-right-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div
+                        style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
+                        Active Datasets</div>
+                    <div id="dataset-actions" style="display: none;">
+                        <button class="btn btn-sm btn-danger" id="delete-selected-btn" type="button">Delete Selected</button>
+                        <button class="btn btn-sm" id="merge-selected-btn" type="button">Merge Selected</button>
+                    </div>
+                </div>
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width: 30%;">Name</th>
+                        <th style="width: 5%;"><input type="checkbox" id="select-all-datasets"></th>
+                        <th style="width: 25%;">Name</th>
                         <th style="width: 15%;">Type</th>
                         <th style="width: 10%;">Samples</th>
                         <th style="width: 10%;">Attack %</th>
