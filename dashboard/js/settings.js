@@ -446,3 +446,55 @@ document.querySelectorAll(".paranoia-presets .btn").forEach(function (btn) {
         highlightActivePreset();
     });
 });
+
+const LAYER2_WARNING_TITLE = 'Enable Layer-2 Blocking?';
+const LAYER2_WARNING_BODY = 'Layer-2 blocking uses a machine learning model to detect attacks that bypass the Coraza WAF (Layer-1). Unlike Layer-1, which combines deterministic Coraza rules with ML for false-positive reduction, Layer-2 is a pure ML classifier. It may produce false positives and block legitimate traffic. Only enable this if you understand the risk and have reviewed the model\'s performance on your traffic.';
+
+async function loadLayer2Config() {
+    try {
+        const res = await apiFetch('/api/waf/paranoia');
+        if (!res.ok) return;
+        const payload = await res.json();
+        const data = payload?.data;
+        if (!data) return;
+        const enabled = data.layer2_blocking === true;
+        const toggle = document.getElementById('layer2-enabled');
+        if (toggle) toggle.checked = enabled;
+    } catch (e) {
+        console.error('Failed to load Layer-2 config', e);
+    }
+}
+
+async function saveLayer2Config(enabled) {
+    try {
+        const res = await apiFetch('/api/waf/layer2', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: enabled })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'HTTP ' + res.status);
+        }
+        showModal('Layer-2 Updated', enabled
+            ? 'Layer-2 ML blocking has been enabled. Requests flagged by the ML model will be blocked.'
+            : 'Layer-2 ML blocking has been disabled.');
+    } catch (e) {
+        showModal('Error', e.message || 'Failed to update Layer-2 config.', 'error');
+    }
+}
+
+const layer2Toggle = document.getElementById('layer2-enabled');
+if (layer2Toggle) {
+    layer2Toggle.addEventListener('change', function () {
+        if (this.checked) {
+            this.checked = false;
+            showConfirm(LAYER2_WARNING_TITLE, LAYER2_WARNING_BODY, () => {
+                layer2Toggle.checked = true;
+                saveLayer2Config(true);
+            });
+        } else {
+            saveLayer2Config(false);
+        }
+    });
+}
