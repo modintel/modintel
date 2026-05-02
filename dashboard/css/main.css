@@ -565,7 +565,7 @@ textarea:focus {
     background: var(--bg);
     border-radius: 8px;
     padding: 1.5rem;
-    max-width: 400px;
+    max-width: 520px;
     width: 90%;
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
 }
