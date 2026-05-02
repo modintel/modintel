@@ -127,3 +127,7 @@
     font-size: 0.6875rem;
     border-radius: 3px;
 }
+
+input[type="checkbox"] {
+    accent-color: #ff570a;
+}
