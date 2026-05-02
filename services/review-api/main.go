@@ -7,6 +7,7 @@ import (
 	"modintel/services/review-api/api"
 	"modintel/services/review-api/db"
 	"os"
+	"sync"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -17,6 +18,8 @@ import (
 
 var lastTotalRequests uint64
 var lastTotalErrors uint64
+var statsDirty bool
+var statsMu sync.Mutex
 
 func main() {
 	db.Connect()
@@ -30,6 +33,7 @@ func main() {
 	go metricsAggregator()
 	go watchAlerts()
 	go broadcastHealth()
+	go statsFlusher()
 
 	log.Printf("Starting Review API on port %s", port)
 	router := api.SetupRouter()
@@ -108,6 +112,7 @@ func metricsAggregator() {
 			"memory_percent":              systemMetrics.MemoryPercent,
 			"goroutines":                  systemMetrics.Goroutines,
 			"mongodb_database_size_bytes": systemMetrics.MongoDBDatabaseSizeBytes,
+			"cpu_percent":                 systemMetrics.CpuPercent,
 		}
 
 		timeSeries1h := buildMetricsTimeSeries(collection, "1h")
@@ -121,6 +126,7 @@ func metricsAggregator() {
 			"p50_latency_ms":      inferenceMetrics.P50LatencyMs,
 			"p95_latency_ms":      inferenceMetrics.P95LatencyMs,
 			"p99_latency_ms":      inferenceMetrics.P99LatencyMs,
+			"model_version":       inferenceMetrics.ModelVersion,
 			"system":              systemPayload,
 			"time_1h":             timeSeries1h,
 			"time_6h":             timeSeries6h,
@@ -345,32 +351,47 @@ func pollAlertsCursor(ctx context.Context, collection *mongo.Collection) {
 }
 
 func broadcastUpdatedStats() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	statsMu.Lock()
+	statsDirty = true
+	statsMu.Unlock()
+}
 
-	collection := db.GetCollection("modintel", "alerts")
-
-	total, _ := collection.CountDocuments(ctx, bson.M{})
-	corazaCount, _ := collection.CountDocuments(ctx, bson.M{"source": bson.M{"$in": []string{"coraza", "waf_blocked"}}})
-	mlMissCount, _ := collection.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
-
-	opts := options.FindOne().SetSort(bson.D{{Key: "timestamp", Value: -1}})
-	var result bson.M
-	latestPriority := "-"
-	if err := collection.FindOne(ctx, bson.M{"ai_priority": bson.M{"$type": "string"}}, opts).Decode(&result); err == nil {
-		if priority, ok := result["ai_priority"].(string); ok && priority != "" {
-			latestPriority = priority
+func statsFlusher() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		statsMu.Lock()
+		if !statsDirty {
+			statsMu.Unlock()
+			continue
 		}
-	}
+		statsDirty = false
+		statsMu.Unlock()
 
-	payload := map[string]interface{}{
-		"total_alerts":    total,
-		"coraza_count":    corazaCount,
-		"ml_miss_count":   mlMissCount,
-		"latest_priority": latestPriority,
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		collection := db.GetCollection("modintel", "alerts")
+		total, _ := collection.CountDocuments(ctx, bson.M{})
+		corazaCount, _ := collection.CountDocuments(ctx, bson.M{"source": bson.M{"$in": []string{"coraza", "waf_blocked"}}})
+		mlMissCount, _ := collection.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
+		opts := options.FindOne().SetSort(bson.D{{Key: "timestamp", Value: -1}})
+		var result bson.M
+		latestPriority := "-"
+		if err := collection.FindOne(ctx, bson.M{"ai_priority": bson.M{"$type": "string"}}, opts).Decode(&result); err == nil {
+			if priority, ok := result["ai_priority"].(string); ok && priority != "" {
+				latestPriority = priority
+			}
+		}
+		cancel()
+
+		payload := map[string]interface{}{
+			"total_alerts":    total,
+			"coraza_count":    corazaCount,
+			"ml_miss_count":   mlMissCount,
+			"latest_priority": latestPriority,
+		}
+		data, _ := json.Marshal(payload)
+		api.Hub.Broadcast(api.SSEEvent{Type: "stats", Data: string(data)})
 	}
-	data, _ := json.Marshal(payload)
-	api.Hub.Broadcast(api.SSEEvent{Type: "stats", Data: string(data)})
 }
 
 func broadcastHealth() {
@@ -417,6 +438,7 @@ func broadcastHealth() {
 			"p99_latency_ms":         inferenceMetrics.P99LatencyMs,
 			"total_predictions":      inferenceMetrics.TotalPredictions,
 			"predictions_per_minute": inferenceMetrics.PredictionsPerMinute,
+			"model_version":          inferenceMetrics.ModelVersion,
 			"requests_per_minute":    api.LastRequestsPerMin,
 			"system": map[string]interface{}{
 				"mongodb_connections":         systemMetrics.MongoDBConnections,
@@ -425,6 +447,7 @@ func broadcastHealth() {
 				"memory_percent":              systemMetrics.MemoryPercent,
 				"goroutines":                  systemMetrics.Goroutines,
 				"mongodb_database_size_bytes": systemMetrics.MongoDBDatabaseSizeBytes,
+				"cpu_percent":                 systemMetrics.CpuPercent,
 			},
 		}
 		data, _ := json.Marshal(payload)
