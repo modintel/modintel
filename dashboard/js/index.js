@@ -191,6 +191,7 @@ function startSSE() {
                 stopPolling();
                 sseClient.fallbackActive = false;
             }
+            updateLogsNewOnly();
         },
         onFallback: function () {
             startPolling();
@@ -479,6 +480,59 @@ if (searchWrap && streamSearchInput) {
     streamSearchInput.addEventListener('input', (e) => handleStreamSearch(e.target.value));
 }
 
+function addChartHoverDots(svgId, values, width, height, padding, unit, dotClass) {
+    const svg = document.getElementById(svgId);
+    if (!svg) return;
+    svg.querySelectorAll('.' + dotClass).forEach(el => el.remove());
+
+    let tooltip = document.getElementById('global-chart-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = 'global-chart-tooltip';
+        tooltip.style.cssText = 'position:fixed;display:none;background:#fafafa;border:1px solid rgba(0,0,0,0.08);color:#121212;font-size:0.7rem;padding:4px 8px;border-radius:4px;pointer-events:none;z-index:99999;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.15);font-family:var(--font,sans-serif);';
+        document.body.appendChild(tooltip);
+    }
+
+    const clean = values.map(v => Number.isFinite(Number(v)) ? Number(v) : 0);
+    if (clean.length === 0) return;
+
+    const max = Math.max(...clean, 1);
+    const min = Math.min(...clean, 0);
+    const range = max - min || 1;
+    const step = (width - padding * 2) / Math.max(clean.length - 1, 1);
+
+    clean.forEach((val, i) => {
+        const x = padding + i * step;
+        const y = height - padding - ((val - min) / range) * (height - padding * 2);
+
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', x);
+        circle.setAttribute('cy', y);
+        circle.setAttribute('r', '4');
+        circle.setAttribute('fill', 'transparent');
+        circle.setAttribute('stroke', 'transparent');
+        circle.setAttribute('stroke-width', '8');
+        circle.classList.add(dotClass);
+        circle.style.cursor = 'pointer';
+
+        circle.addEventListener('mouseenter', function () {
+            tooltip.textContent = val.toFixed(1) + ' ' + unit;
+            tooltip.style.display = 'block';
+        });
+
+        circle.addEventListener('mousemove', function (e) {
+            tooltip.style.left = (e.clientX + 12) + 'px';
+            tooltip.style.top = (e.clientY - 10) + 'px';
+        });
+
+        circle.addEventListener('mouseleave', function () {
+            tooltip.style.display = 'none';
+        });
+
+        svg.appendChild(circle);
+    });
+}
+
 function generateGraphPoints(data) {
     const max = Math.max(...data, 1);
     const width = 300;
@@ -498,10 +552,15 @@ function generateGraphPoints(data) {
 }
 
 function updateGraphVisual(range, data) {
+    const width = 300;
+    const height = 100;
+    const padding = 5;
     const { points, areaPoints } = generateGraphPoints(data);
 
     document.getElementById('chart-line').setAttribute('points', points);
     document.getElementById('chart-area').setAttribute('d', 'M' + areaPoints);
+
+    addChartHoverDots('attack-chart', data, width, height, padding, 'attacks', 'trend-dot');
 
     document.querySelectorAll('.graph-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.range === range);
