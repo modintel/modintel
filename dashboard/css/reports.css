@@ -339,6 +339,7 @@
     background: var(--accent);
     border-radius: 1px 1px 0 0;
     transition: height 0.3s ease;
+    cursor: pointer;
 }
 
 .trend-bar:hover {
