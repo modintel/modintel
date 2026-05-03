@@ -137,10 +137,11 @@ function renderTable(alerts) {
     });
 }
 
-function renderStats(alerts) {
-    const total = alerts.length;
+function renderStats(alerts, totalCount) {
+    const total = totalCount !== undefined ? totalCount : alerts.length;
     const blocked = alerts.filter((a) => (a.anomaly_score || 0) >= 5).length;
-    const pct = total > 0 ? ((blocked / total) * 100).toFixed(1) : "0.0";
+    // blocked% is calculated from the visible page as an approximation
+    const pct = alerts.length > 0 ? ((blocked / alerts.length) * 100).toFixed(1) : "0.0";
 
     document.getElementById("total-attacks").textContent = `${total}`;
     document.getElementById("blocked-attacks").textContent = `${pct}%`;
@@ -149,13 +150,25 @@ function renderStats(alerts) {
 async function refreshReports() {
     const apiBase = resolveApiBase();
     try {
-        const res = await apiFetch(`${apiBase}/logs`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        // Support both old format (data.alerts) and new pagination format (data.data)
-        const alerts = data.data || data.alerts || [];
+        // Fetch first page of logs for the table and vectors
+        const logsRes = await apiFetch(`${apiBase}/logs`);
+        if (!logsRes.ok) throw new Error(`HTTP ${logsRes.status}`);
+        const logsData = await logsRes.json();
+        const alerts = logsData.data || logsData.alerts || [];
 
-        renderStats(alerts);
+        // Fetch real total count from stats endpoint
+        let totalCount;
+        try {
+            const statsRes = await apiFetch(`${apiBase}/stats`);
+            if (statsRes.ok) {
+                const statsData = await statsRes.json();
+                totalCount = statsData.total_alerts;
+            }
+        } catch (_) {
+            // fall back to page length if stats fails
+        }
+
+        renderStats(alerts, totalCount);
         renderVectors(alerts);
         renderTable(alerts);
     } catch (err) {
