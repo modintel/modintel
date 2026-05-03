@@ -34,23 +34,23 @@ def get_db():
     return db
 
 
-# class TrainingRequest(BaseModel):
-#     dataset: str
-#     model_type: str
-#     val_split: int
+class TrainingRequest(BaseModel):
+    dataset: str
+    model_type: str
+    val_split: int
 
 
-# class TrainingResult(BaseModel):
-#     version: str
-#     model_type: str
-#     dataset: str
-#     precision: float
-#     recall: float
-#     fpr: float
-#     f1_score: float
-#     auroc: float
-#     trained_at: str
-#     active: bool = False
+class TrainingResult(BaseModel):
+    version: str
+    model_type: str
+    dataset: str
+    precision: float
+    recall: float
+    fpr: float
+    f1_score: float
+    auroc: float
+    trained_at: str
+    active: bool = False
 
 
 class ModelStatus(BaseModel):
@@ -121,6 +121,15 @@ async def get_training_status():
         training_active=training_active,
         current_job_id=current_job_id,
     )
+
+
+@app.get("/api/training/history")
+async def get_training_history():
+    collection = get_db()["training_history"]
+    records = list(collection.find().sort("trained_at", -1).limit(50))
+    for r in records:
+        r["_id"] = str(r["_id"])
+    return records
 
 
 @app.get("/api/training/model-types")

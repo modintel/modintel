@@ -101,7 +101,6 @@
                     </div>
                 </div>
                 <div class="form-actions">
-                    <button class="btn btn-secondary" id="paranoia-refresh-btn">Refresh</button>
                     <button class="btn btn-primary" id="paranoia-save-btn">Save & Restart WAF</button>
                 </div>
             </div>
@@ -114,10 +113,10 @@
             </div>
             <div class="account-section">
                 <div class="account-profile">
-                    <div class="account-avatar">SA</div>
+                    <div class="account-avatar"></div>
                     <div class="account-info">
-                        <div class="account-name">Security Analyst</div>
-                        <div class="account-role">analyst@modintel.local</div>
+                        <div class="account-name"></div>
+                        <div class="account-role"></div>
                     </div>
                     <button class="btn btn-danger" id="logout-btn">Logout</button>
                     <div class="account-divider"></div>
@@ -138,17 +137,26 @@
                     </div>
                 </div>
             </div>
-            <div class="panel-right-header" style="margin-top: 16px;">
-                <div
-                    style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
-                    Active Sessions</div>
+            <div class="sessions-users-grid">
+                <div class="sessions-panel">
+                    <div class="panel-right-header" style="margin-top: 0;">
+                        <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Active Sessions</div>
+                    </div>
+                    <div class="session-actions">
+                        <button class="btn btn-secondary" id="refresh-sessions-btn">Show All Sessions</button>
+                        <button class="btn btn-danger" id="revoke-all-sessions-btn">Revoke All</button>
+                    </div>
+                    <div id="sessions-empty" class="sessions-empty">No active sessions found.</div>
+                    <div id="sessions-list" class="sessions-list"></div>
+                </div>
+                <div class="users-panel" id="users-panel" style="display: none;">
+                    <div class="panel-right-header" style="margin-top: 0;">
+                        <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Users &amp; Roles</div>
+                    </div>
+                    <div id="users-empty" class="sessions-empty">Loading users...</div>
+                    <div id="users-list" class="users-list"></div>
+                </div>
             </div>
-            <div class="session-actions">
-                <button class="btn btn-secondary" id="refresh-sessions-btn">Show All Sessions</button>
-                <button class="btn btn-danger" id="revoke-all-sessions-btn">Revoke All Sessions</button>
-            </div>
-            <div id="sessions-empty" class="sessions-empty">No active sessions found.</div>
-<div id="sessions-list" class="sessions-list"></div>
         </div>
     </div>
     <script src="js/auth.js"></script>

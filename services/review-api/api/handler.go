@@ -2024,6 +2024,26 @@ func GetDatasets(c *gin.Context) {
 		if oid, ok := items[i]["_id"].(primitive.ObjectID); ok {
 			items[i]["_id"] = oid.Hex()
 		}
+
+		if pct, ok := items[i]["attack_pct"]; ok {
+			var val float64
+			if f, ok := pct.(float64); ok {
+				val = f
+			} else if i, ok := pct.(int32); ok {
+				val = float64(i)
+			} else if i, ok := pct.(int); ok {
+				val = float64(i)
+			}
+			items[i]["attack_pct"] = float64(int(val*10+0.5)) / 10
+		}
+
+		if created, ok := items[i]["created_at"]; ok {
+			if t, ok := created.(time.Time); ok {
+				items[i]["created_at"] = t.UTC().Format("2006-01-02")
+			} else if dt, ok := created.(primitive.DateTime); ok {
+				items[i]["created_at"] = dt.Time().UTC().Format("2006-01-02")
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"items": items})
