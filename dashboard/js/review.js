@@ -6,6 +6,7 @@ let nextCursor = '';
 let hasMore = false;
 let isLoading = false;
 const alertBodies = {};
+const alertHeaders = {};
 
 function getAlertId(alert) {
     if (!alert) return '';
@@ -35,6 +36,11 @@ function formatBodyHtml(body) {
     } catch (e) {
         return '<pre class="body-text">' + escapeHtml(body) + '</pre>';
     }
+}
+
+function formatHeadersHtml(headers) {
+    if (!headers || typeof headers !== 'object') return '';
+    return '<pre class="body-json">' + escapeHtml(JSON.stringify(headers, null, 2)) + '</pre>';
 }
 
 async function loadReviewStats() {
@@ -91,7 +97,7 @@ async function loadReviewAlerts(reset) {
 function renderAlerts(items) {
     const tbody = document.getElementById('review-body');
     if (!items.length && tbody.children.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="color: var(--fg-muted); text-align: center; padding: 32px;">No alerts to review.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="color: var(--fg-muted); text-align: center; padding: 32px;">No alerts to review.</td></tr>';
         return;
     }
 
@@ -105,9 +111,10 @@ function renderAlerts(items) {
 
         const aiScore = alert.ai_score != null ? (alert.ai_score * 100).toFixed(1) + '%' : '—';
         const label = alert.human_label === 'true_positive' ? 'TP' :
-                     alert.human_label === 'false_positive' ? 'FP' : '—';
+                      alert.human_label === 'false_positive' ? 'FP' : '—';
 
         if (alert.body) alertBodies[id] = alert.body;
+        if (alert.headers) alertHeaders[id] = alert.headers;
 
         tr.innerHTML = `
             <td style="font-size: 0.6875rem;">${formatTimestamp(alert.timestamp)}</td>
@@ -116,11 +123,12 @@ function renderAlerts(items) {
             <td class="body-cell">
                 ${alert.body ? `<button class="btn btn-sm btn-body" data-id="${id}" title="Toggle request body">View</button>` : '—'}
             </td>
-            <td>${aiScore}</td>
-            <td>${escapeHtml(alert.ai_priority || '—')}</td>
-            <td>${alert.source === 'ml_miss_detector' ? 'L2' : 'L1'}</td>
-            <td>${alert.status === 'generated' ? 'Pending' : alert.status === 'reviewed' ? 'Reviewed' : alert.status || '—'}</td>
-            <td>${label}</td>
+            <td class="body-cell">
+                ${alert.headers ? `<button class="btn btn-sm btn-headers" data-id="${id}" title="Toggle request headers">View</button>` : '—'}
+            </td>
+            <td style="text-align: center;">${aiScore}</td>
+            <td style="text-align: center;">${escapeHtml(alert.ai_priority || '—')}</td>
+            <td style="text-align: center;">${alert.source === 'ml_miss_detector' ? 'L2' : 'L1'}</td>
             <td class="action-cell">
                 ${alert.status === 'generated'
                     ? `<button class="btn btn-true btn-sm btn-tp" data-id="${id}" title="True Positive">
@@ -155,16 +163,27 @@ async function submitReview(id, humanLabel) {
 
         loadReviewStats();
         delete alertBodies[id];
+        delete alertHeaders[id];
 
         if (humanLabel === '') {
             var expandRow = document.getElementById('body-expand-' + id);
             if (expandRow) expandRow.remove();
+            var headersExpand = document.getElementById('headers-expand-' + id);
+            if (headersExpand) headersExpand.remove();
+
             const row = document.getElementById(`review-row-${id}`);
             if (row) {
-                row.remove();
-                if (currentStatus === 'reviewed') return;
-                if (document.getElementById('review-body').children.length < 10 && hasMore) {
-                    loadReviewAlerts(false);
+                // Remove reviewed classes
+                row.classList.remove('reviewed', 'review-row-tp', 'review-row-fp');
+                // Update action cell to pending state
+                const actionCell = row.querySelector('.action-cell');
+                if (actionCell) {
+                    actionCell.innerHTML = `<button class="btn btn-true btn-sm btn-tp" data-id="${id}" title="True Positive">
+                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/></svg>
+                       </button>
+                       <button class="btn btn-false btn-sm btn-fp" data-id="${id}" title="False Positive">
+                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/></svg>
+                       </button>`;
                 }
             }
             return;
@@ -172,6 +191,8 @@ async function submitReview(id, humanLabel) {
 
         var expandRow = document.getElementById('body-expand-' + id);
         if (expandRow) expandRow.remove();
+        var headersExpand = document.getElementById('headers-expand-' + id);
+        if (headersExpand) headersExpand.remove();
 
         const row = document.getElementById(`review-row-${id}`);
         if (row) {
@@ -204,20 +225,46 @@ function toggleBodyRow(id) {
     var expandRow = document.createElement('tr');
     expandRow.id = expandId;
     expandRow.className = 'body-expand-row';
-    expandRow.innerHTML = '<td colspan="10"><div class="body-expand-content">' + formatBodyHtml(body) + '</div></td>';
+    expandRow.innerHTML = '<td colspan="9"><div class="body-expand-content">' + formatBodyHtml(body) + '</div></td>';
     row.insertAdjacentElement('afterend', expandRow);
     var btn = row.querySelector('.btn-body');
+    if (btn) btn.textContent = 'Hide';
+}
+
+function toggleHeadersRow(id) {
+    var row = document.getElementById('review-row-' + id);
+    if (!row) return;
+    var expandId = 'headers-expand-' + id;
+    var existing = document.getElementById(expandId);
+    if (existing) {
+        existing.remove();
+        var btn = row.querySelector('.btn-headers');
+        if (btn) btn.textContent = 'View';
+        return;
+    }
+    var headers = alertHeaders[id];
+    if (!headers) return;
+    var expandRow = document.createElement('tr');
+    expandRow.id = expandId;
+    expandRow.className = 'body-expand-row';
+    expandRow.innerHTML = '<td colspan="9"><div class="body-expand-content">' + formatHeadersHtml(headers) + '</div></td>';
+    row.insertAdjacentElement('afterend', expandRow);
+    var btn = row.querySelector('.btn-headers');
     if (btn) btn.textContent = 'Hide';
 }
 
 document.getElementById('load-more-review').addEventListener('click', () => loadReviewAlerts(false));
 
 document.getElementById('review-body').addEventListener('click', (e) => {
-    const btn = e.target.closest('.btn-tp, .btn-fp, .btn-undo, .btn-body');
+    const btn = e.target.closest('.btn-tp, .btn-fp, .btn-undo, .btn-body, .btn-headers');
     if (!btn) return;
     const id = btn.dataset.id;
     if (btn.classList.contains('btn-body')) {
         toggleBodyRow(id);
+        return;
+    }
+    if (btn.classList.contains('btn-headers')) {
+        toggleHeadersRow(id);
         return;
     }
     if (btn.classList.contains('btn-undo')) {

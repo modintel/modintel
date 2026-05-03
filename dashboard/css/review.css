@@ -100,6 +100,7 @@
     display: flex;
     gap: 4px;
     align-items: center;
+    justify-content: center;
 }
 
 .review-row-tp .action-cell,
@@ -190,6 +191,21 @@
     font-family: var(--font);
 }
 .btn-body:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.btn-headers {
+    padding: 2px 8px;
+    font-size: 0.6875rem;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+    font-family: var(--font);
+}
+.btn-headers:hover {
     color: var(--accent);
     border-color: var(--accent);
 }
