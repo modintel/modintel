@@ -221,6 +221,97 @@ async function revokeAllSessionsAction() {
     );
 }
 
+function renderUsers(users) {
+    const listEl = document.getElementById('users-list');
+    const emptyEl = document.getElementById('users-empty');
+    if (!listEl || !emptyEl) return;
+
+    listEl.innerHTML = '';
+
+    if (!Array.isArray(users) || users.length === 0) {
+        emptyEl.style.display = 'block';
+        emptyEl.textContent = 'No users found.';
+        return;
+    }
+
+    emptyEl.style.display = 'none';
+
+    users.forEach((user) => {
+        const item = document.createElement('div');
+        item.className = 'user-item';
+
+        const avatar = document.createElement('div');
+        const initials = (user.first_name?.[0] || user.email?.[0] || 'U').toUpperCase();
+        avatar.className = 'user-avatar-sm';
+        avatar.textContent = initials;
+
+        const info = document.createElement('div');
+        info.className = 'user-info';
+        const name = user.first_name && user.last_name
+            ? `${user.first_name} ${user.last_name}`
+            : user.first_name || user.email;
+        info.innerHTML = `
+            <div class="user-name">${name}</div>
+            <div class="user-email">${user.email || ''}</div>
+        `;
+
+        const status = document.createElement('div');
+        status.className = `user-status ${user.is_active !== false ? 'active' : 'inactive'}`;
+        status.title = user.is_active !== false ? 'Active' : 'Inactive';
+
+        const roleSelect = document.createElement('select');
+        roleSelect.className = 'user-role-select';
+        ['viewer', 'analyst', 'admin'].forEach(r => {
+            const opt = document.createElement('option');
+            opt.value = r;
+            opt.textContent = r.charAt(0).toUpperCase() + r.slice(1);
+            if (r === user.role) opt.selected = true;
+            roleSelect.appendChild(opt);
+        });
+        roleSelect.addEventListener('change', () => updateUserRole(user.id || user._id, roleSelect.value));
+
+        item.appendChild(avatar);
+        item.appendChild(info);
+        item.appendChild(status);
+        item.appendChild(roleSelect);
+        listEl.appendChild(item);
+    });
+}
+
+async function loadUsers() {
+    try {
+        const res = await apiFetch('/api/v1/users');
+        if (!res.ok) {
+            if (res.status === 403) return;
+            throw new Error(`HTTP ${res.status}`);
+        }
+        const payload = await res.json();
+        const users = payload?.data?.users || payload?.data || [];
+        renderUsers(Array.isArray(users) ? users : []);
+    } catch (err) {
+        console.error('Failed to load users:', err);
+    }
+}
+
+async function updateUserRole(userId, newRole) {
+    try {
+        const res = await apiFetch(`/api/v1/users/${userId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: newRole }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${res.status}`);
+        }
+        showModal('Role Updated', `User role changed to ${newRole}.`);
+        await loadUsers();
+    } catch (err) {
+        showModal('Error', err.message || 'Failed to update user role.', 'error');
+        await loadUsers();
+    }
+}
+
 async function sendInvite() {
     const email = document.getElementById('invite-email').value.trim();
     const role = document.getElementById('invite-role').value;
@@ -244,6 +335,7 @@ async function sendInvite() {
         showModal('User Invited',
             `${data.email} added as ${data.role}. Temporary password: ${data.password}`,
             'info');
+        loadUsers();
     } catch (e) {
         showModal('Invite Error', 'Failed to send invite.', 'error');
     }
@@ -289,6 +381,13 @@ document.addEventListener('DOMContentLoaded', () => {
         loadSessions();
         loadParanoiaConfig();
         scrollToParanoia();
+
+        const user = getUser();
+        if (user && user.role === 'admin') {
+            const usersPanel = document.getElementById('users-panel');
+            if (usersPanel) usersPanel.style.display = 'flex';
+            loadUsers();
+        }
     }
 });
 
@@ -352,7 +451,6 @@ function updateParanoiaInputsState() {
     const rows = document.querySelectorAll('.paranoia-row');
     const presets = document.querySelector('.paranoia-presets');
     const saveBtn = document.getElementById('paranoia-save-btn');
-    const refreshBtn = document.getElementById('paranoia-refresh-btn');
 
     if (isBlocking) {
         inputs.forEach(el => { if (el) el.removeAttribute('readonly'); if (el) el.removeAttribute('disabled'); });
@@ -360,14 +458,12 @@ function updateParanoiaInputsState() {
         document.querySelectorAll('.paranoia-row').forEach(el => el.style.opacity = '1');
         if (presets) presets.style.opacity = '1';
         if (saveBtn) saveBtn.removeAttribute('disabled');
-        if (refreshBtn) refreshBtn.removeAttribute('disabled');
     } else {
         inputs.forEach(el => { if (el) el.setAttribute('readonly', ''); if (el) el.setAttribute('disabled', ''); });
         document.querySelectorAll('.paranoia-stepper').forEach(el => el.setAttribute('disabled', ''));
         document.querySelectorAll('.paranoia-row').forEach(el => el.style.opacity = '0.5');
         if (presets) presets.style.opacity = '0.5';
         if (saveBtn) saveBtn.setAttribute('disabled', '');
-        if (refreshBtn) refreshBtn.setAttribute('disabled', '');
     }
 }
 

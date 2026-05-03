@@ -300,8 +300,8 @@
 
 .export-controls select {
     width: 100%;
-    padding: 4px 6px;
-    font-size: 0.75rem;
+    padding: 8px 10px;
+    font-size: 0.8125rem;
     border: 1px solid var(--border);
     border-radius: 4px;
     background: var(--bg);
@@ -314,6 +314,7 @@
     font-size: 0.6875rem;
     padding: 3px 10px;
     box-sizing: border-box;
+    margin-top: 4px;
 }
 
 .trend-chart {

@@ -72,9 +72,9 @@ async function loadTrainingHistory() {
     try {
         const res = await apiFetch(`${API_BASE}/training/history`);
         const data = await res.json();
-        renderHistory(data.items || []);
-        if (data.items && data.items.length > 0) {
-            updateEvalMetrics(data.items[0]);
+        renderHistory(data || []);
+        if (data && data.length > 0) {
+            updateEvalMetrics(data[0]);
         }
     } catch (e) {
         console.error('Error loading training history:', e);
@@ -90,7 +90,7 @@ function renderHistory(items) {
     }
     tbody.innerHTML = items.map(item => `
         <tr>
-            <td><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;">${item.version}</td>
+            <td><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;" ${item.active ? 'disabled' : ''}>${item.version}</td>
             <td>${item.model_type}</td>
             <td>${item.dataset}</td>
             <td>${item.precision}%</td>
@@ -140,10 +140,15 @@ function toggleTrainingSelection(version, checked) {
 
 function updateSelectAllTraining() {
     const selectAll = document.getElementById('select-all-training');
-    const checkboxes = document.querySelectorAll('.training-checkbox');
-    const checkedBoxes = document.querySelectorAll('.training-checkbox:checked');
-    selectAll.checked = checkboxes.length > 0 && checkboxes.length === checkedBoxes.length;
-    selectAll.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < checkboxes.length;
+    // Only consider checkboxes that are not for active models
+    const allCheckboxes = document.querySelectorAll('.training-checkbox');
+    const selectableCheckboxes = Array.from(allCheckboxes).filter(cb => {
+        const row = cb.closest('tr');
+        return row && !row.querySelector('.badge-active');
+    });
+    const checkedBoxes = selectableCheckboxes.filter(cb => cb.checked);
+    selectAll.checked = selectableCheckboxes.length > 0 && checkedBoxes.length === selectableCheckboxes.length;
+    selectAll.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < selectableCheckboxes.length;
 }
 
 function updateTrainingActions() {
@@ -334,8 +339,12 @@ if (trainModelBtn) {
 document.getElementById('select-all-training').addEventListener('change', function() {
     const checked = this.checked;
     document.querySelectorAll('.training-checkbox').forEach(cb => {
+        const row = cb.closest('tr');
+        if (row && row.querySelector('.badge-active')) {
+            return;
+        }
         cb.checked = checked;
-        toggleTrainingSelection(cb.closest('td').querySelector('input').dataset.version, checked);
+        toggleTrainingSelection(cb.dataset.version, checked);
     });
 });
 

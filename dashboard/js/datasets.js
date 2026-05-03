@@ -25,15 +25,6 @@ function updateSelectAllCheckbox() {
     selectAllCheckbox.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < checkboxes.length;
 }
 
-function handleSelectAllChange() {
-    const selectAllCheckbox = document.getElementById('select-all-datasets');
-    const checkboxes = document.querySelectorAll('.dataset-checkbox');
-    checkboxes.forEach(cb => {
-        cb.checked = selectAllCheckbox.checked;
-        toggleDatasetSelection(cb.dataset.id, selectAllCheckbox.checked);
-    });
-}
-
 function deleteSelectedDatasets() {
     const selectedIds = Array.from(selectedDatasets);
     if (selectedIds.length === 0) return;
@@ -43,7 +34,6 @@ function deleteSelectedDatasets() {
         `Are you sure you want to delete ${selectedIds.length} dataset(s)? This action cannot be undone.`,
         async () => {
             try {
-                // Delete each selected dataset
                 const deletePromises = selectedIds.map(id =>
                     apiFetch(`${API_BASE}/datasets/${id}`, { method: 'DELETE' })
                 );
@@ -259,23 +249,26 @@ if (generateDatasetBtn) {
     generateDatasetBtn.addEventListener('click', generateDataset);
 }
 
+document.getElementById('select-all-datasets').addEventListener('change', function() {
+    const checked = this.checked;
+    document.querySelectorAll('.dataset-checkbox').forEach(cb => {
+        cb.checked = checked;
+        toggleDatasetSelection(cb.dataset.id, checked);
+    });
+});
+
+const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+if (deleteSelectedBtn) {
+    deleteSelectedBtn.addEventListener('click', deleteSelectedDatasets);
+}
+
+const mergeSelectedBtn = document.getElementById('merge-selected-btn');
+if (mergeSelectedBtn) {
+    mergeSelectedBtn.addEventListener('click', mergeSelectedDatasets);
+}
+
 (async () => {
     await requireAuth();
     await loadDatasets();
     loadDatasetSources();
-
-    const selectAllCheckbox = document.getElementById('select-all-datasets');
-    if (selectAllCheckbox) {
-        selectAllCheckbox.addEventListener('change', handleSelectAllChange);
-    }
-
-    const deleteSelectedBtn = document.getElementById('delete-selected-btn');
-    if (deleteSelectedBtn) {
-        deleteSelectedBtn.addEventListener('click', deleteSelectedDatasets);
-    }
-
-    const mergeSelectedBtn = document.getElementById('merge-selected-btn');
-    if (mergeSelectedBtn) {
-        mergeSelectedBtn.addEventListener('click', mergeSelectedDatasets);
-    }
 })();
