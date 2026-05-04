@@ -42,6 +42,12 @@
     color: var(--fg);
 }
 
+.section-note {
+    margin-top: 12px;
+    font-size: 0.6875rem;
+    color: var(--fg-muted);
+}
+
 .source-list {
     display: flex;
     flex-direction: column;

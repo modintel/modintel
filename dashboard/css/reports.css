@@ -125,11 +125,9 @@
     flex-shrink: 0;
 }
 
-.pie-empty {
-    font-size: 0.75rem;
-    color: var(--fg-muted);
-    text-align: center;
-    padding: 16px 0;
+.fp-scroll {
+    max-height: 500px;
+    overflow-y: auto;
 }
 
 .fp-table {
@@ -457,9 +455,71 @@
     padding: 4px 0;
 }
 
-.empty-row {
-    text-align: center;
-    color: var(--fg-muted);
-    padding: 0.5rem;
-    font-size: 0.6875rem;
+.data-table thead th {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--fg-subtle);
+    letter-spacing: 0.04em;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 0.8px solid var(--border);
 }
+
+.data-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--fg);
+}
+
+.data-table tr:hover td {
+    background: var(--bg-panel);
+}
+
+#audit-toggle-btn {
+    color: var(--accent);
+}
+
+.audit-logs {
+    overflow-y: auto;
+}
+
+.audit-logs table.audit-table {
+    border-collapse: collapse;
+    border-spacing: 0;
+    width: 100%;
+    table-layout: fixed;
+}
+
+.audit-logs table.audit-table th,
+.audit-logs table.audit-table td {
+    padding: 0.6rem 1rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    border-bottom: 0.8px solid var(--border);
+    vertical-align: middle;
+    height: 40px;
+}
+
+.audit-logs table.audit-table td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 400px;
+}
+
+.audit-logs table.audit-table th {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fg-subtle);
+    text-align: left;
+    height: 32px;
+}
+
+.audit-logs table.audit-table tbody tr:hover td {
+    background: var(--bg-panel);
+}
+
+
