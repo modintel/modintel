@@ -43,6 +43,13 @@ func Connect(cfg config.Config) *Database {
 	return db
 }
 
+func GetCollection(dbName, collectionName string) *mongo.Collection {
+	// This will be called after db.Connect() has initialized the singleton
+	// We need to access the global database instance
+	// For now, we'll rely on the Handler having access to the db
+	return nil // Placeholder - will be handled by the caller passing the collection
+}
+
 func ensureIndexes(ctx context.Context, database *mongo.Database) error {
 	users := database.Collection("users")
 	_, err := users.Indexes().CreateMany(ctx, []mongo.IndexModel{

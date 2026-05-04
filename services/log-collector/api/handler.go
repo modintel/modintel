@@ -17,6 +17,7 @@ import (
 func Serve() {
 	http.HandleFunc("/api/logs", handleLogs)
 	http.HandleFunc("/api/stats", handleStats)
+	http.HandleFunc("/api/waf/traffic", handleWAFTraffic)
 	http.HandleFunc("/health", handleHealth)
 	http.HandleFunc("/metrics", handleMetrics)
 
@@ -102,6 +103,16 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":  status,
 		"service": "log-collector",
 	}); err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func handleWAFTraffic(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	snapshot := GetWAFTrafficSnapshot(time.Now())
+	if err := json.NewEncoder(w).Encode(snapshot); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }

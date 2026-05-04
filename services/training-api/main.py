@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -82,7 +83,6 @@ class TrainingJob:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # get_db()
     yield
     if client:
         client.close()
@@ -102,11 +102,6 @@ app.add_middleware(
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
-
-@app.get("/test")
-async def test():
-    return {"ok": True}
 
 
 @app.get("/api/training/status", response_model=ModelStatus)
@@ -282,6 +277,9 @@ async def start_training(req: TrainingRequest):
     t = threading.Thread(target=_run_training, args=(job,), daemon=True)
     t.start()
 
+    from audit_client import log_audit
+    asyncio.create_task(log_audit("training_start", "started", {"version": new_version, "dataset": req.dataset, "model_type": req.model_type}))
+
     return {
         "status": "started",
         "job_id": current_job_id,
@@ -308,6 +306,9 @@ async def activate_model(version: str):
 
     collection.update_many({"active": True}, {"$set": {"active": False}})
     collection.update_one({"version": version}, {"$set": {"active": True}})
+
+    from audit_client import log_audit
+    asyncio.create_task(log_audit("model_activate", "success", {"version": version, "model_path": model_path}))
 
     try:
         _restart_inference_engine(version)
@@ -465,7 +466,7 @@ async def cut_reviewed_dataset(body: dict = Body({})):
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Internal error during export")
 
 
@@ -510,7 +511,7 @@ async def export_dataset():
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Internal error during export")
 
 
