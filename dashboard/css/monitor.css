@@ -41,19 +41,6 @@
     gap: 8px;
 }
 
-.service-row {
-    display: flex;
-    gap: 8px;
-}
-
-.service-row.single {
-    justify-content: center;
-}
-
-.service-row.single .service-item {
-    flex: 0 1 50%;
-}
-
 .service-item {
     display: flex;
     align-items: center;
@@ -189,6 +176,75 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
+}
+
+.metric-toggle {
+    display: inline-flex;
+    border: 0.8px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    background: transparent;
+}
+
+.toggle-btn {
+    border: 0;
+    background: transparent;
+    color: var(--fg-muted);
+    font-size: 0.62rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 3.5px 9px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: var(--font);
+}
+
+.toggle-btn.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+}
+
+.chart-legend {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    font-size: 0.6rem;
+    color: var(--fg-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    justify-content: center;
+}
+
+.chart-legend.top {
+    margin-top: 0;
+    margin-bottom: 8px;
+}
+
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.legend-value {
+    font-size: 0.6rem;
+    color: var(--fg-muted);
+}
+
+.legend-swatch {
+    width: 10px;
+    height: 3px;
+    border-radius: 2px;
+    display: inline-block;
+}
+
+.swatch-waf {
+    background: #ff570a;
+}
+
+.swatch-inference {
+    background: #2563eb;
 }
 
 .metric-title {
@@ -361,16 +417,51 @@
     font-weight: 500;
 }
 
-.metric-value-large {
-    font-size: 2.5rem;
-    font-weight: 700;
-    color: var(--fg);
-    text-align: center;
-    padding: 1.5rem 0;
-}
-
 .metric-card.compact {
     padding: 0.5rem 1.5rem;
+}
+
+.metric-card.compact .storage-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn.btn-clear {
+    padding: 3px 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.btn.btn-clear:hover {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-fg);
+}
+
+.modal-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 0 16px;
+    font-size: 0.85rem;
+    color: var(--fg);
+}
+
+.modal-checklist input[type="checkbox"] {
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .metric-card.compact .metric-header {

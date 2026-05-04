@@ -171,9 +171,6 @@ nav {
     color: var(--fg);
 }
 
-.btn:hover {
-}
-
 .btn-primary {
     background: var(--accent);
     color: var(--accent-fg);
@@ -290,12 +287,6 @@ nav {
     overflow: hidden;
 }
 
-.panel-right {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
 .panel-right-header {
     display: flex;
     align-items: center;
@@ -305,20 +296,6 @@ nav {
     border-bottom: 0.8px solid var(--border);
     background: #ffffff;
     flex-shrink: 0;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    color: var(--fg-subtle);
-    font-weight: 600;
-    letter-spacing: 0.05em;
-}
-
-.panel-header {
-    display: flex;
-    align-items: center;
-    padding: 0 2rem;
-    height: 40px;
-    border-bottom: 0.8px solid var(--border);
-    background: #fff;
     font-size: 0.75rem;
     text-transform: uppercase;
     color: var(--fg-subtle);
@@ -353,12 +330,6 @@ nav {
     color: var(--fg-muted);
     line-height: 1.6;
     margin-bottom: 1.5rem;
-}
-
-.hero-actions {
-    display: flex;
-    gap: 0.6rem;
-    flex-wrap: wrap;
 }
 
 .stats-grid {

@@ -1,9 +1,5 @@
-.section {
-    margin-bottom: 24px;
-    padding: 16px;
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: 4px;
+.latest-evaluation {
+    margin-top: auto;
 }
 
 .section h3 {
@@ -100,11 +96,11 @@
     color: var(--fg-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
 }
 
 .metric-value {
-    font-size: 1.125rem;
+    font-size: 0.875rem;
     font-weight: 600;
     color: var(--fg);
 }
@@ -130,11 +126,6 @@
     border-radius: 4px;
     font-size: 0.6875rem;
     font-weight: 500;
-}
-
-.badge.active {
-    background: var(--success-subtle);
-    color: var(--success);
 }
 
 .badge-active {
