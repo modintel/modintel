@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audit Logs</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <meta name="description" content="Audit logs for ModIntel">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/settings.css">
+    <link rel="stylesheet" href="css/audit-logs.css">
+</head>
+
+<body data-attach-logout="false">
+    <nav>
+        <div class="nav-brand">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff570a" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span style="color: #ff570a;">MODINTEL</span>
+        </div>
+        <div class="nav-links">
+            <a href="/events">Events</a>
+            <a href="/rules">Rules</a>
+            <a href="/training">Training</a>
+            <a href="/datasets">Datasets</a>
+            <a href="/reports">Reports</a>
+            <a href="/monitor">Monitor</a>
+            <a href="/settings">Settings</a>
+        </div>
+        <div class="nav-actions"></div>
+    </nav>
+    <div class="main">
+        <div class="panel-left" style="background: var(--bg); position: relative; z-index: 1;">
+            <h1>Audit Logs</h1>
+            <p>Track all administrative and user actions.</p>
+
+            <div class="section">
+                <h3>Filters</h3>
+                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>User ID</label>
+                        <input type="text" id="filter-user" placeholder="User ID">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Action</label>
+                        <select id="filter-action">
+                            <option value="">All Actions</option>
+                            <option value="auth_login">Login</option>
+                            <option value="auth_logout">Logout</option>
+                            <option value="auth_refresh">Token Refresh</option>
+                            <option value="profile_update">Profile Update</option>
+                            <option value="session_revoke">Session Revoke</option>
+                            <option value="session_revoke_all">Revoke All Sessions</option>
+                            <option value="user_create">User Create</option>
+                            <option value="user_invite">User Invite</option>
+                            <option value="user_update">User Update</option>
+                            <option value="user_deactivate">User Deactivate</option>
+                            <option value="alert_review">Alert Review</option>
+                            <option value="alert_review_undo">Alert Review Undo</option>
+                            <option value="rule_enable">Rule Enable</option>
+                            <option value="rule_disable">Rule Disable</option>
+                            <option value="waf_paranoia_update">WAF Config Update</option>
+                            <option value="logs_clear">Logs Clear</option>
+                            <option value="dataset_generate">Dataset Generate</option>
+                            <option value="dataset_delete">Dataset Delete</option>
+                            <option value="dataset_export">Dataset Export</option>
+                            <option value="training_start">Training Start</option>
+                            <option value="model_activate">Model Activate</option>
+                            <option value="waf_restart">WAF Restart</option>
+                            <option value="storage_clear">Storage Clear</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Resource</label>
+                        <select id="filter-resource">
+                            <option value="">All Resources</option>
+                            <option value="user">User</option>
+                            <option value="alert">Alert</option>
+                            <option value="system">System</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Start</label>
+                        <input type="datetime-local" id="filter-start">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>End</label>
+                        <input type="datetime-local" id="filter-end">
+                    </div>
+                </div>
+                <div style="margin-top: 12px;">
+                    <button type="button" class="btn btn-primary" id="apply-filters">Apply Filters</button>
+                    <button class="btn" id="export-csv">Export CSV</button>
+                </div>
+            </div>
+        </div>
+        <div class="panel-right" style="overflow: hidden;">
+            <div class="panel-right-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Audit Trail</div>
+            </div>
+            <div class="log-scroll" style="overflow-y: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 18%;">Timestamp</th>
+                        <th style="width: 18%;">User</th>
+                        <th style="width: 12%;">Action</th>
+                        <th style="width: 22%;">Details</th>
+                        <th style="width: 12%;">Resource</th>
+                        <th style="width: 10%;">IP Address</th>
+                        <th style="width: 8%;">Outcome</th>
+                    </tr>
+                </thead>
+                <tbody id="audit-logs-list">
+                    <tr>
+                        <td colspan="7" style="text-align:center;color:var(--fg-muted);padding:20px;">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div id="pagination-controls"></div>
+            </div>
+        </div>
+    </div>
+    <script src="js/auth.js"></script>
+    <script src="js/boot.js"></script>
+    <script src="js/audit-logs.js"></script>
+</body>
+
+</html>

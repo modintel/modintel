@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -24,7 +25,6 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -32,33 +32,6 @@ import (
 )
 
 var (
-	httpRequestsTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "modintel_api_requests_total",
-			Help: "Total API requests",
-		},
-		[]string{"method", "endpoint", "status_code"},
-	)
-	httpRequestDuration = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "modintel_api_request_duration_seconds",
-			Help:    "HTTP request duration in seconds",
-			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0},
-		},
-		[]string{"method", "endpoint"},
-	)
-	activeConnections = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "modintel_api_active_connections",
-			Help: "Number of active connections",
-		},
-	)
-	inferenceRequestsTotal = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "modintel_inference_requests_total",
-			Help: "Total inference requests through review-api",
-		},
-	)
 	totalRequests    atomic.Uint64
 	totalErrors      atomic.Uint64
 	requestStats     = newRequestWindowStats()
@@ -142,27 +115,6 @@ func (s *requestWindowStats) totals(window time.Duration, now time.Time) (uint64
 	return requests, errors
 }
 
-func (s *requestWindowStats) liveRPM(now time.Time) float64 {
-	currentMinute := now.UTC().Truncate(time.Minute).Unix()
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var total uint64
-	var count int
-	for i := int64(1); i <= 2; i++ {
-		m := currentMinute - i*60
-		if bucket, ok := s.buckets[m]; ok {
-			total += bucket.Requests
-			count++
-		}
-	}
-	if count == 0 {
-		return 0
-	}
-	return float64(total) / float64(count)
-}
-
 type WAFRule struct {
 	ID          string    `json:"id" bson:"id"`
 	Category    string    `json:"category" bson:"category"`
@@ -204,13 +156,6 @@ var defaultWAFRules = []WAFRule{
 	{ID: "990051", Category: "SSRF", Description: "Custom SSRF Protection: Localhost/internal IP detected", Enabled: true},
 }
 
-func init() {
-	prometheus.MustRegister(httpRequestsTotal)
-	prometheus.MustRegister(httpRequestDuration)
-	prometheus.MustRegister(activeConnections)
-	prometheus.MustRegister(inferenceRequestsTotal)
-}
-
 func SetupRouter() *gin.Engine {
 	r := gin.Default()
 	jwtSecret := os.Getenv("JWT_SECRET")
@@ -248,6 +193,93 @@ func SetupRouter() *gin.Engine {
 		api.PUT("/rules/:id", RequireRoles("admin"), UpdateRuleStatus)
 		api.GET("/alerts", RequireRoles("admin", "analyst", "viewer"), GetAlerts)
 		api.GET("/alerts/review", RequireRoles("admin", "analyst"), GetReviewAlerts)
+		api.GET("/admin/audit-logs", RequireRoles("admin"), func(c *gin.Context) {
+			userStr := c.Query("user")
+			actionStr := c.Query("action")
+			resourceTypeStr := c.Query("resource_type")
+			limitStr := c.DefaultQuery("limit", "50")
+			offsetStr := c.DefaultQuery("offset", "0")
+			startStr := c.Query("start")
+			endStr := c.Query("end")
+
+			limit, err := strconv.ParseInt(limitStr, 10, 64)
+			if err != nil || limit <= 0 {
+				limit = 50
+			}
+
+			offset, err := strconv.ParseInt(offsetStr, 10, 64)
+			if err != nil || offset < 0 {
+				offset = 0
+			}
+
+			filter := bson.M{}
+			if userStr != "" {
+				filter["$or"] = []bson.M{
+					{"user_id": userStr},
+					{"user_email": userStr},
+				}
+			}
+			if actionStr != "" {
+				filter["action"] = actionStr
+			}
+			if resourceTypeStr != "" {
+				filter["resource_type"] = resourceTypeStr
+			}
+
+			if startStr != "" || endStr != "" {
+				timeFilter := bson.M{}
+				if startStr != "" {
+					if t, err := time.Parse(time.RFC3339, startStr); err != nil {
+						if t, err := time.Parse("2006-01-02T15:04", startStr); err == nil {
+							timeFilter["$gte"] = t
+						}
+					} else {
+						timeFilter["$gte"] = t
+					}
+				}
+				if endStr != "" {
+					if t, err := time.Parse(time.RFC3339, endStr); err != nil {
+						if t, err := time.Parse("2006-01-02T15:04", endStr); err == nil {
+							timeFilter["$lte"] = t
+						}
+					} else {
+						timeFilter["$lte"] = t
+					}
+				}
+				if len(timeFilter) > 0 {
+					filter["timestamp"] = timeFilter
+				}
+			}
+
+			collection := db.GetCollection("modintel", "audit_logs")
+			ctx := context.Background()
+
+			total, err := collection.CountDocuments(ctx, filter)
+			if err != nil {
+				total = 0
+			}
+
+			opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: -1}}).SetLimit(limit).SetSkip(offset)
+			cursor, err := collection.Find(ctx, filter, opts)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch audit logs"})
+				return
+			}
+			defer cursor.Close(ctx)
+
+			var logs []AuditLog
+			if err := cursor.All(ctx, &logs); err != nil {
+				logs = []AuditLog{}
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"logs":    logs,
+				"total":   total,
+				"offset":  offset,
+				"limit":   limit,
+			})
+		})
 		api.PUT("/alerts/:id/review", RequireRoles("admin", "analyst"), ReviewAlert)
 		api.GET("/logs", RequireRoles("admin", "analyst", "viewer"), GetLogs)
 		api.GET("/stats", RequireRoles("admin", "analyst", "viewer"), GetStats)
@@ -257,6 +289,9 @@ func SetupRouter() *gin.Engine {
 		api.PUT("/waf/paranoia", RequireRoles("admin"), UpdateWAFParanoia)
 		api.GET("/monitor/health", RequireRoles("admin", "analyst", "viewer"), GetmonitorHealth)
 		api.GET("/monitor/metrics", RequireRoles("admin", "analyst", "viewer"), GetmonitorMetrics)
+		api.POST("/admin/audit/log", RequireRoles("admin"), IngestAuditLog)
+		api.GET("/admin/audit/logs", RequireRoles("admin", "analyst", "viewer"), GetAuditLogsHandler)
+		api.POST("/admin/storage/clear", RequireRoles("admin"), ClearStorageCollections)
 		api.POST("/system/restart/proxy-waf", RequireRoles("admin"), RestartProxyWAF)
 		api.DELETE("/logs", RequireRoles("admin", "analyst"), ClearLogs)
 		api.GET("/datasets", RequireRoles("admin", "analyst", "viewer"), GetDatasets)
@@ -279,7 +314,6 @@ func SetupRouter() *gin.Engine {
 	r.GET("/datasets.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/datasets") })
 	r.GET("/reports.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/reports") })
 	r.GET("/monitor.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/monitor") })
-	r.GET("/Monitor.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/monitor") })
 	r.GET("/settings.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/settings") })
 	r.GET("/help.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/help") })
 
@@ -294,6 +328,7 @@ func SetupRouter() *gin.Engine {
 	r.GET("/monitor", func(c *gin.Context) { c.File("/srv/dashboard/monitor.html") })
 	r.GET("/settings", func(c *gin.Context) { c.File("/srv/dashboard/settings.html") })
 	r.GET("/help", func(c *gin.Context) { c.File("/srv/dashboard/help.html") })
+	r.GET("/audit-logs", func(c *gin.Context) { c.File("/srv/dashboard/audit-logs.html") })
 
 	return r
 }
@@ -305,6 +340,7 @@ type dockerContainerInfo struct {
 func RestartProxyWAF(c *gin.Context) {
 	if !restartInFlight.CompareAndSwap(false, true) {
 		c.JSON(http.StatusAccepted, gin.H{"success": true, "service": "proxy-waf", "status": "restart_already_queued"})
+		LogAction(c, "waf_restart", "system", "proxy-waf", nil, "failure", "restart already in flight")
 		return
 	}
 
@@ -314,6 +350,7 @@ func RestartProxyWAF(c *gin.Context) {
 	containerID, err := dockerFindComposeServiceContainer(ctx, "proxy-waf")
 	if err != nil {
 		restartInFlight.Store(false)
+		LogAction(c, "waf_restart", "system", "proxy-waf", nil, "failure", err.Error())
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "proxy-waf container not found"})
 		return
 	}
@@ -327,6 +364,7 @@ func RestartProxyWAF(c *gin.Context) {
 		}
 	}(containerID)
 
+	LogAction(c, "waf_restart", "system", "proxy-waf", nil, "success", "")
 	c.JSON(http.StatusAccepted, gin.H{"success": true, "service": "proxy-waf", "status": "restart_queued"})
 }
 
@@ -471,11 +509,13 @@ func GetRules(c *gin.Context) {
 func UpdateRuleStatus(c *gin.Context) {
 	ruleID := strings.TrimSpace(c.Param("id"))
 	if ruleID == "" {
+		LogAction(c, "rule_toggle", "rule", "", nil, "failure", "rule id is required")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "rule id is required"})
 		return
 	}
 
 	if !ruleIDPattern.MatchString(ruleID) {
+		LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "invalid rule id format")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid rule id format"})
 		return
 	}
@@ -488,16 +528,19 @@ func UpdateRuleStatus(c *gin.Context) {
 		}
 	}
 	if !known {
+		LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "rule not found")
 		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
 		return
 	}
 
 	var req toggleRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "invalid request payload")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
 		return
 	}
 	if req.Enabled == nil {
+		LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "enabled is required")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled is required"})
 		return
 	}
@@ -513,16 +556,23 @@ func UpdateRuleStatus(c *gin.Context) {
 		options.Update().SetUpsert(true),
 	)
 	if err != nil {
+		LogAction(c, "rule_toggle", "rule", ruleID, map[string]interface{}{"enabled": *req.Enabled}, "failure", "failed updating rule status")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed updating rule status"})
 		return
 	}
 
 	if err := syncManagedWAFOverrides(ctx); err != nil {
 		log.Printf("failed syncing managed overrides: %v", err)
+		LogAction(c, "rule_toggle", "rule", ruleID, map[string]interface{}{"enabled": *req.Enabled}, "failure", "failed syncing waf overrides")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed syncing waf overrides"})
 		return
 	}
 
+	action := "rule_disable"
+	if *req.Enabled {
+		action = "rule_enable"
+	}
+	LogAction(c, action, "rule", ruleID, map[string]interface{}{"enabled": *req.Enabled}, "success", "")
 	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID, "enabled": *req.Enabled})
 }
 
@@ -625,6 +675,7 @@ type UpdateWAFParanoiaRequest struct {
 func UpdateWAFParanoia(c *gin.Context) {
 	var req UpdateWAFParanoiaRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		LogAction(c, "waf_paranoia_update", "system", "waf", nil, "failure", "invalid request body")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
@@ -633,6 +684,7 @@ func UpdateWAFParanoia(c *gin.Context) {
 
 	if req.Paranoia != nil {
 		if *req.Paranoia < 1 || *req.Paranoia > 4 {
+			LogAction(c, "waf_paranoia_update", "system", "waf", map[string]interface{}{"paranoia": *req.Paranoia}, "failure", "paranoia must be 1-4")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "paranoia must be 1-4"})
 			return
 		}
@@ -641,6 +693,7 @@ func UpdateWAFParanoia(c *gin.Context) {
 
 	if req.BlockingParanoia != nil {
 		if *req.BlockingParanoia < 1 || *req.BlockingParanoia > 4 {
+			LogAction(c, "waf_paranoia_update", "system", "waf", map[string]interface{}{"blocking_paranoia": *req.BlockingParanoia}, "failure", "blocking_paranoia must be 1-4")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "blocking_paranoia must be 1-4"})
 			return
 		}
@@ -649,6 +702,7 @@ func UpdateWAFParanoia(c *gin.Context) {
 
 	if req.AnomalyInbound != nil {
 		if *req.AnomalyInbound < 1 || *req.AnomalyInbound > 20 {
+			LogAction(c, "waf_paranoia_update", "system", "waf", map[string]interface{}{"anomaly_inbound": *req.AnomalyInbound}, "failure", "anomaly_inbound must be 1-20")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "anomaly_inbound must be 1-20"})
 			return
 		}
@@ -658,6 +712,7 @@ func UpdateWAFParanoia(c *gin.Context) {
 	if req.RuleEngine != nil {
 		valid := *req.RuleEngine == "On" || *req.RuleEngine == "DetectionOnly"
 		if !valid {
+			LogAction(c, "waf_paranoia_update", "system", "waf", map[string]interface{}{"rule_engine": *req.RuleEngine}, "failure", "rule_engine must be 'On' or 'DetectionOnly'")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "rule_engine must be 'On' or 'DetectionOnly'"})
 			return
 		}
@@ -665,6 +720,7 @@ func UpdateWAFParanoia(c *gin.Context) {
 	}
 
 	if err := writeParanoiaConfig(cfg); err != nil {
+		LogAction(c, "waf_paranoia_update", "system", "waf", nil, "failure", "failed to save config")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save config"})
 		return
 	}
@@ -682,6 +738,7 @@ func UpdateWAFParanoia(c *gin.Context) {
 		}
 	}()
 
+	LogAction(c, "waf_paranoia_update", "system", "waf", map[string]interface{}{"paranoia": cfg.Paranoia, "blocking_paranoia": cfg.BlockingParanoia, "anomaly_inbound": cfg.AnomalyInbound, "rule_engine": cfg.RuleEngine}, "success", "")
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": cfg})
 }
 
@@ -1314,11 +1371,234 @@ func ClearLogs(c *gin.Context) {
 	result, err := collection.DeleteMany(ctx, bson.M{})
 	if err != nil {
 		log.Println("Error clearing logs:", err)
+		LogAction(c, "logs_clear", "alerts", "*", nil, "failure", "error clearing logs")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 		return
 	}
 
+	LogAction(c, "logs_clear", "alerts", "*", map[string]interface{}{"deleted": result.DeletedCount}, "success", "")
 	c.JSON(http.StatusOK, gin.H{"deleted": result.DeletedCount})
+}
+
+type storageClearRequest struct {
+	Collections []string `json:"collections"`
+}
+
+type auditIngestRequest struct {
+	Action       string                 `json:"action"`
+	ResourceType string                 `json:"resource_type"`
+	ResourceID   string                 `json:"resource_id"`
+	Details      map[string]interface{} `json:"details"`
+	Outcome      string                 `json:"outcome"`
+	ErrorMessage string                 `json:"error_message"`
+	UserID       string                 `json:"user_id"`
+	UserEmail    string                 `json:"user_email"`
+	UserRole     string                 `json:"user_role"`
+}
+
+func IngestAuditLog(c *gin.Context) {
+	var payload auditIngestRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	payload.Action = normalizeAuditAction(payload.Action)
+	payload.ResourceType = strings.TrimSpace(payload.ResourceType)
+	payload.ResourceID = strings.TrimSpace(payload.ResourceID)
+	payload.Outcome = strings.ToLower(strings.TrimSpace(payload.Outcome))
+	payload.ErrorMessage = strings.TrimSpace(payload.ErrorMessage)
+	payload.UserID = strings.TrimSpace(payload.UserID)
+	payload.UserEmail = strings.TrimSpace(payload.UserEmail)
+	payload.UserRole = strings.TrimSpace(payload.UserRole)
+
+	if payload.Action == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "action is required"})
+		return
+	}
+	if !isAllowedAuditAction(payload.Action) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported action"})
+		return
+	}
+	if payload.ResourceType == "" {
+		payload.ResourceType = "system"
+	}
+	if payload.Outcome == "" {
+		payload.Outcome = "success"
+	}
+	if payload.Outcome != "success" && payload.Outcome != "failure" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "outcome must be success or failure"})
+		return
+	}
+
+	if claimsAny, exists := c.Get("access_claims"); exists {
+		if claims, ok := claimsAny.(*AccessClaims); ok && claims != nil {
+			if payload.UserID == "" {
+				payload.UserID = strings.TrimSpace(claims.UserID)
+			}
+			if payload.UserEmail == "" {
+				payload.UserEmail = strings.TrimSpace(claims.Email)
+			}
+			if payload.UserRole == "" {
+				payload.UserRole = strings.TrimSpace(claims.Role)
+			}
+		}
+	}
+
+	logEntry := AuditLog{
+		UserID:       payload.UserID,
+		UserEmail:    payload.UserEmail,
+		UserRole:     payload.UserRole,
+		Action:       payload.Action,
+		ResourceType: payload.ResourceType,
+		ResourceID:   payload.ResourceID,
+		Details:      payload.Details,
+		IPAddress:    c.ClientIP(),
+		UserAgent:    c.Request.UserAgent(),
+		Outcome:      payload.Outcome,
+		ErrorMessage: payload.ErrorMessage,
+	}
+
+	LogAudit(logEntry)
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+func GetAuditLogsHandler(c *gin.Context) {
+	filter := bson.M{}
+
+	if userID := c.Query("user_id"); userID != "" {
+		filter["user_id"] = userID
+	}
+	if action := c.Query("action"); action != "" {
+		filter["action"] = action
+	}
+	if resourceType := c.Query("resource_type"); resourceType != "" {
+		filter["resource_type"] = resourceType
+	}
+	if start := c.Query("start"); start != "" {
+		if t, err := time.Parse(time.RFC3339, start); err == nil {
+			filter["timestamp"] = bson.M{"$gte": t}
+		}
+	}
+	if end := c.Query("end"); end != "" {
+		if t, err := time.Parse(time.RFC3339, end); err == nil {
+			if existing, ok := filter["timestamp"].(bson.M); ok {
+				filter["timestamp"] = bson.M{"$gte": existing["$gte"], "$lte": t}
+			} else {
+				filter["timestamp"] = bson.M{"$lte": t}
+			}
+		}
+	}
+
+	limit := int64(100)
+	if l := c.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = int64(parsed)
+		}
+	}
+
+	sort := bson.D{{Key: "timestamp", Value: -1}}
+
+	logs, err := GetAuditLogs(filter, limit, sort)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query audit logs"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"logs": logs})
+}
+
+func normalizeAuditAction(action string) string {
+	value := strings.ToLower(strings.TrimSpace(action))
+	value = strings.ReplaceAll(value, " ", "_")
+	value = strings.ReplaceAll(value, "-", "_")
+	return value
+}
+
+func isAllowedAuditAction(action string) bool {
+	switch action {
+	case "auth_login",
+		"auth_logout",
+		"auth_refresh",
+		"session_revoke",
+		"session_revoke_all",
+		"profile_update",
+		"user_create",
+		"user_invite",
+		"user_update",
+		"user_deactivate",
+		"alert_review",
+		"alert_review_undo",
+		"rule_enable",
+		"rule_disable",
+		"waf_paranoia_update",
+		"rule_toggle",
+		"logs_clear",
+		"storage_clear",
+		"dataset_generate",
+		"dataset_merge",
+		"dataset_delete",
+		"dataset_cut",
+		"dataset_export",
+		"training_start",
+		"training_activate",
+		"training_delete_version",
+		"waf_restart":
+		return true
+	default:
+		return false
+	}
+}
+
+func ClearStorageCollections(c *gin.Context) {
+	var payload storageClearRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	allowed := map[string]struct{}{
+		"alerts":   {},
+		"datasets": {},
+	}
+
+	collections := make([]string, 0, len(payload.Collections))
+	seen := map[string]struct{}{}
+	for _, name := range payload.Collections {
+		if _, ok := allowed[name]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid collection: " + name})
+			return
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		collections = append(collections, name)
+	}
+
+	if len(collections) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no collections selected"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	deleted := map[string]int64{}
+	for _, name := range collections {
+		collection := db.GetCollection("modintel", name)
+		result, err := collection.DeleteMany(ctx, bson.M{})
+		if err != nil {
+			log.Printf("Error clearing collection %s: %v", name, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to clear " + name})
+			return
+		}
+		deleted[name] = result.DeletedCount
+	}
+
+	LogAction(c, "storage_clear", "system", "database", map[string]interface{}{"collections": collections, "deleted": deleted}, "success", "")
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "deleted": deleted})
 }
 
 func HealthCheck(c *gin.Context) {
@@ -1462,11 +1742,12 @@ func GetmonitorMetrics(c *gin.Context) {
 
 	values := make([]float64, bucketCount)
 	errValues := make([]float64, bucketCount)
+	predValues := make([]float64, bucketCount)
 	counts := make([]int, bucketCount)
 
 	filter := bson.M{"timestamp": bson.M{"$gte": startTime}}
 	opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: 1}}).SetProjection(bson.M{
-		"timestamp": 1, "requests_per_minute": 1, "errors_per_minute": 1,
+		"timestamp": 1, "requests_per_minute": 1, "errors_per_minute": 1, "predictions_per_minute": 1,
 	})
 
 	cursor, err := metricsCollection.Find(ctx, filter, opts)
@@ -1477,9 +1758,10 @@ func GetmonitorMetrics(c *gin.Context) {
 
 	for cursor.Next(ctx) {
 		var doc struct {
-			Timestamp time.Time `bson:"timestamp"`
-			ReqPerMin float64   `bson:"requests_per_minute"`
-			ErrPerMin float64   `bson:"errors_per_minute"`
+			Timestamp  time.Time `bson:"timestamp"`
+			ReqPerMin  float64   `bson:"requests_per_minute"`
+			ErrPerMin  float64   `bson:"errors_per_minute"`
+			PredPerMin float64   `bson:"predictions_per_minute"`
 		}
 		if err := cursor.Decode(&doc); err != nil {
 			continue
@@ -1489,6 +1771,7 @@ func GetmonitorMetrics(c *gin.Context) {
 		if idx >= 0 && idx < bucketCount {
 			values[idx] += doc.ReqPerMin
 			errValues[idx] += doc.ErrPerMin
+			predValues[idx] += doc.PredPerMin
 			counts[idx]++
 		}
 	}
@@ -1498,14 +1781,17 @@ func GetmonitorMetrics(c *gin.Context) {
 		ts := startTime.Add(time.Duration(i) * bucketSize)
 		reqVal := values[i]
 		errVal := errValues[i]
+		predVal := predValues[i]
 		if counts[i] > 0 {
 			reqVal /= float64(counts[i])
 			errVal /= float64(counts[i])
+			predVal /= float64(counts[i])
 		}
 		timeSeries = append(timeSeries, map[string]interface{}{
-			"timestamp":           ts,
-			"requests_per_minute": reqVal,
-			"errors_per_minute":   errVal,
+			"timestamp":              ts,
+			"requests_per_minute":    reqVal,
+			"errors_per_minute":      errVal,
+			"predictions_per_minute": predVal,
 		})
 	}
 
@@ -1516,13 +1802,14 @@ func GetmonitorMetrics(c *gin.Context) {
 	inferenceMetrics := GetInferenceMetrics()
 	systemMetrics := getSystemMetrics(ctx)
 	window_requests, window_errors := requestStats.totals(window, time.Now().UTC())
+	wafSnapshot, hasWAF := GetWAFTrafficSnapshot()
 
 	var errorRate float64
 	if window_requests > 0 {
 		errorRate = float64(window_errors) / float64(window_requests)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		timeField:                  timeSeries,
 		"range":                    rangeType,
 		"total_alerts":             totalAlerts,
@@ -1546,7 +1833,14 @@ func GetmonitorMetrics(c *gin.Context) {
 		"mongodb_connections":      systemMetrics.MongoDBConnections,
 		"timestamp":                time.Now().UTC(),
 		"system":                   systemMetrics,
-	})
+	}
+	if hasWAF {
+		response["requests_per_minute"] = wafSnapshot.RequestsPerMin
+		response["waf_blocked_per_minute"] = wafSnapshot.BlockedPerMin
+		response["waf_allowed_per_minute"] = wafSnapshot.AllowedPerMin
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func parseMetricsWindow(raw string) time.Duration {
@@ -1579,6 +1873,13 @@ type inferenceMetricsData struct {
 	PredictionsPerMinute float64 `json:"predictions_per_minute"`
 	ModelVersion         string  `json:"model_version"`
 	UptimeSeconds        float64 `json:"inference_uptime_seconds"`
+}
+
+type wafTrafficSnapshot struct {
+	Timestamp      time.Time `json:"timestamp"`
+	RequestsPerMin float64   `json:"requests_per_minute"`
+	BlockedPerMin  float64   `json:"blocked_per_minute"`
+	AllowedPerMin  float64   `json:"allowed_per_minute"`
 }
 
 func GetInferenceMetrics() inferenceMetricsData {
@@ -1646,7 +1947,7 @@ type systemMetricsData struct {
 	MemoryUsedMB             uint64  `json:"memory_used_mb"`
 	MemoryTotalMB            uint64  `json:"memory_total_mb"`
 	MemoryPercent            float64 `json:"memory_percent"`
-	Goroutines               int     `json:"goroutines"`
+	Goroutines               float64 `json:"goroutines"`
 	MongoDBConnections       int64   `json:"mongodb_connections"`
 	MongoDBDatabaseSizeBytes int64   `json:"mongodb_database_size_bytes"`
 	MongoDBAlertCount        int64   `json:"mongodb_alert_count"`
@@ -1690,26 +1991,67 @@ func getSystemTotalMemoryMB() uint64 {
 	return 0
 }
 
+func getSystemUsedMemoryMB() uint64 {
+	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
+		var memTotal, memFree, buffers, cached uint64
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				val, err := strconv.ParseUint(fields[1], 10, 64)
+				if err != nil {
+					continue
+				}
+				switch {
+				case strings.HasPrefix(line, "MemTotal:"):
+					memTotal = val
+				case strings.HasPrefix(line, "MemFree:"):
+					memFree = val
+				case strings.HasPrefix(line, "Buffers:"):
+					buffers = val
+				case strings.HasPrefix(line, "Cached:"):
+					cached = val
+				}
+			}
+		}
+		if memTotal > 0 {
+			used := memTotal - memFree - buffers - cached
+			return used / 1024
+		}
+	}
+	return 0
+}
+
+func getSystemLoadAverage() float64 {
+	if data, err := os.ReadFile("/proc/loadavg"); err == nil {
+		fields := strings.Fields(string(data))
+		if len(fields) >= 1 {
+			if load, err := strconv.ParseFloat(fields[0], 64); err == nil {
+				return load
+			}
+		}
+	}
+	return 0.0
+}
+
 func getSystemMetrics(ctx context.Context) systemMetricsData {
 	metrics := systemMetricsData{
 		Hostname:      getHostname(),
 		GoVersion:     runtime.Version(),
 		UptimeSeconds: time.Since(serviceStartTime).Seconds(),
-		Goroutines:    runtime.NumGoroutine(),
+		Goroutines:    getSystemLoadAverage(),
 	}
-
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	metrics.MemoryUsedMB = m.Alloc / (1024 * 1024)
 
 	sysTotalMB := getSystemTotalMemoryMB()
+	sysUsedMB := getSystemUsedMemoryMB()
 	if sysTotalMB > 0 {
 		metrics.MemoryTotalMB = sysTotalMB
+		metrics.MemoryUsedMB = sysUsedMB
+		metrics.MemoryPercent = float64(sysUsedMB) / float64(sysTotalMB) * 100
 	} else {
-		metrics.MemoryTotalMB = m.TotalAlloc / (1024 * 1024)
-	}
-	if metrics.MemoryTotalMB > 0 {
-		metrics.MemoryPercent = float64(m.Alloc) / float64(metrics.MemoryTotalMB*1024*1024) * 100
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		metrics.MemoryUsedMB = m.Sys / (1024 * 1024)
+		metrics.MemoryTotalMB = m.Sys / (1024 * 1024)
 	}
 
 	metrics.CpuPercent = getCPULoad()
@@ -1806,9 +2148,11 @@ func ReviewAlert(c *gin.Context) {
 			return
 		}
 		if result.MatchedCount == 0 {
+			LogAction(c, "alert_review_undo", "alert", id, nil, "failure", "alert not found")
 			c.JSON(http.StatusNotFound, gin.H{"error": "Alert not found"})
 			return
 		}
+		LogAction(c, "alert_review_undo", "alert", id, nil, "success", "")
 		c.JSON(http.StatusOK, gin.H{"success": true, "status": "generated", "human_label": nil})
 		return
 	}
@@ -1841,6 +2185,12 @@ func ReviewAlert(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Alert not found"})
 		return
 	}
+
+	action := "alert_review"
+	if body.HumanLabel == "" {
+		action = "alert_review_undo"
+	}
+	LogAction(c, action, "alert", id, map[string]interface{}{"label": body.HumanLabel}, "success", "")
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "status": "reviewed", "human_label": body.HumanLabel})
 }
@@ -1942,11 +2292,40 @@ func GetTotalErrors() uint64 {
 var LastRequestsPerMin float64
 
 func GetRequestsPerMin() float64 {
-	live := requestStats.liveRPM(time.Now())
-	if live > 0 {
-		return live
-	}
 	return LastRequestsPerMin
+}
+
+func GetWAFTrafficSnapshot() (wafTrafficSnapshot, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://log-collector:8081/api/waf/traffic", nil)
+	if err != nil {
+		return wafTrafficSnapshot{}, false
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return wafTrafficSnapshot{}, false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return wafTrafficSnapshot{}, false
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return wafTrafficSnapshot{}, false
+	}
+
+	var snapshot wafTrafficSnapshot
+	if err := json.Unmarshal(body, &snapshot); err != nil {
+		return wafTrafficSnapshot{}, false
+	}
+
+	return snapshot, true
 }
 
 func GetSystemMetrics(ctx context.Context) systemMetricsData {
@@ -1982,7 +2361,6 @@ func getCPULoad() float64 {
 		return 0.0
 	}
 
-	now := time.Now().UnixNano()
 	cpuMu.Lock()
 	defer cpuMu.Unlock()
 
@@ -1998,7 +2376,6 @@ func getCPULoad() float64 {
 
 	cpuLastTotal = total
 	cpuLastIdle = idle
-	_ = now
 	return 0.0
 }
 
@@ -2101,6 +2478,7 @@ type GenerateDatasetRequest struct {
 func GenerateDataset(c *gin.Context) {
 	var req GenerateDatasetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		LogAction(c, "dataset_generate", "dataset", "", nil, "failure", "invalid request")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
@@ -2139,9 +2517,12 @@ func GenerateDataset(c *gin.Context) {
 
 	result, err := collection.InsertOne(ctx, doc)
 	if err != nil {
+		LogAction(c, "dataset_generate", "dataset", "", map[string]interface{}{"attack_type": req.AttackType, "samples": req.SampleCount}, "failure", "failed to create dataset")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create dataset"})
 		return
 	}
+
+	LogAction(c, "dataset_generate", "dataset", fmt.Sprintf("%v", result.InsertedID), map[string]interface{}{"attack_type": req.AttackType, "samples": req.SampleCount}, "success", "")
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":      fmt.Sprintf("%v", result.InsertedID),
@@ -2155,6 +2536,7 @@ func GenerateDataset(c *gin.Context) {
 func DeleteDataset(c *gin.Context) {
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
+		LogAction(c, "dataset_delete", "dataset", "", nil, "failure", "dataset id is required")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "dataset id is required"})
 		return
 	}
@@ -2166,20 +2548,24 @@ func DeleteDataset(c *gin.Context) {
 
 	oid, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
+		LogAction(c, "dataset_delete", "dataset", id, nil, "failure", "invalid dataset id")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dataset id"})
 		return
 	}
 
 	result, err := collection.DeleteOne(ctx, bson.M{"_id": oid})
 	if err != nil {
+		LogAction(c, "dataset_delete", "dataset", id, nil, "failure", "failed to delete dataset")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete dataset"})
 		return
 	}
 	if result.DeletedCount == 0 {
+		LogAction(c, "dataset_delete", "dataset", id, nil, "failure", "dataset not found")
 		c.JSON(http.StatusNotFound, gin.H{"error": "dataset not found"})
 		return
 	}
 
+	LogAction(c, "dataset_delete", "dataset", id, nil, "success", "")
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
@@ -2191,16 +2577,19 @@ type MergeDatasetsRequest struct {
 func MergeDatasets(c *gin.Context) {
 	var req MergeDatasetsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		LogAction(c, "dataset_merge", "dataset", "", nil, "failure", "invalid request payload")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
 		return
 	}
 
 	if len(req.IDs) < 2 {
+		LogAction(c, "dataset_merge", "dataset", "", map[string]interface{}{"ids": req.IDs, "name": req.Name}, "failure", "at least 2 dataset IDs are required")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least 2 dataset IDs are required"})
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" {
+		LogAction(c, "dataset_merge", "dataset", "", map[string]interface{}{"ids": req.IDs}, "failure", "name is required")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
 		return
 	}
@@ -2210,20 +2599,20 @@ func MergeDatasets(c *gin.Context) {
 
 	collection := db.GetCollection("modintel", "datasets")
 
-	// Convert IDs to ObjectIDs
 	var objectIDs []primitive.ObjectID
 	for _, id := range req.IDs {
 		oid, err := primitive.ObjectIDFromHex(strings.TrimSpace(id))
 		if err != nil {
+			LogAction(c, "dataset_merge", "dataset", id, map[string]interface{}{"ids": req.IDs, "name": req.Name}, "failure", "invalid dataset ID")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dataset ID: " + id})
 			return
 		}
 		objectIDs = append(objectIDs, oid)
 	}
 
-	// Fetch datasets to merge
 	cursor, err := collection.Find(ctx, bson.M{"_id": bson.M{"$in": objectIDs}})
 	if err != nil {
+		LogAction(c, "dataset_merge", "dataset", "", map[string]interface{}{"ids": req.IDs, "name": req.Name}, "failure", "failed to fetch datasets")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch datasets"})
 		return
 	}
@@ -2231,16 +2620,17 @@ func MergeDatasets(c *gin.Context) {
 
 	var datasets []bson.M
 	if err := cursor.All(ctx, &datasets); err != nil {
+		LogAction(c, "dataset_merge", "dataset", "", map[string]interface{}{"ids": req.IDs, "name": req.Name}, "failure", "failed to decode datasets")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode datasets"})
 		return
 	}
 
 	if len(datasets) != len(objectIDs) {
+		LogAction(c, "dataset_merge", "dataset", "", map[string]interface{}{"ids": req.IDs, "name": req.Name}, "failure", "some datasets not found")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "some datasets not found"})
 		return
 	}
 
-	// Calculate merged stats
 	totalSamples := 0
 	attackSamples := 0
 	for _, ds := range datasets {
@@ -2261,7 +2651,6 @@ func MergeDatasets(c *gin.Context) {
 		mergedAttackPct = float64(attackSamples) / float64(totalSamples) * 100
 	}
 
-	// Create merged dataset
 	now := time.Now().UTC()
 	mergedDoc := bson.M{
 		"name":       strings.TrimSpace(req.Name),
@@ -2273,19 +2662,19 @@ func MergeDatasets(c *gin.Context) {
 		"status":     "ready",
 	}
 
-	// Insert merged dataset
 	insertResult, err := collection.InsertOne(ctx, mergedDoc)
 	if err != nil {
+		LogAction(c, "dataset_merge", "dataset", "", map[string]interface{}{"ids": req.IDs, "name": req.Name}, "failure", "failed to create merged dataset")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create merged dataset"})
 		return
 	}
 
-	// Delete original datasets
 	_, err = collection.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": objectIDs}})
 	if err != nil {
-		// Note: merged dataset is already created, but originals not deleted
 		log.Printf("Warning: failed to delete original datasets after merge: %v", err)
 	}
+
+	LogAction(c, "dataset_merge", "dataset", insertResult.InsertedID.(primitive.ObjectID).Hex(), map[string]interface{}{"ids": req.IDs, "name": req.Name, "samples": totalSamples, "attack_pct": mergedAttackPct}, "success", "")
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":    true,
