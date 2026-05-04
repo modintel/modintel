@@ -93,9 +93,9 @@ function renderHistory(items) {
             <td><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;" ${item.active ? 'disabled' : ''}>${item.version}</td>
             <td>${item.model_type}</td>
             <td>${item.dataset}</td>
-            <td>${item.precision}%</td>
-            <td>${item.recall}%</td>
-            <td style="color:var(--accent);">${item.fpr}%</td>
+            <td>${(item.precision * 100).toFixed(2)}%</td>
+            <td>${(item.recall * 100).toFixed(2)}%</td>
+            <td style="color:var(--accent);">${(item.fpr * 100).toFixed(2)}%</td>
             <td>${new Date(item.trained_at).toLocaleDateString()}</td>
             <td>
                 ${item.active
@@ -140,7 +140,6 @@ function toggleTrainingSelection(version, checked) {
 
 function updateSelectAllTraining() {
     const selectAll = document.getElementById('select-all-training');
-    // Only consider checkboxes that are not for active models
     const allCheckboxes = document.querySelectorAll('.training-checkbox');
     const selectableCheckboxes = Array.from(allCheckboxes).filter(cb => {
         const row = cb.closest('tr');
@@ -273,19 +272,19 @@ function updateEvalMetrics(item) {
     metrics.innerHTML = `
         <div class="metric">
             <div class="metric-label">Precision</div>
-            <div class="metric-value">${item.precision}%</div>
+            <div class="metric-value">${(item.precision * 100).toFixed(2)}%</div>
         </div>
         <div class="metric">
             <div class="metric-label">Recall</div>
-            <div class="metric-value">${item.recall}%</div>
+            <div class="metric-value">${(item.recall * 100).toFixed(2)}%</div>
         </div>
         <div class="metric">
             <div class="metric-label">FPR</div>
-            <div class="metric-value" style="color:var(--accent);">${item.fpr}%</div>
+            <div class="metric-value" style="color:var(--accent);">${(item.fpr * 100).toFixed(2)}%</div>
         </div>
         <div class="metric">
             <div class="metric-label">F1</div>
-            <div class="metric-value">${item.f1_score}%</div>
+            <div class="metric-value">${(item.f1_score * 100).toFixed(2)}%</div>
         </div>
     `;
 }
