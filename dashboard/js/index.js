@@ -249,9 +249,7 @@ function prependAlertRow(alert) {
     const firstAlertTs = firstRow ? firstRow.querySelector('td')?.textContent : null;
 
     let ts = alert.timestamp || '-';
-    if (ts.includes('-') || ts.includes('Z')) {
-        ts = ts;
-    } else if (ts.includes('/')) {
+    if (ts.includes('/')) {
         ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
     }
     const tsFormatted = new Date(ts).toLocaleTimeString();
@@ -375,32 +373,6 @@ async function updateLogsNewOnly() {
     }
 }
 
-async function clearLogs() {
-    try {
-        const res = await apiFetch(`${API_BASE}/logs`, { method: 'DELETE' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        logsCursor = null;
-        logsHasMore = true;
-        lastAlertCount = 0;
-        await updateStats();
-        await updateLogs();
-    } catch (e) {
-        console.error('Error clearing logs:', e);
-    }
-}
-
-function showClearModal() {
-    document.getElementById('clear-modal').classList.add('open');
-}
-
-function hideClearModal() {
-    document.getElementById('clear-modal').classList.remove('open');
-}
-
-function confirmClearLogs() {
-    hideClearModal();
-    clearLogs();
-}
 
 let streamSearchQuery = '';
 
@@ -434,26 +406,6 @@ if (lockBtn) {
     lockBtn.addEventListener('click', () => {
         window.logout();
     });
-}
-
-const refreshBtn = document.getElementById('refresh-btn');
-if (refreshBtn) {
-    refreshBtn.addEventListener('click', () => window.location.reload());
-}
-
-const clearLogsBtn = document.getElementById('clear-logs-btn');
-if (clearLogsBtn) {
-    clearLogsBtn.addEventListener('click', showClearModal);
-}
-
-const clearCancelBtn = document.getElementById('clear-modal-cancel');
-if (clearCancelBtn) {
-    clearCancelBtn.addEventListener('click', hideClearModal);
-}
-
-const clearConfirmBtn = document.getElementById('clear-modal-confirm');
-if (clearConfirmBtn) {
-    clearConfirmBtn.addEventListener('click', confirmClearLogs);
 }
 
 const loadMoreLogsBtn = document.getElementById('load-more-logs');
@@ -650,15 +602,5 @@ document.querySelectorAll('.priority-btn').forEach(btn => {
     });
 });
 
-function applyPriorityFilter() {
-    const rows = document.querySelectorAll('#logs-body tr');
-    rows.forEach(row => {
-        const priorityCell = row.querySelector('td:last-child');
-        if (!priorityCell) return;
-        const priorityMatch = priorityCell.textContent.match(/P[123]/i);
-        if (!priorityMatch) return;
-        const p = priorityMatch[0].toLowerCase();
-        row.style.display = priorityFilters[p] ? '' : 'none';
-    });
-}
+
 

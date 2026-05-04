@@ -1,5 +1,6 @@
 let originalDisplayName = '';
 let originalEmail = '';
+let currentUser = null;
 
 async function loadProfile() {
     try {
@@ -9,6 +10,7 @@ async function loadProfile() {
         }
         const payload = await res.json();
         const user = payload?.data;
+        currentUser = user; // Store current user
         if (user) {
             const displayNameEl = document.getElementById('display-name');
             const emailEl = document.getElementById('email');
@@ -165,7 +167,7 @@ async function loadSessions() {
             throw new Error(`HTTP ${res.status}`);
         }
         const payload = await res.json();
-        const sessions = payload?.data?.sessions || [];
+        let sessions = payload?.data?.sessions || [];
         renderSessions(sessions);
     } catch (err) {
         renderSessions([]);
@@ -259,21 +261,20 @@ function renderUsers(users) {
         status.className = `user-status ${user.is_active !== false ? 'active' : 'inactive'}`;
         status.title = user.is_active !== false ? 'Active' : 'Inactive';
 
-        const roleSelect = document.createElement('select');
-        roleSelect.className = 'user-role-select';
-        ['viewer', 'analyst', 'admin'].forEach(r => {
-            const opt = document.createElement('option');
-            opt.value = r;
-            opt.textContent = r.charAt(0).toUpperCase() + r.slice(1);
-            if (r === user.role) opt.selected = true;
-            roleSelect.appendChild(opt);
-        });
-        roleSelect.addEventListener('change', () => updateUserRole(user.id || user._id, roleSelect.value));
+        const roleDisplay = document.createElement('div');
+        roleDisplay.className = 'user-role-display';
+        roleDisplay.textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-danger user-delete-btn';
+        deleteBtn.textContent = 'Remove';
+        deleteBtn.addEventListener('click', () => deleteUser(user));
 
         item.appendChild(avatar);
         item.appendChild(info);
         item.appendChild(status);
-        item.appendChild(roleSelect);
+        item.appendChild(roleDisplay);
+        item.appendChild(deleteBtn);
         listEl.appendChild(item);
     });
 }
@@ -293,23 +294,43 @@ async function loadUsers() {
     }
 }
 
-async function updateUserRole(userId, newRole) {
-    try {
-        const res = await apiFetch(`/api/v1/users/${userId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ role: newRole }),
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.error || `HTTP ${res.status}`);
-        }
-        showModal('Role Updated', `User role changed to ${newRole}.`);
-        await loadUsers();
-    } catch (err) {
-        showModal('Error', err.message || 'Failed to update user role.', 'error');
-        await loadUsers();
+async function deleteUser(user) {
+    if (currentUser && (user.id === currentUser.id || user._id === currentUser.id)) {
+        showModal('Cannot Delete', 'You cannot delete your own account.', 'error');
+        return;
     }
+
+    const userName = user.first_name && user.last_name
+        ? `${user.first_name} ${user.last_name}`
+        : user.first_name || user.email || 'User';
+
+    const requiredText = `Remove user - ${userName}`;
+
+    showPrompt(
+        'Confirm User Removal',
+        `To remove this user, type: <strong>${requiredText}</strong>`,
+        '',
+        async (input) => {
+            if (input.trim() !== requiredText) {
+                showModal('Invalid Confirmation', 'The confirmation text does not match. User not removed.', 'error');
+                return;
+            }
+
+            try {
+                const res = await apiFetch(`/api/v1/users/${user.id || user._id}`, {
+                    method: 'DELETE',
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || `HTTP ${res.status}`);
+                }
+                showModal('User Removed', 'The user has been successfully removed.');
+                await loadUsers();
+            } catch (err) {
+                showModal('Error', err.message || 'Failed to remove user.', 'error');
+            }
+        }
+    );
 }
 
 async function sendInvite() {
@@ -545,21 +566,6 @@ document.querySelectorAll(".paranoia-presets .btn").forEach(function (btn) {
 
 const LAYER2_WARNING_TITLE = 'Enable Layer-2 Blocking?';
 const LAYER2_WARNING_BODY = 'Layer-2 blocking uses a machine learning model to detect attacks that bypass the Coraza WAF (Layer-1). Unlike Layer-1, which combines deterministic Coraza rules with ML for false-positive reduction, Layer-2 is a pure ML classifier. It may produce false positives and block legitimate traffic. Only enable this if you understand the risk and have reviewed the model\'s performance on your traffic.';
-
-async function loadLayer2Config() {
-    try {
-        const res = await apiFetch('/api/waf/paranoia');
-        if (!res.ok) return;
-        const payload = await res.json();
-        const data = payload?.data;
-        if (!data) return;
-        const enabled = data.layer2_blocking === true;
-        const toggle = document.getElementById('layer2-enabled');
-        if (toggle) toggle.checked = enabled;
-    } catch (e) {
-        console.error('Failed to load Layer-2 config', e);
-    }
-}
 
 async function saveLayer2Config(enabled) {
     try {

@@ -1,5 +1,6 @@
 const API_BASE = '/api';
 let currentRange = '1h';
+let requestSeriesMode = 'both';
 
 const RANGE_MAX_POINTS = {
     '1h': 60,
@@ -99,17 +100,94 @@ function addChartHoverDots(svgId, values, width, height, padding, unit, dotClass
     });
 }
 
-function updateRequestRateChart(data) {
+function updateRequestRateChart(data, sharedMax) {
     const width = 300;
     const height = 80;
     const padding = 5;
 
-    const { points, areaPoints } = generateChartPoints(data, width, height, padding);
+    const values = Array.isArray(data)
+        ? data.map((value) => {
+            const n = Number(value);
+            return Number.isFinite(n) ? n : 0;
+        })
+        : [];
+
+    if (values.length === 0) {
+        values.push(0, 0);
+    } else if (values.length === 1) {
+        values.push(values[0]);
+    }
+
+    const max = Math.max(sharedMax || 1, 1);
+    const min = 0;
+    const range = max - min || 1;
+    const step = (width - padding * 2) / Math.max(values.length - 1, 1);
+
+    const points = values.map((val, i) => {
+        const x = padding + i * step;
+        const y = height - padding - ((val - min) / range) * (height - padding * 2);
+        return `${x},${y}`;
+    }).join(' ');
+
+    const areaPoints = `${padding},${height - padding} ` + points + ` ${width - padding},${height - padding} Z`;
 
     document.getElementById('request-line').setAttribute('points', points);
     document.getElementById('request-area').setAttribute('d', 'M' + areaPoints);
 
-    addChartHoverDots('request-rate-chart', data, width, height, padding, 'req/min', 'req-dot');
+    addChartHoverDots('request-rate-chart', values, width, height, padding, 'req/min', 'req-dot');
+}
+
+function updateRequestLegend(values) {
+    const waf = values.waf;
+    const inference = values.inference;
+    const wafEl = document.getElementById('legend-waf-value');
+    const infEl = document.getElementById('legend-inference-value');
+
+    if (wafEl) {
+        wafEl.textContent = Number.isFinite(waf) ? waf.toFixed(1) : '0.0';
+    }
+    if (infEl) {
+        infEl.textContent = Number.isFinite(inference) ? inference.toFixed(1) : '0.0';
+    }
+}
+
+function updateInferenceRateChart(data, sharedMax) {
+    const width = 300;
+    const height = 80;
+    const padding = 5;
+
+    const values = Array.isArray(data)
+        ? data.map((value) => {
+            const n = Number(value);
+            return Number.isFinite(n) ? n : 0;
+        })
+        : [];
+
+    if (values.length === 0) {
+        values.push(0, 0);
+    } else if (values.length === 1) {
+        values.push(values[0]);
+    }
+
+    const max = Math.max(sharedMax || 1, 1);
+    const min = 0;
+    const range = max - min || 1;
+    const step = (width - padding * 2) / Math.max(values.length - 1, 1);
+
+    const points = values.map((val, i) => {
+        const x = padding + i * step;
+        const y = height - padding - ((val - min) / range) * (height - padding * 2);
+        return `${x},${y}`;
+    }).join(' ');
+
+    const areaPoints = `${padding},${height - padding} ` + points + ` ${width - padding},${height - padding} Z`;
+
+    const line = document.getElementById('inference-line');
+    const area = document.getElementById('inference-area');
+    if (line) line.setAttribute('points', points);
+    if (area) area.setAttribute('d', 'M' + areaPoints);
+
+    addChartHoverDots('request-rate-chart', values, width, height, padding, 'inf/min', 'inf-dot');
 }
 
 function updateErrorRateChart(data) {
@@ -157,25 +235,6 @@ function markAllServicesUnknown() {
     updateServiceStatus('status-auth-service', 'unknown');
 }
 
-function normalizeServiceStatus(status) {
-    if (!status || typeof status !== 'string') {
-        return 'unknown';
-    }
-
-    const normalized = status.toLowerCase();
-    if (normalized === 'ok' || normalized === 'healthy') {
-        return 'ok';
-    }
-    if (normalized === 'degraded' || normalized === 'warn' || normalized === 'warning') {
-        return 'degraded';
-    }
-    if (normalized === 'down' || normalized === 'unhealthy') {
-        return 'down';
-    }
-
-    return 'unknown';
-}
-
 function updateServiceStatus(elementId, status) {
     const el = document.getElementById(elementId);
     if (!el) return;
@@ -192,15 +251,6 @@ function updateServiceStatus(elementId, status) {
     } else {
         el.classList.add('down');
     }
-}
-
-function updateAllServiceStatuses(services) {
-    if (!services) return;
-    updateServiceStatus('status-log-collector', services['log-collector'] || 'unknown');
-    updateServiceStatus('status-inference', services['inference-engine'] || 'unknown');
-    updateServiceStatus('status-proxy', services['proxy-waf'] || 'unknown');
-    updateServiceStatus('status-review-api', services['review-api'] || 'unknown');
-    updateServiceStatus('status-auth-service', services['auth-service'] || 'unknown');
 }
 
 function extractTimeSeriesData(timeSeries, fieldName) {
@@ -247,8 +297,8 @@ function applyMetricsData(data) {
 
     const system = data.system || {};
     document.getElementById('mongodb-connections').textContent = system.mongodb_connections || 1;
-    document.getElementById('memory-used').textContent = `${system.memory_used_mb || 0} / ${system.memory_total_mb || 0} MB`;
-    document.getElementById('goroutines').textContent = system.goroutines || 0;
+    document.getElementById('memory-used').textContent = `${((system.memory_used_mb || 0) / 1024).toFixed(1)} / ${((system.memory_total_mb || 0) / 1024).toFixed(1)} GB`;
+    document.getElementById('goroutines').textContent = (system.goroutines || 0).toFixed(1);
     document.getElementById('sys-dbsize').textContent = formatBytes(system.mongodb_database_size_bytes);
 
     const timeField = RANGE_FIELD[currentRange] || 'time_1h';
@@ -256,7 +306,17 @@ function applyMetricsData(data) {
     const maxPoints = RANGE_MAX_POINTS[currentRange] || 60;
     const sliced = timeSeries.slice(-maxPoints);
     const requestRates = extractTimeSeriesData(sliced, 'requests_per_minute');
-    updateRequestRateChart(requestRates);
+    const inferenceRates = extractTimeSeriesData(sliced, 'predictions_per_minute');
+    const maxRate = Math.max(...requestRates, ...inferenceRates, 1);
+
+    updateRequestRateChart(requestRates, maxRate);
+    updateInferenceRateChart(inferenceRates, maxRate);
+    updateRequestLegend({
+        waf: requestRates[requestRates.length - 1] || 0,
+        inference: inferenceRates[inferenceRates.length - 1] || 0,
+    });
+
+    applyRequestSeriesMode();
 
     const labels = generateLabels(sliced);
     updateChartLabels('request-labels', labels);
@@ -302,6 +362,26 @@ function applyMetricsData(data) {
     }
 }
 
+function applyRequestSeriesMode() {
+    const showWaf = requestSeriesMode === 'both' || requestSeriesMode === 'waf';
+    const showInference = requestSeriesMode === 'both' || requestSeriesMode === 'inference';
+
+    const wafLine = document.getElementById('request-line');
+    const wafArea = document.getElementById('request-area');
+    const infLine = document.getElementById('inference-line');
+    const infArea = document.getElementById('inference-area');
+
+    if (wafLine) wafLine.style.opacity = showWaf ? '1' : '0';
+    if (wafArea) wafArea.style.opacity = showWaf ? '1' : '0';
+    if (infLine) infLine.style.opacity = showInference ? '1' : '0';
+    if (infArea) infArea.style.opacity = showInference ? '1' : '0';
+
+    document.querySelectorAll('.chart-legend .legend-item').forEach(item => {
+        const isInference = item.querySelector('.swatch-inference');
+        item.style.opacity = (isInference ? showInference : showWaf) ? '1' : '0.35';
+    });
+}
+
 function applyMetricsLiveStats(data) {
     document.getElementById('stat-latency').textContent = `${(data.avg_inference_ms || 0).toFixed(1)}ms`;
 
@@ -317,8 +397,8 @@ function applyMetricsLiveStats(data) {
     const system = data.system;
     if (system) {
         document.getElementById('mongodb-connections').textContent = system.mongodb_connections || 1;
-        document.getElementById('memory-used').textContent = `${system.memory_used_mb || 0} / ${system.memory_total_mb || 0} MB`;
-        document.getElementById('goroutines').textContent = system.goroutines || 0;
+    document.getElementById('memory-used').textContent = `${((system.memory_used_mb || 0) / 1024).toFixed(1)} / ${((system.memory_total_mb || 0) / 1024).toFixed(1)} GB`;
+        document.getElementById('goroutines').textContent = (system.goroutines || 0).toFixed(1);
         document.getElementById('sys-dbsize').textContent = formatBytes(system.mongodb_database_size_bytes);
 
         updateWorkerBars();
@@ -407,12 +487,14 @@ function updateChartLabels(elementId, labels) {
 function updateWorkerBars() {
     const container = document.getElementById('workers-bars');
     if (!container) return;
-    const count = Number(document.getElementById('goroutines').textContent) || 0;
+    const load = Number(document.getElementById('goroutines').textContent) || 0;
     container.innerHTML = '';
-    for (let i = 0; i < count; i++) {
+    const maxBars = 10;
+    const barCount = Math.min(Math.ceil(load), maxBars);
+    for (let i = 0; i < barCount; i++) {
         const bar = document.createElement('div');
         bar.className = 'bar';
-        bar.style.height = `${((i + 1) / count) * 100}%`;
+        bar.style.height = `${((i + 1) / maxBars) * 100}%`;
         container.appendChild(bar);
     }
 }
@@ -495,3 +577,91 @@ document.querySelectorAll('.time-range-buttons .graph-btn').forEach(btn => {
         fetchMetrics();
     });
 });
+
+document.querySelectorAll('.metric-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.metric-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        requestSeriesMode = btn.dataset.mode || 'both';
+        applyRequestSeriesMode();
+    });
+});
+
+const storageClearBtn = document.getElementById('storage-clear-btn');
+const storageClearModal = document.getElementById('storage-clear-modal');
+const storageClearCancel = document.getElementById('storage-clear-cancel');
+const storageClearConfirm = document.getElementById('storage-clear-confirm');
+const storageClearList = document.getElementById('storage-clear-list');
+
+function getSelectedCollections() {
+    if (!storageClearList) return [];
+    return Array.from(storageClearList.querySelectorAll('input[type="checkbox"]'))
+        .filter((input) => input.checked)
+        .map((input) => input.value);
+}
+
+function updateStorageClearState() {
+    if (!storageClearConfirm) return;
+    storageClearConfirm.disabled = getSelectedCollections().length === 0;
+}
+
+function showStorageClearModal() {
+    if (!storageClearModal) return;
+    storageClearModal.classList.add('open');
+    updateStorageClearState();
+}
+
+function hideStorageClearModal() {
+    if (!storageClearModal) return;
+    storageClearModal.classList.remove('open');
+}
+
+async function confirmStorageClear() {
+    const collections = getSelectedCollections();
+    if (collections.length === 0) return;
+
+    storageClearConfirm.disabled = true;
+    storageClearConfirm.textContent = 'Deleting...';
+
+    try {
+        const res = await apiFetch(`${API_BASE}/admin/storage/clear`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ collections }),
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        hideStorageClearModal();
+        if (storageClearList) {
+            storageClearList.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+                input.checked = false;
+            });
+        }
+        updateStorageClearState();
+        fetchMetrics();
+    } catch (e) {
+        console.error('Error clearing storage:', e);
+    } finally {
+        if (storageClearConfirm) {
+            storageClearConfirm.textContent = 'Delete Selected';
+            updateStorageClearState();
+        }
+    }
+}
+
+if (storageClearBtn) {
+    storageClearBtn.addEventListener('click', showStorageClearModal);
+}
+
+if (storageClearCancel) {
+    storageClearCancel.addEventListener('click', hideStorageClearModal);
+}
+
+if (storageClearConfirm) {
+    storageClearConfirm.addEventListener('click', confirmStorageClear);
+}
+
+if (storageClearList) {
+    storageClearList.addEventListener('change', updateStorageClearState);
+}

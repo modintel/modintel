@@ -84,8 +84,8 @@ function showPrompt(title, message, defaultValue, onConfirm, onCancel) {
     modal.innerHTML = `
         <div class="modal-backdrop"></div>
         <div class="modal-content">
-            <h3>${title}</h3>
-            <p>${message}</p>
+            <h3 id="modal-title"></h3>
+            <p id="modal-message"></p>
             <input type="text" id="modal-input" class="modal-input" value="${defaultValue || ''}" />
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
@@ -94,9 +94,15 @@ function showPrompt(title, message, defaultValue, onConfirm, onCancel) {
         </div>
     `;
 
+    const titleEl = document.getElementById('modal-title');
+    const messageEl = document.getElementById('modal-message');
+    const inputEl = document.getElementById('modal-input');
+
+    titleEl.textContent = title;
+    messageEl.innerHTML = message;
+
     modal.classList.add('open');
 
-    const inputEl = document.getElementById('modal-input');
     inputEl.focus();
     inputEl.select();
 

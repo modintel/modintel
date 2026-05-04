@@ -37,22 +37,19 @@ var GEO_COLORS = [
     "#0891b2", "#7c3aed", "#ca8a04", "#059669", "#be123c"
 ];
 
-var logsCache = [];
-
 function detectVector(rule) {
     if (!rule) return { key: "other", label: "Other" };
     var code = Number(rule);
     if (code >= 913000 && code < 914000) return { key: "scanner", label: "Scanner" };
-    if (code >= 920000 && code < 921000) return { key: "protocol", label: "Protocol" };
-    if (code >= 921000 && code < 922000) return { key: "protocol", label: "Protocol Attack" };
+    if (code >= 920000 && code < 922000) return { key: "protocol", label: "Protocol" };
     if (code >= 930000 && code < 931000) return { key: "lfi", label: "LFI/Traversal" };
     if (code >= 931000 && code < 932000) return { key: "rfi", label: "RFI Attack" };
-    if (code >= 932000 && code < 933000) return { key: "cmdi", label: "Command Injection" };
+    if (code >= 932000 && code < 933000) return { key: "cmdi", label: "CMD Injection" };
     if (code >= 933000 && code < 934000) return { key: "php", label: "PHP Attack" };
     if (code >= 934000 && code < 935000) return { key: "nosql", label: "NoSQL Injection" };
     if (code >= 941000 && code < 942000) return { key: "xss", label: "XSS" };
     if (code >= 942000 && code < 943000) return { key: "sqli", label: "SQL Injection" };
-    if (code >= 943000 && code < 944000) return { key: "session", label: "Session Fixation" };
+    if (code >= 943000 && code < 944000) return { key: "session", label: "Session Fix.." };
     if (code >= 949000 && code < 950000) return { key: "anomaly", label: "Anomaly" };
     if (code >= 990000 && code < 991000) return { key: "custom", label: "Custom Rule" };
     return { key: "other", label: "Other" };
@@ -418,7 +415,6 @@ async function refreshReports() {
         if (logsRes.ok) {
             var logsData = await logsRes.json();
             alerts = logsData.data || logsData.alerts || [];
-            logsCache = alerts;
         }
 
         var trendRes = await apiFetch(API_BASE + "/trend?range=day");
@@ -481,12 +477,92 @@ function escapeAttr(str) {
     return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+var auditToggleBtn = document.getElementById("audit-toggle-btn");
+var reportsBody = document.querySelector(".reports-right-body");
+var auditLogs = document.querySelector(".audit-logs");
+var panelHeader = document.querySelector(".panel-right-header div");
+var auditActionFilter = document.getElementById("audit-action-filter");
+
+function setAuditView(showAudit) {
+    if (!reportsBody || !auditLogs || !panelHeader || !auditToggleBtn) return;
+    if (showAudit) {
+        reportsBody.style.display = "none";
+        auditLogs.style.display = "block";
+        panelHeader.textContent = "Audit Logs";
+        auditToggleBtn.textContent = "REPORTS";
+        if (auditActionFilter) auditActionFilter.style.display = "";
+        loadAuditLogs();
+    } else {
+        reportsBody.style.display = "grid";
+        auditLogs.style.display = "none";
+        panelHeader.textContent = "Reports Overview";
+        auditToggleBtn.textContent = "AUDIT TRAIL";
+        if (auditActionFilter) auditActionFilter.style.display = "none";
+    }
+}
+
+if (auditToggleBtn && reportsBody && auditLogs && panelHeader) {
+    auditToggleBtn.addEventListener("click", function () {
+        var isAudit = auditLogs.style.display !== "none";
+        setAuditView(!isAudit);
+    });
+}
+
+if (auditActionFilter) auditActionFilter.addEventListener("change", loadAuditLogs);
+
+async function loadAuditLogs() {
+    try {
+        var actionFilter = document.getElementById("audit-action-filter");
+        var action = actionFilter ? actionFilter.value : "";
+        var url = API_BASE + "/admin/audit-logs?limit=50";
+        if (action) url += "&action=" + encodeURIComponent(action);
+        
+        var res = await apiFetch(url);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        var data = await res.json();
+        var logs = data.logs || [];
+        renderAuditLogs(logs);
+    } catch (err) {
+        document.getElementById("audit-logs-body").innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--fg-muted);padding:20px;">Failed to load audit logs</td></tr>';
+    }
+}
+
+function renderAuditLogs(logs) {
+    var tbody = document.getElementById("audit-logs-body");
+    if (!logs.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--fg-muted);padding:20px;">No audit logs found</td></tr>';
+        return;
+    }
+    var html = "";
+logs.forEach(function (log) {
+        var ts = new Date(log.timestamp).toLocaleString();
+        var user = escapeHtml(log.user_email || log.user_id);
+        var action = escapeHtml(log.action);
+        var details = JSON.stringify(log.details || {});
+        var resource = escapeHtml(log.resource_type + (log.resource_id ? " (" + log.resource_id + ")" : ""));
+        html += '<tr>' +
+            '<td>' + ts + '</td>' +
+            '<td>' + user + '</td>' +
+            '<td>' + action + '</td>' +
+            '<td>' + escapeHtml(details) + '</td>' +
+            '<td>' + resource + '</td>' +
+            '</tr>';
+    });
+    tbody.innerHTML = html;
+}
+
 var generateReportBtn = document.getElementById("generate-report-btn");
 if (generateReportBtn) generateReportBtn.addEventListener("click", generateReport);
 
-document.getElementById("paranoia-settings-btn").addEventListener("click", function () {
-    window.location.href = "/settings#waf-paranoia";
-});
+var paranoiaSettingsBtn = document.getElementById("paranoia-settings-btn");
+if (paranoiaSettingsBtn) {
+    paranoiaSettingsBtn.addEventListener("click", function () {
+        window.location.href = "/settings#waf-paranoia";
+    });
+}
 
 refreshReports();
 setInterval(refreshReports, 30000);
+setAuditView(false);
+
+if (auditActionFilter) auditActionFilter.style.display = "none";

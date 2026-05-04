@@ -97,7 +97,12 @@ async function loadDatasets() {
             return;
         }
         const data = await res.json();
-        renderDatasets(data.items || []);
+        const items = (data.items || []).slice().sort((a, b) => {
+            const aTime = Date.parse(a.created_at || a.createdAt || '') || 0;
+            const bTime = Date.parse(b.created_at || b.createdAt || '') || 0;
+            return bTime - aTime;
+        });
+        renderDatasets(items);
         updateSelectAllCheckbox();
         updateDatasetActions();
     } catch (e) {
@@ -127,7 +132,7 @@ function renderDatasets(items) {
             <td>${d.type || '—'}</td>
             <td>${d.samples || 0}</td>
             <td>${d.attack_pct || 0}%</td>
-            <td>${d.created_at || '—'}</td>
+            <td>${d.created_at ? new Date(d.created_at).toLocaleDateString() : '—'}</td>
             <td><button class="btn btn-sm btn-danger delete-dataset-btn" data-id="${d._id}">Delete</button></td>
         </tr>
     `).join('');
@@ -145,6 +150,9 @@ function renderDatasets(items) {
 
 function renderSources(sources) {
     const container = document.querySelector('.source-list');
+    if (!container) {
+        return;
+    }
     const icons = {
         sqli: 'sqli',
         xss: 'xss',
