@@ -238,11 +238,12 @@ func buildInitialTimeSeries(collection *mongo.Collection, rangeType string) []ma
 
 	values := make([]float64, bucketCount)
 	errValues := make([]float64, bucketCount)
+	predValues := make([]float64, bucketCount)
 	counts := make([]int, bucketCount)
 
 	filter := bson.M{"timestamp": bson.M{"$gte": startTime}}
 	opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: 1}}).SetProjection(bson.M{
-		"timestamp": 1, "requests_per_minute": 1, "errors_per_minute": 1,
+		"timestamp": 1, "requests_per_minute": 1, "errors_per_minute": 1, "predictions_per_minute": 1,
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -255,9 +256,10 @@ func buildInitialTimeSeries(collection *mongo.Collection, rangeType string) []ma
 
 	for cursor.Next(ctx) {
 		var mdoc struct {
-			Timestamp time.Time `bson:"timestamp"`
-			ReqPerMin float64   `bson:"requests_per_minute"`
-			ErrPerMin float64   `bson:"errors_per_minute"`
+			Timestamp  time.Time `bson:"timestamp"`
+			ReqPerMin  float64   `bson:"requests_per_minute"`
+			ErrPerMin  float64   `bson:"errors_per_minute"`
+			PredPerMin float64   `bson:"predictions_per_minute"`
 		}
 		if err := cursor.Decode(&mdoc); err != nil {
 			continue
@@ -267,6 +269,7 @@ func buildInitialTimeSeries(collection *mongo.Collection, rangeType string) []ma
 		if idx >= 0 && idx < bucketCount {
 			values[idx] += mdoc.ReqPerMin
 			errValues[idx] += mdoc.ErrPerMin
+			predValues[idx] += mdoc.PredPerMin
 			counts[idx]++
 		}
 	}
@@ -276,14 +279,17 @@ func buildInitialTimeSeries(collection *mongo.Collection, rangeType string) []ma
 		ts := startTime.Add(time.Duration(i) * bucketSize)
 		reqVal := values[i]
 		errVal := errValues[i]
+		predVal := predValues[i]
 		if counts[i] > 0 {
 			reqVal /= float64(counts[i])
 			errVal /= float64(counts[i])
+			predVal /= float64(counts[i])
 		}
 		series = append(series, map[string]interface{}{
-			"timestamp":           ts,
-			"requests_per_minute": reqVal,
-			"errors_per_minute":   errVal,
+			"timestamp":              ts,
+			"requests_per_minute":    reqVal,
+			"errors_per_minute":      errVal,
+			"predictions_per_minute": predVal,
 		})
 	}
 
@@ -296,7 +302,12 @@ func writeInitialHealth(send func(string, string)) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	systemMetrics := GetSystemMetrics(ctx)
+	wafSnapshot, hasWAF := GetWAFTrafficSnapshot()
 
+	requestsPerMin := GetRequestsPerMin()
+	if hasWAF {
+		requestsPerMin = wafSnapshot.RequestsPerMin
+	}
 	healthData := map[string]interface{}{
 		"services":               statuses,
 		"timestamp":              time.Now().UTC(),
@@ -307,7 +318,7 @@ func writeInitialHealth(send func(string, string)) {
 		"total_predictions":      inferenceMetrics.TotalPredictions,
 		"predictions_per_minute": inferenceMetrics.PredictionsPerMinute,
 		"model_version":          inferenceMetrics.ModelVersion,
-		"requests_per_minute":    GetRequestsPerMin(),
+		"requests_per_minute":    requestsPerMin,
 		"system": map[string]interface{}{
 			"mongodb_connections":         systemMetrics.MongoDBConnections,
 			"memory_used_mb":              systemMetrics.MemoryUsedMB,
@@ -317,6 +328,10 @@ func writeInitialHealth(send func(string, string)) {
 			"mongodb_database_size_bytes": systemMetrics.MongoDBDatabaseSizeBytes,
 			"cpu_percent":                 systemMetrics.CpuPercent,
 		},
+	}
+	if hasWAF {
+		healthData["waf_blocked_per_minute"] = wafSnapshot.BlockedPerMin
+		healthData["waf_allowed_per_minute"] = wafSnapshot.AllowedPerMin
 	}
 	data, _ := json.Marshal(healthData)
 	send("health", string(data))

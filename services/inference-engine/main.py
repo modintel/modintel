@@ -5,6 +5,7 @@ import logging
 import math
 import os
 import re
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -37,6 +38,8 @@ _startup_time: float = time.time()
 _prediction_count: int = 0
 _total_latency_ms: float = 0.0
 _recent_latencies: list = []
+_prediction_buckets: Dict[int, int] = {}
+_prediction_bucket_lock = threading.Lock()
 _sqli_patterns = re.compile(
     r"(?:'|\bunion\b|\bselect\b|\binsert\b|\bdrop\b|\bexec\b|--|;)",
     re.IGNORECASE,
@@ -83,6 +86,31 @@ def _miss_heuristic_score(event: dict) -> float:
         score += 0.10
 
     return min(score, 0.95)
+
+
+def _record_prediction(ts: float, count: int = 1) -> None:
+    minute = int(ts // 60) * 60
+    cutoff = minute - (24 * 60 * 60)
+    with _prediction_bucket_lock:
+        _prediction_buckets[minute] = _prediction_buckets.get(minute, 0) + count
+        for key in list(_prediction_buckets.keys()):
+            if key < cutoff:
+                del _prediction_buckets[key]
+
+
+def _live_predictions_per_minute(now: float) -> float:
+    current_minute = int(now // 60) * 60
+    total = 0
+    count = 0
+    with _prediction_bucket_lock:
+        for i in (1, 2):
+            minute = current_minute - (i * 60)
+            if minute in _prediction_buckets:
+                total += _prediction_buckets[minute]
+                count += 1
+    if count == 0:
+        return 0.0
+    return total / count
 
 
 def _resolve_model_dir() -> Path:
@@ -370,6 +398,7 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
         _prediction_count += 1
         _total_latency_ms += elapsed_ms
         _recent_latencies.append(elapsed_ms)
+        _record_prediction(time.time())
         if len(_recent_latencies) > 1000:
             _recent_latencies = _recent_latencies[-1000:]
 
@@ -455,6 +484,7 @@ async def predict_batch(events: List[CorazaAuditEvent]) -> JSONResponse:
         elapsed = int((time.perf_counter() - t_start) * 1000)
         _prediction_count += len(events)
         _total_latency_ms += elapsed
+        _record_prediction(time.time(), len(events))
 
         return JSONResponse(
             status_code=200,
@@ -502,6 +532,7 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
             _prediction_count += 1
             _total_latency_ms += elapsed_ms
             _recent_latencies.append(elapsed_ms)
+            _record_prediction(time.time())
             if len(_recent_latencies) > 1000:
                 _recent_latencies = _recent_latencies[-1000:]
             return JSONResponse(content=result)
@@ -547,6 +578,7 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
         _prediction_count += 1
         _total_latency_ms += elapsed_ms
         _recent_latencies.append(elapsed_ms)
+        _record_prediction(time.time())
         if len(_recent_latencies) > 1000:
             _recent_latencies = _recent_latencies[-1000:]
         return JSONResponse(
@@ -615,7 +647,7 @@ async def metrics() -> JSONResponse:
             "p50_latency_ms": p50,
             "p95_latency_ms": p95,
             "p99_latency_ms": p99,
-            "predictions_per_minute": _prediction_count / max(uptime / 60, 1),
+            "predictions_per_minute": _live_predictions_per_minute(time.time()),
         }
     )
 

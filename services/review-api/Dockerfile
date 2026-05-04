@@ -1,6 +1,6 @@
 FROM golang:1.26-alpine
 
-RUN apk add --no-cache docker-cli docker-compose
+RUN apk add --no-cache docker-cli docker-compose git
 
 WORKDIR /app
 
