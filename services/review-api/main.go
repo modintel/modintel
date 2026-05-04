@@ -23,6 +23,7 @@ var statsMu sync.Mutex
 
 func main() {
 	db.Connect()
+	api.InitAuditIndexes()
 	api.InitHub()
 
 	port := os.Getenv("PORT")
@@ -54,6 +55,7 @@ func metricsAggregator() {
 		totalErrors := api.GetTotalErrors()
 		inferenceMetrics := api.GetInferenceMetrics()
 		systemMetrics := api.GetSystemMetrics(ctx)
+		wafSnapshot, hasWAF := api.GetWAFTrafficSnapshot()
 
 		ts := time.Now().UTC().Truncate(metricsWindow)
 
@@ -74,6 +76,9 @@ func metricsAggregator() {
 
 		reqDeltaPerMin := float64(reqDelta)
 		errDeltaPerMin := float64(errDelta)
+		if hasWAF {
+			reqDeltaPerMin = wafSnapshot.RequestsPerMin
+		}
 		api.LastRequestsPerMin = reqDeltaPerMin
 
 		doc := bson.M{
@@ -96,6 +101,10 @@ func metricsAggregator() {
 			"total_alerts":                systemMetrics.TotalAlerts,
 			"ai_enriched_count":           systemMetrics.AIEnrichedCount,
 			"ml_miss_count":               systemMetrics.MLMissCount,
+		}
+		if hasWAF {
+			doc["waf_blocked_per_minute"] = wafSnapshot.BlockedPerMin
+			doc["waf_allowed_per_minute"] = wafSnapshot.AllowedPerMin
 		}
 
 		filter := bson.M{"timestamp": ts}
@@ -133,6 +142,10 @@ func metricsAggregator() {
 			"time_24h":            timeSeries24h,
 			"time_7d":             timeSeries7d,
 		}
+		if hasWAF {
+			payload["waf_blocked_per_minute"] = wafSnapshot.BlockedPerMin
+			payload["waf_allowed_per_minute"] = wafSnapshot.AllowedPerMin
+		}
 		data, _ := json.Marshal(payload)
 		api.Hub.Broadcast(api.SSEEvent{Type: "metrics", Data: string(data)})
 	}
@@ -165,11 +178,12 @@ func buildMetricsTimeSeries(collection *mongo.Collection, rangeType string) []ma
 
 	values := make([]float64, bucketCount)
 	errValues := make([]float64, bucketCount)
+	predValues := make([]float64, bucketCount)
 	counts := make([]int, bucketCount)
 
 	filter := bson.M{"timestamp": bson.M{"$gte": startTime}}
 	opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: 1}}).SetProjection(bson.M{
-		"timestamp": 1, "requests_per_minute": 1, "errors_per_minute": 1,
+		"timestamp": 1, "requests_per_minute": 1, "errors_per_minute": 1, "predictions_per_minute": 1,
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -182,9 +196,10 @@ func buildMetricsTimeSeries(collection *mongo.Collection, rangeType string) []ma
 
 	for cursor.Next(ctx) {
 		var doc struct {
-			Timestamp time.Time `bson:"timestamp"`
-			ReqPerMin float64   `bson:"requests_per_minute"`
-			ErrPerMin float64   `bson:"errors_per_minute"`
+			Timestamp  time.Time `bson:"timestamp"`
+			ReqPerMin  float64   `bson:"requests_per_minute"`
+			ErrPerMin  float64   `bson:"errors_per_minute"`
+			PredPerMin float64   `bson:"predictions_per_minute"`
 		}
 		if err := cursor.Decode(&doc); err != nil {
 			continue
@@ -194,6 +209,7 @@ func buildMetricsTimeSeries(collection *mongo.Collection, rangeType string) []ma
 		if idx >= 0 && idx < bucketCount {
 			values[idx] += doc.ReqPerMin
 			errValues[idx] += doc.ErrPerMin
+			predValues[idx] += doc.PredPerMin
 			counts[idx]++
 		}
 	}
@@ -203,14 +219,17 @@ func buildMetricsTimeSeries(collection *mongo.Collection, rangeType string) []ma
 		ts := startTime.Add(time.Duration(i) * bucketSize)
 		reqVal := values[i]
 		errVal := errValues[i]
+		predVal := predValues[i]
 		if counts[i] > 0 {
 			reqVal /= float64(counts[i])
 			errVal /= float64(counts[i])
+			predVal /= float64(counts[i])
 		}
 		series = append(series, map[string]interface{}{
-			"timestamp":           ts,
-			"requests_per_minute": reqVal,
-			"errors_per_minute":   errVal,
+			"timestamp":              ts,
+			"requests_per_minute":    reqVal,
+			"errors_per_minute":      errVal,
+			"predictions_per_minute": predVal,
 		})
 	}
 
@@ -428,7 +447,12 @@ func broadcastHealth() {
 		inferenceMetrics := api.GetInferenceMetrics()
 		ctx := context.Background()
 		systemMetrics := api.GetSystemMetrics(ctx)
+		wafSnapshot, hasWAF := api.GetWAFTrafficSnapshot()
 
+		requestsPerMin := api.LastRequestsPerMin
+		if hasWAF {
+			requestsPerMin = wafSnapshot.RequestsPerMin
+		}
 		payload := map[string]interface{}{
 			"services":               currentHealth,
 			"timestamp":              time.Now().UTC(),
@@ -439,7 +463,7 @@ func broadcastHealth() {
 			"total_predictions":      inferenceMetrics.TotalPredictions,
 			"predictions_per_minute": inferenceMetrics.PredictionsPerMinute,
 			"model_version":          inferenceMetrics.ModelVersion,
-			"requests_per_minute":    api.LastRequestsPerMin,
+			"requests_per_minute":    requestsPerMin,
 			"system": map[string]interface{}{
 				"mongodb_connections":         systemMetrics.MongoDBConnections,
 				"memory_used_mb":              systemMetrics.MemoryUsedMB,
@@ -449,6 +473,10 @@ func broadcastHealth() {
 				"mongodb_database_size_bytes": systemMetrics.MongoDBDatabaseSizeBytes,
 				"cpu_percent":                 systemMetrics.CpuPercent,
 			},
+		}
+		if hasWAF {
+			payload["waf_blocked_per_minute"] = wafSnapshot.BlockedPerMin
+			payload["waf_allowed_per_minute"] = wafSnapshot.AllowedPerMin
 		}
 		data, _ := json.Marshal(payload)
 		api.Hub.Broadcast(api.SSEEvent{Type: "health", Data: string(data)})

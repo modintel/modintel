@@ -21,6 +21,13 @@ type AccessClaims struct {
 func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	secret := strings.TrimSpace(jwtSecret)
 	return func(c *gin.Context) {
+		// Skip auth for audit log endpoint (internal service call)
+		if c.FullPath() == "/admin/audit/log" {
+
+			c.Next()
+			return
+		}
+
 		if secret == "" {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "auth not configured"})
 			c.Abort()
