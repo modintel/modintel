@@ -149,8 +149,6 @@ func enrichWithAI(doc *parsers.AlertDocument) bool {
 		return true
 	}
 
-	log.Printf("AI ENRICHMENT START: uri=%s method=%s rules=%v", doc.URI, doc.Method, doc.TriggeredRules)
-
 	ruleSev := make(map[string]string)
 	ruleMsg := make(map[string]string)
 	for _, rd := range doc.RuleDetails {
@@ -365,12 +363,6 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 		if err == nil && existing["ai_status"] == "enriched" {
 			continue
 		}
-		if err == nil && existing["ai_status"] == "pending" {
-			log.Printf("Re-enriching pending alert (key=%s)", alertKey)
-		}
-		if err == nil {
-			log.Printf("Alert exists but not enriched (key=%s), re-enriching...", alertKey)
-		}
 
 		if doc.AnomalyScore <= 0 {
 			continue
@@ -402,15 +394,12 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 
 		ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
 		opts := options.Update().SetUpsert(true)
-		res, err := collection.UpdateOne(ctx2, bson.M{"alert_key": alertKey}, bson.M{"$set": docMap}, opts)
+		_, err = collection.UpdateOne(ctx2, bson.M{"alert_key": alertKey}, bson.M{"$set": docMap}, opts)
 		cancel2()
 
 		if err != nil {
 			log.Printf("Failed to upsert Coraza alert: %v", err)
 			continue
-		}
-		if res.UpsertedCount > 0 {
-			log.Printf("Coraza alert ingested: %s (matched=%d, upserted=%v)", doc.URI, res.MatchedCount, res.UpsertedID)
 		}
 
 		aiWorkers <- struct{}{}
@@ -482,6 +471,13 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 			continue
 		}
 
+		ts, err := time.Parse(time.RFC3339, doc.Timestamp)
+		if err != nil {
+			ts = time.Now().UTC()
+		}
+		wafBlocked := parsers.IsBlockedByWAF(doc.HTTPStatus)
+		api.RecordWAFRequest(ts, wafBlocked)
+
 		if isInternalIP(doc.ClientIP) {
 			continue
 		}
@@ -501,7 +497,6 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 
 		alertKey := uniqueMissKey(doc)
 
-		wafBlocked := parsers.IsBlockedByWAF(doc.HTTPStatus)
 		wafPassed := parsers.IsWAFPassed(doc.HTTPStatus)
 
 		if wafBlocked {
@@ -539,8 +534,6 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 
 			if err != nil {
 				log.Printf("Failed to upsert miss alert to MongoDB: %v", err)
-			} else {
-				log.Printf("MISS DETECTED: %s (status=%d, ai_score=%v)", doc.URI, doc.HTTPStatus, doc.AIScore)
 			}
 		}
 	}

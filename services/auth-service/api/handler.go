@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -198,20 +198,37 @@ func (h *Handler) login(c *gin.Context) {
 	var user models.User
 	err := h.users.FindOne(ctx, bson.M{"email": req.Email, "is_active": true}).Decode(&user)
 	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			c.JSON(http.StatusUnauthorized, errResp("Invalid credentials", "AUTH_001"))
-			return
-		}
-		c.JSON(http.StatusInternalServerError, errResp("Authentication service unavailable", "AUTH_500"))
+		h.logAuditEvent(auditEvent{
+			Action:       "auth_login",
+			Outcome:      "failure",
+			ClientIP:     c.ClientIP(),
+			UserAgent:    c.Request.UserAgent(),
+			ErrorMessage: "invalid credentials",
+		})
+		c.JSON(http.StatusUnauthorized, errResp("Invalid credentials", "AUTH_001"))
 		return
 	}
 
 	if strings.TrimSpace(user.PasswordHash) == "" {
+		h.logAuditEvent(auditEvent{
+			Action:       "auth_login",
+			Outcome:      "failure",
+			ClientIP:     c.ClientIP(),
+			UserAgent:    c.Request.UserAgent(),
+			ErrorMessage: "invalid credentials",
+		})
 		c.JSON(http.StatusUnauthorized, errResp("Invalid credentials", "AUTH_001"))
 		return
 	}
 
 	if err := auth.ComparePassword(user.PasswordHash, req.Password); err != nil {
+		h.logAuditEvent(auditEvent{
+			Action:       "auth_login",
+			Outcome:      "failure",
+			ClientIP:     c.ClientIP(),
+			UserAgent:    c.Request.UserAgent(),
+			ErrorMessage: "invalid credentials",
+		})
 		c.JSON(http.StatusUnauthorized, errResp("Invalid credentials", "AUTH_001"))
 		return
 	}
@@ -258,6 +275,16 @@ func (h *Handler) login(c *gin.Context) {
 	h.setAccessTokenCookie(c, accessToken, time.Until(accessExp))
 	h.setRefreshTokenCookie(c, refreshToken, time.Until(refreshExp))
 
+	h.logAuditEvent(auditEvent{
+		Action:    "auth_login",
+		Outcome:   "success",
+		UserID:    user.ID.Hex(),
+		UserEmail: user.Email,
+		UserRole:  user.Role,
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	})
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
@@ -288,6 +315,13 @@ func (h *Handler) refresh(c *gin.Context) {
 
 	claims, err := h.issuer.ParseRefreshToken(refreshToken)
 	if err != nil {
+		h.logAuditEvent(auditEvent{
+			Action:    "auth_refresh",
+			Outcome:   "failure",
+			Details:   map[string]interface{}{"reason": "invalid token"},
+			ClientIP:  c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
 		c.JSON(http.StatusUnauthorized, errResp("Invalid refresh token", "AUTH_002"))
 		return
 	}
@@ -345,6 +379,14 @@ func (h *Handler) refresh(c *gin.Context) {
 	var user models.User
 	userOID, err := primitive.ObjectIDFromHex(claims.UserID)
 	if err != nil {
+		h.logAuditEvent(auditEvent{
+			Action:    "auth_refresh",
+			Outcome:   "failure",
+			UserID:    claims.UserID,
+			Details:   map[string]interface{}{"reason": "invalid user id in token"},
+			ClientIP:  c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
 		c.JSON(http.StatusUnauthorized, errResp("User no longer active", "AUTH_003"))
 		return
 	}
@@ -353,6 +395,14 @@ func (h *Handler) refresh(c *gin.Context) {
 		"password_hash": 0,
 	})).Decode(&user)
 	if err != nil {
+		h.logAuditEvent(auditEvent{
+			Action:    "auth_refresh",
+			Outcome:   "failure",
+			UserID:    claims.UserID,
+			Details:   map[string]interface{}{"reason": "user not found or inactive"},
+			ClientIP:  c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
 		c.JSON(http.StatusUnauthorized, errResp("User no longer active", "AUTH_003"))
 		return
 	}
@@ -365,6 +415,17 @@ func (h *Handler) refresh(c *gin.Context) {
 
 	h.setAccessTokenCookie(c, accessToken, time.Until(accessExp))
 	h.setRefreshTokenCookie(c, newRefresh, time.Until(refreshExp))
+
+	h.logAuditEvent(auditEvent{
+		Action:    "auth_refresh",
+		Outcome:   "success",
+		UserID:    claims.UserID,
+		UserEmail: user.Email,
+		UserRole:  user.Role,
+		Details:   map[string]interface{}{"rotated": true},
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":    true,
@@ -397,8 +458,35 @@ func (h *Handler) logout(c *gin.Context) {
 		},
 	})
 	if err != nil {
+		h.logAuditEvent(auditEvent{
+			Action:       "auth_logout",
+			Outcome:      "failure",
+			ClientIP:     c.ClientIP(),
+			UserAgent:    c.Request.UserAgent(),
+			ErrorMessage: "failed to revoke token",
+		})
 		c.JSON(http.StatusInternalServerError, errResp("Failed to revoke token", "AUTH_500"))
 		return
+	}
+
+	claimsAny, _ := c.Get("access_claims")
+	if claims, ok := claimsAny.(*auth.AccessClaims); ok && claims != nil {
+		h.logAuditEvent(auditEvent{
+			Action:    "auth_logout",
+			Outcome:   "success",
+			UserID:    claims.UserID,
+			UserEmail: claims.Email,
+			UserRole:  claims.Role,
+			ClientIP:  c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
+	} else {
+		h.logAuditEvent(auditEvent{
+			Action:    "auth_logout",
+			Outcome:   "success",
+			ClientIP:  c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
 	}
 
 	h.clearAuthCookies(c)
@@ -467,6 +555,16 @@ func (h *Handler) updateProfile(c *gin.Context) {
 	}
 
 	if len(updates) == 0 {
+		h.logAuditEvent(auditEvent{
+			Action:       "profile_update",
+			Outcome:      "failure",
+			UserID:       claims.UserID,
+			UserEmail:    claims.Email,
+			UserRole:     claims.Role,
+			ClientIP:     c.ClientIP(),
+			UserAgent:    c.Request.UserAgent(),
+			ErrorMessage: "no updates provided",
+		})
 		c.JSON(http.StatusBadRequest, errResp("no updates provided", "AUTH_400"))
 		return
 	}
@@ -494,10 +592,34 @@ func (h *Handler) updateProfile(c *gin.Context) {
 	var user models.User
 	err = h.users.FindOne(ctx, bson.M{"_id": userOID}, options.FindOne().SetProjection(bson.M{"password_hash": 0})).Decode(&user)
 	if err != nil {
+		h.logAuditEvent(auditEvent{
+			Action:    "profile_update",
+			Outcome:   "success",
+			UserID:    claims.UserID,
+			UserEmail: claims.Email,
+			UserRole:  claims.Role,
+			ClientIP:  c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
 		c.JSON(http.StatusOK, gin.H{"success": true})
 		return
 	}
 
+	h.logAuditEvent(auditEvent{
+		Action:    "profile_update",
+		Outcome:   "success",
+		UserID:    claims.UserID,
+		UserEmail: claims.Email,
+		UserRole:  claims.Role,
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+		Details: map[string]interface{}{
+			"updated_fields": map[string]interface{}{
+				"first_name": req.FirstName,
+				"last_name":  req.LastName,
+			},
+		},
+	})
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": userDTO(user)})
 }
 
@@ -556,21 +678,21 @@ func (h *Handler) listUsers(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	cursor, err := h.users.Find(ctx, bson.M{}, options.Find().SetProjection(bson.M{"password_hash": 0}).SetSort(bson.M{"created_at": -1}))
+	cursor, err := h.users.Find(ctx, bson.M{}, options.Find().SetProjection(bson.M{"password_hash": 0}))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errResp("Failed listing users", "AUTH_500"))
 		return
 	}
 	defer cursor.Close(ctx)
 
-	users := make([]gin.H, 0)
+	var users []models.User
 	for cursor.Next(ctx) {
 		var user models.User
 		if err := cursor.Decode(&user); err != nil {
 			c.JSON(http.StatusInternalServerError, errResp("Failed decoding users", "AUTH_500"))
 			return
 		}
-		users = append(users, userDTO(user))
+		users = append(users, user)
 	}
 
 	if err := cursor.Err(); err != nil {
@@ -578,7 +700,20 @@ func (h *Handler) listUsers(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"users": users}})
+	// Sort users: active first, then by creation date descending
+	sort.Slice(users, func(i, j int) bool {
+		if users[i].IsActive != users[j].IsActive {
+			return users[i].IsActive // active users first
+		}
+		return users[i].CreatedAt.After(users[j].CreatedAt) // newer first
+	})
+
+	result := make([]gin.H, len(users))
+	for i, user := range users {
+		result[i] = userDTO(user)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"users": result}})
 }
 
 func (h *Handler) getUser(c *gin.Context) {
@@ -633,6 +768,19 @@ func (h *Handler) createUser(c *gin.Context) {
 
 	hash, err := auth.HashPassword(req.Password, h.cfg.BcryptCost)
 	if err != nil {
+		claims, _ := getAccessClaims(c)
+		if claims != nil {
+			h.logAuditEvent(auditEvent{
+				Action:       "user_create",
+				Outcome:      "failure",
+				UserID:       claims.UserID,
+				UserEmail:    claims.Email,
+				UserRole:     claims.Role,
+				ClientIP:     c.ClientIP(),
+				UserAgent:    c.Request.UserAgent(),
+				ErrorMessage: "failed hashing password",
+			})
+		}
 		c.JSON(http.StatusInternalServerError, errResp("Failed hashing password", "AUTH_500"))
 		return
 	}
@@ -663,8 +811,39 @@ func (h *Handler) createUser(c *gin.Context) {
 	var user models.User
 	err = h.users.FindOne(ctx, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"password_hash": 0})).Decode(&user)
 	if err != nil {
+		claims, _ := getAccessClaims(c)
+		if claims != nil {
+			h.logAuditEvent(auditEvent{
+				Action:       "user_create",
+				Outcome:      "success",
+				UserID:       claims.UserID,
+				UserEmail:    claims.Email,
+				UserRole:     claims.Role,
+				ResourceType: "user",
+				ResourceID:   id.Hex(),
+				Details:      map[string]interface{}{"created_email": req.Email, "created_role": req.Role},
+				ClientIP:     c.ClientIP(),
+				UserAgent:    c.Request.UserAgent(),
+			})
+		}
 		c.JSON(http.StatusCreated, gin.H{"success": true, "data": gin.H{"id": id.Hex()}})
 		return
+	}
+
+	claims, _ := getAccessClaims(c)
+	if claims != nil {
+		h.logAuditEvent(auditEvent{
+			Action:       "user_create",
+			Outcome:      "success",
+			UserID:       claims.UserID,
+			UserEmail:    claims.Email,
+			UserRole:     claims.Role,
+			ResourceType: "user",
+			ResourceID:   id.Hex(),
+			Details:      map[string]interface{}{"created_email": req.Email, "created_role": req.Role, "created_first_name": user.FirstName, "created_last_name": user.LastName},
+			ClientIP:     c.ClientIP(),
+			UserAgent:    c.Request.UserAgent(),
+		})
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"success": true, "data": userDTO(user)})
@@ -730,12 +909,45 @@ func (h *Handler) inviteUser(c *gin.Context) {
 	}
 
 	id := res.InsertedID.(primitive.ObjectID)
+
+	claimsAny, _ := c.Get("access_claims")
+	if claims, ok := claimsAny.(*auth.AccessClaims); ok && claims != nil {
+		h.logAuditEvent(auditEvent{
+			Action:       "user_invite",
+			Outcome:      "success",
+			UserID:       claims.UserID,
+			UserEmail:    claims.Email,
+			UserRole:     claims.Role,
+			ResourceType: "user",
+			ResourceID:   id.Hex(),
+			Details: map[string]interface{}{
+				"target_email": req.Email,
+				"target_role":  req.Role,
+			},
+			ClientIP:  c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
+	} else {
+		h.logAuditEvent(auditEvent{
+			Action:       "user_invite",
+			Outcome:      "success",
+			ResourceType: "user",
+			ResourceID:   id.Hex(),
+			Details: map[string]interface{}{
+				"target_email": req.Email,
+				"target_role":  req.Role,
+			},
+			ClientIP:  c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
-		"success":    true,
-		"user_id":    id.Hex(),
-		"email":      req.Email,
-		"role":       req.Role,
-		"password":   tempPassword,
+		"success":  true,
+		"user_id":  id.Hex(),
+		"email":    req.Email,
+		"role":     req.Role,
+		"password": tempPassword,
 	})
 }
 
@@ -781,6 +993,21 @@ func (h *Handler) updateUser(c *gin.Context) {
 
 	res, err := h.users.UpdateOne(ctx, bson.M{"_id": userOID}, bson.M{"$set": updates})
 	if err != nil {
+		claims, _ := getAccessClaims(c)
+		if claims != nil {
+			h.logAuditEvent(auditEvent{
+				Action:       "user_update",
+				Outcome:      "failure",
+				UserID:       claims.UserID,
+				UserEmail:    claims.Email,
+				UserRole:     claims.Role,
+				ResourceType: "user",
+				ResourceID:   userOID.Hex(),
+				ErrorMessage: "database error updating user",
+				ClientIP:     c.ClientIP(),
+				UserAgent:    c.Request.UserAgent(),
+			})
+		}
 		c.JSON(http.StatusInternalServerError, errResp("failed updating user", "AUTH_500"))
 		return
 	}
@@ -792,8 +1019,44 @@ func (h *Handler) updateUser(c *gin.Context) {
 	var user models.User
 	err = h.users.FindOne(ctx, bson.M{"_id": userOID}, options.FindOne().SetProjection(bson.M{"password_hash": 0})).Decode(&user)
 	if err != nil {
+		claims, _ := getAccessClaims(c)
+		if claims != nil {
+			h.logAuditEvent(auditEvent{
+				Action:       "user_update",
+				Outcome:      "success",
+				UserID:       claims.UserID,
+				UserEmail:    claims.Email,
+				UserRole:     claims.Role,
+				ResourceType: "user",
+				ResourceID:   userOID.Hex(),
+				Details:      map[string]interface{}{"updated_fields": updates},
+				ClientIP:     c.ClientIP(),
+				UserAgent:    c.Request.UserAgent(),
+			})
+		}
 		c.JSON(http.StatusOK, gin.H{"success": true})
 		return
+	}
+
+	claims, _ := getAccessClaims(c)
+	if claims != nil {
+		h.logAuditEvent(auditEvent{
+			Action:       "user_update",
+			Outcome:      "success",
+			UserID:       claims.UserID,
+			UserEmail:    claims.Email,
+			UserRole:     claims.Role,
+			ResourceType: "user",
+			ResourceID:   userOID.Hex(),
+			Details: map[string]interface{}{
+				"updated_fields":   updates,
+				"target_email":     user.Email,
+				"target_role":      user.Role,
+				"target_is_active": user.IsActive,
+			},
+			ClientIP:  c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": userDTO(user)})
@@ -810,12 +1073,42 @@ func (h *Handler) deactivateUser(c *gin.Context) {
 
 	res, err := h.users.UpdateOne(ctx, bson.M{"_id": userOID}, bson.M{"$set": bson.M{"is_active": false, "updated_at": time.Now().UTC()}})
 	if err != nil {
+		claims, _ := getAccessClaims(c)
+		if claims != nil {
+			h.logAuditEvent(auditEvent{
+				Action:       "user_deactivate",
+				Outcome:      "failure",
+				UserID:       claims.UserID,
+				UserEmail:    claims.Email,
+				UserRole:     claims.Role,
+				ResourceType: "user",
+				ResourceID:   userOID.Hex(),
+				ErrorMessage: "database error",
+				ClientIP:     c.ClientIP(),
+				UserAgent:    c.Request.UserAgent(),
+			})
+		}
 		c.JSON(http.StatusInternalServerError, errResp("failed deactivating user", "AUTH_500"))
 		return
 	}
 	if res.MatchedCount == 0 {
 		c.JSON(http.StatusNotFound, errResp("User not found", "AUTH_404"))
 		return
+	}
+
+	claims, _ := getAccessClaims(c)
+	if claims != nil {
+		h.logAuditEvent(auditEvent{
+			Action:       "user_deactivate",
+			Outcome:      "success",
+			UserID:       claims.UserID,
+			UserEmail:    claims.Email,
+			UserRole:     claims.Role,
+			ResourceType: "user",
+			ResourceID:   userOID.Hex(),
+			ClientIP:     c.ClientIP(),
+			UserAgent:    c.Request.UserAgent(),
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
@@ -905,13 +1198,49 @@ func (h *Handler) revokeSession(c *gin.Context) {
 		"revoked": false,
 	}, bson.M{"$set": bson.M{"revoked": true, "revoked_at": time.Now().UTC()}})
 	if err != nil {
+		h.logAuditEvent(auditEvent{
+			Action:       "session_revoke",
+			Outcome:      "failure",
+			UserID:       claims.UserID,
+			UserEmail:    claims.Email,
+			UserRole:     claims.Role,
+			ResourceType: "session",
+			ResourceID:   id,
+			ErrorMessage: "database error",
+			ClientIP:     c.ClientIP(),
+			UserAgent:    c.Request.UserAgent(),
+		})
 		c.JSON(http.StatusInternalServerError, errResp("Failed revoking session", "AUTH_500"))
 		return
 	}
 	if res.MatchedCount == 0 {
+		h.logAuditEvent(auditEvent{
+			Action:       "session_revoke",
+			Outcome:      "failure",
+			UserID:       claims.UserID,
+			UserEmail:    claims.Email,
+			UserRole:     claims.Role,
+			ResourceType: "session",
+			ResourceID:   id,
+			ErrorMessage: "session not found or already revoked",
+			ClientIP:     c.ClientIP(),
+			UserAgent:    c.Request.UserAgent(),
+		})
 		c.JSON(http.StatusNotFound, errResp("Session not found", "AUTH_404"))
 		return
 	}
+
+	h.logAuditEvent(auditEvent{
+		Action:       "session_revoke",
+		Outcome:      "success",
+		UserID:       claims.UserID,
+		UserEmail:    claims.Email,
+		UserRole:     claims.Role,
+		ResourceType: "session",
+		ResourceID:   id,
+		ClientIP:     c.ClientIP(),
+		UserAgent:    c.Request.UserAgent(),
+	})
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
@@ -930,9 +1259,30 @@ func (h *Handler) revokeAllSessions(c *gin.Context) {
 		"revoked": false,
 	}, bson.M{"$set": bson.M{"revoked": true, "revoked_at": time.Now().UTC()}})
 	if err != nil {
+		h.logAuditEvent(auditEvent{
+			Action:       "session_revoke_all",
+			Outcome:      "failure",
+			UserID:       claims.UserID,
+			UserEmail:    claims.Email,
+			UserRole:     claims.Role,
+			ErrorMessage: "database error",
+			ClientIP:     c.ClientIP(),
+			UserAgent:    c.Request.UserAgent(),
+		})
 		c.JSON(http.StatusInternalServerError, errResp("Failed revoking sessions", "AUTH_500"))
 		return
 	}
+
+	h.logAuditEvent(auditEvent{
+		Action:    "session_revoke_all",
+		Outcome:   "success",
+		UserID:    claims.UserID,
+		UserEmail: claims.Email,
+		UserRole:  claims.Role,
+		Details:   map[string]interface{}{"revoked_count": res.ModifiedCount},
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	})
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"revoked_count": res.ModifiedCount}})
 }
