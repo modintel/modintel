@@ -1,0 +1,8 @@
+body { background: var(--bg); color: var(--fg); font-family: var(--font); }
+.panel-left { padding: 20px; }
+h1 { margin: 0 0 16px; font-size: 1.5rem; font-weight: 600; }
+.tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; }
+.tag.success { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+.tag.failure { background: rgba(220, 38, 38, 0.1); color: #dc2626; }
+.pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+#pagination-controls .btn-secondary { color: #f97316; }
