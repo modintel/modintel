@@ -58,7 +58,7 @@
                 <div class="paranoia-header">
                     <h3>WAF Paranoia</h3>
                     <div class="paranoia-toggle">
-                        <span class="toggle-label">Layer-1 Blocking</span>
+                        <span class="toggle-label">Blocking</span>
                         <label class="toggle-switch">
                             <input type="checkbox" id="rule-engine-enabled" checked>
                             <span class="toggle-slider"></span>
@@ -119,21 +119,20 @@
                         <div class="account-role"></div>
                     </div>
                     <button class="btn btn-danger" id="logout-btn">Logout</button>
-                    <div class="account-divider"></div>
-                    <div class="account-invite">
-                        <div class="invite-header">
-                            <div class="invite-label">Invite Users</div>
-                            <div class="invite-desc">Send an invite link to new team members</div>
-                        </div>
-                        <div class="invite-form">
-                            <input type="email" id="invite-email" class="invite-input" placeholder="Enter email address">
-                            <select id="invite-role" class="invite-role">
-                                <option value="analyst" selected>Analyst</option>
-                                <option value="admin">Admin</option>
-                                <option value="viewer">Viewer</option>
-                            </select>
-                            <button class="btn btn-primary" id="invite-btn">Invite</button>
-                        </div>
+                </div>
+                <div class="account-invite">
+                    <div class="invite-header">
+                        <div class="invite-label">Invite Users</div>
+                        <div class="invite-desc">Send an invite link to new team members</div>
+                    </div>
+                    <div class="invite-form">
+                        <input type="email" id="invite-email" class="invite-input" placeholder="Enter email address">
+                        <select id="invite-role" class="invite-role">
+                            <option value="analyst" selected>Analyst</option>
+                            <option value="admin">Admin</option>
+                            <option value="viewer">Viewer</option>
+                        </select>
+                        <button class="btn btn-primary" id="invite-btn">Invite</button>
                     </div>
                 </div>
             </div>
@@ -160,14 +159,9 @@
         </div>
     </div>
     <script src="js/auth.js"></script>
-    <script src="js/boot.js"></script>
     <script src="js/modal.js"></script>
+    <script src="js/boot.js"></script>
     <script src="js/settings.js"></script>
 </body>
 
 </html>
-
-
-
-
-

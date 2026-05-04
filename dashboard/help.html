@@ -36,38 +36,190 @@
         <div class="panel-left">
             <div class="hero-eyebrow">Documentation</div>
             <h1>Help Center</h1>
-            <p>Get started with ModIntel and learn how to use the system.</p>
+            <p>Comprehensive guide to ModIntel - a hybrid Web Application Firewall combining deterministic rules with ML-powered threat detection.</p>
 
-            <div class="faq-section">
-                <h3>Quick Start</h3>
-                <div class="faq-item">
-                    <div class="faq-question">How does the hybrid WAF work?</div>
-                    <div class="faq-answer">ModIntel combines Coraza WAF rules with ML inference. Rules detect known
-                        attacks, ML judges edge cases, and humans verify difficult decisions.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-question">What is the AI score?</div>
-                    <div class="faq-answer">The AI score (0-100%) represents the probability that a blocked request is a
-                        real attack. Higher scores mean more confidence it's an attack.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-question">How do I interpret the dashboard?</div>
-                    <div class="faq-answer">Events show incoming requests. AI scores help prioritize which alerts need
-                        review. Use Rules page to see what patterns are being blocked.</div>
+            <div class="section">
+                <h3>System Overview</h3>
+                <p><strong>ModIntel</strong> is a Web Application Firewall (WAF) that combines traditional signature-based detection with machine learning for enhanced threat detection and reduced false positives.</p>
+
+                <div class="system-arch">
+                    <div class="arch-layer">
+                        <strong>Layer 1 - Deterministic WAF:</strong> Coraza WAF engine with OWASP CRS rules + 26 custom security rules
+                    </div>
+                    <div class="arch-layer">
+                        <strong>Layer 2 - ML Enhancement:</strong> AI model analyzes edge cases flagged by Layer 1, providing confidence scores and explanations
+                    </div>
+                    <div class="arch-layer">
+                        <strong>Layer 3 - Human Review:</strong> Analyst workflow for validating AI decisions and improving model training data
+                    </div>
                 </div>
             </div>
 
-            <div class="faq-section">
-                <h3>ML Model</h3>
-                <div class="faq-item">
-                    <div class="faq-question">What model types are supported?</div>
-                    <div class="faq-answer">Random Forest, XGBoost, Logistic Regression, and SVM. Random Forest is the
-                        default.</div>
+            <div class="section">
+                <h3>How ModIntel Works</h3>
+                <div class="workflow-steps">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <strong>Traffic Analysis:</strong> All requests pass through the WAF proxy, triggering Coraza rules and generating audit logs
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <strong>AI Enrichment:</strong> Suspicious requests are analyzed by ML models for attack probability, confidence intervals, and SHAP explanations
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <strong>Real-time Dashboard:</strong> Alerts stream to analysts via SSE, prioritized by AI scores (P1/P2/P3)
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <strong>Human Validation:</strong> Analysts review and label alerts as true/false positives, creating training data
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">5</div>
+                        <div class="step-content">
+                            <strong>Model Improvement:</strong> Reviewed alerts are used to retrain ML models, improving accuracy over time
+                        </div>
+                    </div>
                 </div>
-                <div class="faq-item">
-                    <div class="faq-question">How is the model trained?</div>
-                    <div class="faq-answer">Training page generates datasets from both synthetic attacks and real
-                        traffic, then trains models for evaluation.</div>
+            </div>
+        </div>
+        <div class="panel-right">
+            <div class="panel-right-header">
+                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">User Guide</div>
+            </div>
+            <div class="panel-right-body">
+                <div class="right-top-row">
+                    <div class="right-section roles-section">
+                        <h3>User Roles & Permissions</h3>
+                        <div class="roles-table">
+                            <div class="role-row">
+                                <div class="role-name">Admin</div>
+                                <div class="role-desc">Full system access: manage users, configure WAF, train/deploy models, restart services</div>
+                            </div>
+                            <div class="role-row">
+                                <div class="role-name">Analyst</div>
+                                <div class="role-desc">Review alerts, manage datasets, cut training data, view all analytics</div>
+                            </div>
+                            <div class="role-row">
+                                <div class="role-name">Viewer</div>
+                                <div class="role-desc">Read-only access: view alerts, rules, stats, monitor, datasets</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="right-section getting-started-section">
+                        <h3>Getting Started</h3>
+                        <ol class="getting-started">
+                            <li><strong>Access the Dashboard:</strong> Login with your credentials at the signin page</li>
+                            <li><strong>Monitor Traffic:</strong> Check the Events page for real-time alerts and system status</li>
+                            <li><strong>Review Alerts:</strong> Use the Review page to validate AI-detected threats</li>
+                            <li><strong>Analyze Patterns:</strong> Explore attack trends and origins in the Reports section</li>
+                            <li><strong>Optimize Rules:</strong> Fine-tune WAF settings in the Rules page</li>
+                            <li><strong>Train Models:</strong> Generate datasets and train improved ML models</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <div class="right-section">
+                    <h3>Key Features</h3>
+                    <div class="features-grid">
+                        <div class="feature">
+                            <strong>🔍 Real-time Monitoring</strong><br>
+                            Live alert streaming with SSE, automatic log parsing, and health monitoring
+                        </div>
+                        <div class="feature">
+                            <strong>🤖 AI-Powered Detection</strong><br>
+                            ML models provide attack probabilities, confidence scores, and interpretable explanations
+                        </div>
+                        <div class="feature">
+                            <strong>👥 Analyst Workflow</strong><br>
+                            Review queue with filtering, bulk actions, and dataset generation for model training
+                        </div>
+                        <div class="feature">
+                            <strong>📊 Advanced Analytics</strong><br>
+                            Attack trend charts, IP geolocation, false positive tracking, and comprehensive reporting
+                        </div>
+                        <div class="feature">
+                            <strong>🔧 Rule Management</strong><br>
+                            Enable/disable WAF rules, adjust paranoia levels, and configure anomaly thresholds
+                        </div>
+                        <div class="feature">
+                            <strong>🚀 Model Training</strong><br>
+                            Automated ML pipeline with multiple algorithms, evaluation metrics, and deployment
+                        </div>
+                    </div>
+                </div>
+
+                <div class="right-section">
+                    <h3>Frequently Asked Questions</h3>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What makes ModIntel different from other WAFs?</div>
+                        <div class="faq-answer">ModIntel combines traditional signature-based detection with ML analysis, providing both high accuracy and interpretability. Unlike pure ML systems, it offers human oversight and continuous model improvement through analyst feedback.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How does the AI scoring work?</div>
+                        <div class="faq-answer">AI scores represent the probability (0-100%) that a request is malicious. Scores are calibrated using isotonic regression and include confidence intervals. Priority bands (P1/P2/P3) help analysts focus on high-confidence alerts first.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What happens if the ML model is unavailable?</div>
+                        <div class="faq-answer">The system falls back to pure rule-based detection. All Coraza WAF rules remain active, ensuring security even during ML service outages. Alerts are marked with "ai_status: unavailable".</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How often should I review alerts?</div>
+                        <div class="faq-answer">Review alerts regularly (at least daily) to maintain model accuracy. The system prioritizes alerts by AI confidence, so focus on P1 (high-confidence) alerts first. False positive reviews are crucial for model improvement.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Can I customize the WAF rules?</div>
+                        <div class="faq-answer">Yes, administrators can enable/disable individual OWASP CRS rules and adjust paranoia levels (1-4). The system includes 26 custom rules for emerging threats. Changes take effect immediately with WAF restart.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How does model training work?</div>
+                        <div class="faq-answer">Analysts generate training datasets from reviewed alerts, then select ML algorithms (Random Forest, XGBoost, etc.). The system evaluates models on multiple metrics and deploys the best performer automatically.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What types of attacks does it detect?</div>
+                        <div class="faq-answer">SQL injection, XSS, command injection, LFI/RFI, XXE, NoSQL injection, SSTI, SSRF, Log4Shell, and many more. The ML layer helps detect novel attack patterns that bypass signature rules.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How is system health monitored?</div>
+                        <div class="faq-answer">Three-layer health monitoring: Docker event streaming, HTTP/TCP probes, and detailed metrics collection. The Monitor page shows service status, resource usage, and performance metrics.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Can I integrate with existing SIEM systems?</div>
+                        <div class="faq-answer">Yes, all alerts are stored in MongoDB with structured JSON format. The system exposes REST APIs for integration. Audit logs can be exported for external analysis.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What are the performance requirements?</div>
+                        <div class="faq-answer">The WAF proxy handles traffic with minimal latency (<1ms overhead). ML inference adds ~50-100ms per suspicious request. The system scales horizontally and can handle thousands of requests per second.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How do I troubleshoot false positives?</div>
+                        <div class="faq-answer">Check the SHAP explanations in alert details to understand why the ML model flagged a request. Review WAF rule matches and consider adjusting paranoia levels or disabling specific rules for your application patterns.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Is the system production-ready?</div>
+                        <div class="faq-answer">Yes, ModIntel is designed for production use with comprehensive logging, health monitoring, and automatic failover. It includes rate limiting, secure authentication, and audit trails.</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -77,8 +229,3 @@
 </body>
 
 </html>
-
-
-
-
-

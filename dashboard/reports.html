@@ -9,6 +9,7 @@
     <meta name="description" content="Attack analysis and reporting for ModIntel">
     <link rel="stylesheet" href="css/main.css">
     <link rel="stylesheet" href="css/reports.css">
+    <link rel="stylesheet" href="css/settings.css">
 </head>
 
 <body data-attach-logout="false">
@@ -65,23 +66,28 @@
 
             <div class="section">
                 <h3>Frequently False Positive Rules</h3>
-                <table class="fp-table">
-                    <thead>
-                        <tr>
-                            <th>Rule ID</th>
-                            <th>Message</th>
-                            <th>FP Count</th>
-                        </tr>
-                    </thead>
-                    <tbody id="fp-rules-body">
-                        <tr><td colspan="3" class="empty-row">Loading&hellip;</td></tr>
-                    </tbody>
-                </table>
+                <div class="fp-scroll">
+                    <table class="fp-table">
+                        <thead>
+                            <tr>
+                                <th>Rule ID</th>
+                                <th>Message</th>
+                                <th>FP Count</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fp-rules-body">
+                            <tr><td colspan="3" class="empty-row">Loading&hellip;</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
         <div class="panel-right reports-right">
-            <div class="panel-right-header">
+<div class="panel-right-header" style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
                 <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Reports Overview</div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <a href="/audit-logs" class="btn btn-sm" id="audit-link-btn" style="color: var(--accent); border-color: var(--accent); text-decoration: none;">AUDIT TRAIL</a>
+                </div>
             </div>
             <div class="reports-right-body">
                 <div class="right-section right-trend">
@@ -128,10 +134,10 @@
                                 <option value="7d">Last 7 Days</option>
                                 <option value="30d">Last 30 Days</option>
                             </select>
-                            <button class="btn btn-primary" id="generate-report-btn" type="button">Download CSV</button>
+                             <button class="btn btn-primary" id="generate-report-btn" type="button">Download CSV</button>
                         </div>
                     </div>
-                </div>
+</div>
             </div>
         </div>
     </div>
