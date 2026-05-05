@@ -625,6 +625,7 @@ textarea:focus {
     letter-spacing: 0.06em;
     color: var(--fg-muted);
     margin-top: 0.25rem;
+    padding-bottom: 0.5rem;
 }
 
 .connection-dot {
