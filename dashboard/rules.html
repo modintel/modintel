@@ -72,9 +72,16 @@
         </div>
         <div class="panel-right" style="overflow: hidden;">
             <div class="panel-right-header">
-                <div
-                    style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
-                    Security Signatures</div>
+                <div class="header-left-group">
+                    <div
+                        style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
+                        Security Signatures</div>
+                    <div class="rules-tabs">
+                        <button class="rules-tab active" data-type="crs">CRS</button>
+                        <button class="rules-tab" data-type="custom">Custom</button>
+                        <button class="rules-tab" data-type="regex">Regex</button>
+                    </div>
+                </div>
                 <div class="restart-notice-wrap">
                     <div class="restart-notice">Changes require WAF restart to take effect.</div>
                     <button class="btn btn-secondary restart-btn" id="restart-waf-btn" type="button">Restart WAF</button>

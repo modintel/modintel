@@ -41,10 +41,6 @@ services:
     environment:
       - BACKEND=juice-shop:3000
       - CORAZA_AUDIT_LOG=/var/log/coraza/audit.json
-      - CORAZA_RULE_ENGINE=On
-      - PARANOIA=4
-      - BLOCKING_PARANOIA=4
-      - ANOMALY_INBOUND=3
       - MANUAL_MODE=true
     networks:
       - modintel-net
