@@ -1,1291 +1,2266 @@
-# ModIntel Plan
+# ModIntel — Tasks
 
-## 1. Pagination
+> **Project tracking for upcoming features and tasks.**
 
-### What
-Breaking large dataset responses into smaller chunks using the pagination method best suited for each data type:
-- **Cursor-based** for realtime, append-only data (logs, alerts) — stable across inserts/deletes
-- **Offset-based** for static or rarely-changing data (rules) — supports random page access
+---
+## Task -1 — Rule Management System
+> Move rule ownership from Go hardcode to MongoDB backend, seed OWASP CRS
+> rules (~600) + custom rules (26) from config files, enable toggle + override
+> sync, two-section dashboard UI (CRS + custom).
 
-### Why Cursor-Based for Logs/Alerts
-- **New entries shift offsets**: If logs arrive between requests, `?page=2` returns different results or skips/duplicates entries
-- **Cursor stability**: A cursor (e.g., MongoDB `_id`) points to a fixed position; new inserts don't affect pages already served
-- **Performance**: Cursor-based queries use indexed `_id` scans (`_id > cursor`) instead of `Skip()`, which scans and discards rows
+---
 
-### Why Offset-Based for Rules
-- Rules rarely change; offset shifting is not a concern
-- Users expect to jump to arbitrary page numbers (e.g., "page 3 of 8")
-- Offset pagination provides `total` and `total_pages` for standard page navigation UI
+## Task 0 — User Invite & 2FA
+> Self-registration, email-based invites, password reset, TOTP two-factor
+> authentication, SMTP configuration, and onboarding flow.
 
-### Current State
-No pagination exists; endpoints likely return full arrays.
+---
 
-### Implementation Steps
+## Task 1 — Layer 2 ML-Based Blocking
 
-#### 1.1 Define Pagination Utilities
-Create `api/pagination.go` in review-api:
+> Composite scoring for miss-detector alerts. If Coraza misses an attack but
+> regex signatures catch it, we score it and decide: log, monitor, or block.
 
-```
-// Cursor-based (logs, alerts)
-filter = bson.D{{"_id", bson.D{{"$gt", cursorID}}}}
-collection.Find(ctx, filter).Limit(limit)
+---
 
-// Offset-based (rules)
-page_offset = (page - 1) * limit
-collection.Find(ctx, filter).Skip(page_offset).Limit(limit)
-```
+## Task 2 — Miss Model Training Pipeline (Layer 2)
 
-Cursor-based response envelope:
+> Train the model that powers `/predict-miss` — the ONNX model that detects
+> attacks Coraza misses. No Coraza features, no anomaly scores. Pure raw HTTP
+> request data (method, URI, headers, body) → 135 features → predict.
+
+---
+
+## Task 3 — Update SDS Document
+
+> Bring `docs/SDS.pdf` in line with the current system. The document still
+> describes the old ModSecurity-centric architecture and needs updating across
+> every section.
+
+---
+
+## Task 4 — Comprehensive System Testing
+> Unit, integration, e2e, and acceptance tests across the full stack. Metrics
+> for Layer 1 (Coraza WAF) vs Layer 2 (ML miss model) vs combined, benchmarked
+> against a Coraza-only baseline.
+
+---
+---
+***
+***
+
+# Task -1 - Rule Management Architecture
+
+## Goal
+Move rule ownership from Go hardcode to MongoDB backend, enable CRS rule toggling, and provide a unified rule management interface with separate sections for OWASP CRS and Custom rules.
+
+---
+
+## Current State
+
+| Aspect | Current | Target |
+|--------|---------|--------|
+| Custom rules | 26 rules hardcoded in `handler.go` | Seeded from `custom_rules.conf` into MongoDB |
+| CRS rules | Not exposed, not toggleable | Parsed from CRS files, seeded into MongoDB, toggleable |
+| Rule state | In-memory Go slice + DB overrides | DB-first with startup seeding |
+| UI | Single list of 26 custom rules | Two sections: CRS Rules + Custom Rules |
+| Overrides | Only custom rule IDs | Any rule ID (CRS or custom) |
+
+---
+
+## 1. Data Model
+
+### MongoDB `waf_rules` Collection
+
 ```json
 {
-  "data": [...],
-  "pagination": {
-    "next_cursor": "6601a2f3e4b0...",
-    "limit": 20,
-    "has_next": true
+  "id": "942100",
+  "type": "crs",
+  "category": "SQLi",
+  "description": "SQL Injection Attack Detected via libinjection",
+  "severity": "CRITICAL",
+  "phase": 2,
+  "paranoia_level": 1,
+  "source": "owasp-crs",
+  "enabled": true,
+  "created_at": "2026-04-22T00:00:00Z",
+  "updated_at": "2026-04-22T00:00:00Z"
+}
+```
+
+Fields:
+- `id` — Coraza rule ID (unique index)
+- `type` — `crs` | `custom`
+- `category` — SQLi, XSS, LFI, RCE, Protocol, etc.
+- `description` — Human-readable rule purpose
+- `severity` — CRITICAL | HIGH | MEDIUM | LOW (CRS) or custom mapping
+- `phase` — 1 | 2 | 3 | 4 | 5
+- `paranoia_level` — 1-4 (CRS only, null for custom)
+- `source` — `owasp-crs` | `modintel-custom`
+- `enabled` — Current toggle state
+- `created_at` / `updated_at` — Timestamps
+
+### Indexes
+- Unique: `{ id: 1 }`
+- Query: `{ type: 1, category: 1 }`
+- Query: `{ enabled: 1 }`
+
+---
+
+## 2. Seeding Strategy
+
+### 2.1 CRS Rules (~600 detection rules)
+
+**Source:** Parse Coraza CRS rule files at review-api startup.
+
+**Which rules to seed:**
+Only rules with explicit `id:` that are independently toggleable. Skip:
+- Chain rules (child rules without standalone IDs)
+- Skip/chain markers
+- Initialization rules (901xxx)
+- Blocking evaluation rules (949xxx/959xxx)
+
+**Parsing logic:**
+```go
+// Pseudocode for CRS parser
+for each .conf file in /opt/coraza/owasp-crs/rules/:
+    for each SecRule directive:
+        if line contains "id:" AND standalone rule (not chain child):
+            extract id, msg, severity, phase, tag
+            map tags to category
+            insert into MongoDB if not exists (preserve enabled state)
+```
+
+**Category mapping from CRS tags:**
+| CRS Tag Prefix | Category |
+|---------------|----------|
+| `attack-sqli` | SQLi |
+| `attack-xss` | XSS |
+| `attack-lfi` | LFI |
+| `attack-rfi` | RFI |
+| `attack-rce` | RCE |
+| `attack-execution` | RCE |
+| `attack-injection-php` | PHP |
+| `attack-protocol` | Protocol |
+| `attack-generic` | Generic |
+| `attack-session` | Session Fixation |
+| `attack-java` | Java |
+| `attack-scanner` | Scanner Detection |
+| `attack-multipart` | Multipart |
+| `leakage-*` | Data Leakage |
+| `web-shells` | Web Shells |
+
+### 2.2 Custom Rules (26 rules)
+
+**Source:** Parse `custom_rules.conf` OR keep current Go seed data.
+
+**Approach:** Parse `custom_rules.conf` on startup:
+```go
+for each SecRule in custom_rules.conf:
+    extract id, msg, tag, phase
+    insert into MongoDB with type=custom if not exists
+```
+
+This removes the need for the Go `defaultWAFRules` slice entirely.
+
+### 2.3 Seed Safety
+
+- **Idempotent:** On each startup, scan for missing rules and insert them. Never overwrite existing `enabled` state.
+- **Soft delete:** If a rule file is removed, mark rules as `archived: true` instead of deleting (preserves audit trail).
+- **Version tracking:** Store `crs_version` in a metadata collection for traceability.
+
+---
+
+## 3. API Changes
+
+### 3.1 Endpoints
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/rules?type=crs` | List CRS rules (paginated) |
+| GET | `/api/rules?type=custom` | List custom rules (paginated) |
+| GET | `/api/rules?category=SQLi` | Filter by category |
+| GET | `/api/rules?search=sqli` | Search in description/ID |
+| PUT | `/api/rules/:id` | Toggle enable/disable |
+| POST | `/api/rules` | Create custom rule |
+| PUT | `/api/rules/:id` | Update custom rule metadata |
+| DELETE | `/api/rules/:id` | Archive custom rule |
+
+### 3.2 Validation
+
+- CRS rules: Allow toggle only (`enabled`). Reject metadata edits.
+- Custom rules: Allow full CRUD.
+- Rule ID format: Validate against `^[0-9]{6}$` (6 digits).
+- Unknown IDs: Return 404.
+
+### 3.3 Override Sync
+
+`syncManagedWAFOverrides()` already works for any rule ID. No changes needed to the override generation logic — it already queries all `enabled: false` rules.
+
+---
+
+## 4. Frontend Changes
+
+### 4.1 Layout: Two Sections
+
+```
+┌─────────────────────────────────────────────┐
+│  Rules Management                           │
+├─────────────────────────────────────────────┤
+│                                             │
+│  OWASP CRS Rules          [Search...] [Cat▼]│
+│  ┌───────────────────────────────────────┐  │
+│  │ ID    Category  Description    Status │  │
+│  │ 942100 SQLi     SQL Injection  [On/Off]│ │
+│  │ 941100 XSS      XSS via lib... [On/Off]│ │
+│  │ ...                                  │  │
+│  │ [Prev] [1 2 3 ... 45] [Next]        │  │
+│  └───────────────────────────────────────┘  │
+│                                             │
+│  Custom Rules                               │
+│  ┌───────────────────────────────────────┐  │
+│  │ ID    Category  Description    Status │  │
+│  │ 990001 LFI      etc/passwd     [On/Off]│ │
+│  │ ...                                  │  │
+│  └───────────────────────────────────────┘  │
+│                                             │
+│  [Create Custom Rule]  [Restart WAF]        │
+└─────────────────────────────────────────────┘
+```
+
+### 4.2 CRS Section Features
+
+- **Pagination:** 50 rules per page (cursor-based on `_id` or offset)
+- **Category filter:** Dropdown with all CRS categories
+- **Paranoia level filter:** Show only rules at selected PL
+- **Search:** Filter by rule ID or description
+- **Bulk toggle:** Enable/disable all rules in a category (with confirmation)
+- **Read-only indicator:** CRS rules show a lock icon; metadata is not editable
+
+### 4.3 Custom Section Features
+
+- All existing functionality preserved
+- "Write Custom Rule" left panel already exists
+- Full CRUD enabled
+
+### 4.4 WAF Restart Indicator
+
+- Show pending restart flag when ANY rule (CRS or custom) is toggled
+- Restart applies to all overrides
+
+---
+
+## 5. Migration Plan
+
+### Phase 1: Seed Mechanism
+1. Create `db/rules_seed.go` with CRS parser + custom rule parser
+2. Call seed function in `main.go` before starting HTTP server
+3. Seed runs once per startup; idempotent
+
+### Phase 2: API Refactor
+1. Update `GetRules` to query MongoDB only (remove `defaultWAFRules`)
+2. Add `type`, `category`, `search` query params
+3. Add pagination (cursor-based for CRS, offset for custom)
+4. Validate CRS vs custom permissions
+
+### Phase 3: Frontend Refactor
+1. Split rules table into two sections
+2. Add pagination controls
+3. Add category/paranoia filters for CRS
+4. Style CRS rules with read-only indicators
+
+### Phase 4: Cleanup
+1. Remove `defaultWAFRules` hardcoded slice from `handler.go`
+2. Remove `ruleNotes` hardcoded map from `rules.js` (read from API)
+3. Verify override sync still works for CRS + custom IDs
+
+### Phase 5: Testing
+1. Seed test: verify all CRS rules inserted with correct metadata
+2. Toggle test: disable a CRS rule, verify `SecRuleRemoveById` generated
+3. Toggle test: re-enable, verify line removed from overrides
+4. Custom rule CRUD: create, update, archive
+5. Frontend: pagination, filtering, search
+6. WAF restart: verify CRS rule disable takes effect after restart
+
+---
+
+## 6. Docker Compose Changes
+
+```yaml
+review-api:
+    volumes:
+      # Existing mounts
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./proxy-waf/overrides:/waf-overrides
+      # NEW: Mount CRS rules for parsing
+      - modintel_crs_rules:/opt/coraza/owasp-crs/rules:ro
+```
+
+Alternative: Copy CRS rules into review-api image at build time (more self-contained, less runtime dependency).
+
+---
+
+## 7. Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Disabling CRS chain parent breaks child rules | High | Only seed standalone rules; skip chain children |
+| 900+ rules crash dashboard | Medium | Pagination (50/page); virtual scrolling |
+| CRS version mismatch | Low | Store `crs_version` in metadata; seed on startup detects changes |
+| User disables too many CRS rules | High | Warning banner on bulk disable; audit log |
+| Seed overwrites manual toggles on restart | Critical | Upsert with `$setOnInsert` for `enabled` field |
+
+---
+
+## 8. Files to Create/Modify
+
+| File | Action | Purpose |
+|------|--------|---------|
+| `services/review-api/db/rules_seed.go` | Create | CRS + custom rule parser and seeder |
+| `services/review-api/db/rules.go` | Create | Rule CRUD operations |
+| `services/review-api/api/handler.go` | Modify | Remove hardcode; add query params |
+| `services/review-api/main.go` | Modify | Call seed function on startup |
+| `dashboard/js/rules.js` | Modify | Two-section layout, pagination, filters |
+| `dashboard/rules.html` | Modify | Updated structure for CRS + custom sections |
+| `dashboard/css/rules.css` | Modify | Styles for pagination, filters, read-only indicators |
+| `docker-compose.yml` | Modify | Mount CRS rules volume (optional) |
+| `services/review-api/Dockerfile` | Modify | Optionally copy CRS seed data |
+
+---
+
+## 9. Success Criteria
+
+- [ ] All CRS rules (~600) appear in dashboard with correct metadata
+- [ ] Custom rules (26) appear in separate section
+- [ ] Toggle works for both CRS and custom rules
+- [ ] Override file contains correct `SecRuleRemoveById` for disabled rules
+- [ ] WAF restart applies CRS + custom overrides
+- [ ] Pagination loads <500ms for 50 CRS rules
+- [ ] Search/filter works across both sections
+- [ ] No hardcoded rule metadata remains in frontend
+- [ ] No hardcoded rule list remains in Go backend
+- [ ] Seed is idempotent — toggles survive restart
+
+---
+
+## 10. Decisions Made
+
+| Decision | Value |
+|----------|-------|
+| Restore to PL default | No |
+| Expose PL as first-class | No |
+| Rule hit counts | No |
+| Custom rules versioning | Yes - draft state |
+| Scoped exclusions | Yes |
+| Reset hit counts on upgrade | No - preserve
+
+---
+
+## 11. Future: Scoped Exclusions
+
+*This feature is NOT in the initial implementation but is a major pain point for production WAFs.*
+
+### The Problem
+
+Current plan only toggles rules *globally*. But in production:
+- Legitimate file uploads trigger LFI rules
+- Rich text editors trigger XSS rules
+- API parameters legitimately contain special characters
+
+### Solution: Exclusions
+
+Create separate collection `waf_rule_exclusions`:
+
+```json
+{
+  "_id": "objectid",
+  "rule_id": "942100",
+  "scope": "endpoint",
+  "match": "/api/upload",
+  "param": "file_content",
+  "method": "POST",
+  "description": "Allow file uploads",
+  "enabled": true,
+  "created_by": "admin@modintel.local",
+  "created_at": "2026-05-05T10:00:00Z"
+}
+```
+
+### Coraza Implementation Challenge
+
+Coraza doesn't natively support per-endpoint exclusions. Options:
+
+**Option A: Pre-phase skip rules**
+```caddyfile
+SecRule REQUEST_URI "@beginsWith /api/upload" \
+  "id:999001,phase:1,pass,setvar:tx.skip_rule_942100=1"
+
+SecRule &TX:SKIP_RULE_942100 "@eq 1" \
+  "phase:2,skipAfter:END_SQLI_CHECK"
+```
+
+**Option B: Separate backend route** - bypass WAF entirely for specific URIs.
+
+**Option C: ML-based auto-exclusions** - train model to auto-learn FPs.
+
+---
+
+## 12. Future: Rule Hit Counts (Analytics)
+
+Track how often each rule triggers.
+
+### Implementation
+
+1. Log-collector extracts `rule_details[].rule_id` from alerts
+2. Aggregate counter per rule in `waf_rule_stats`:
+```json
+{
+  "rule_id": "942100",
+  "trigger_count": 15432,
+  "last_triggered": "2026-05-05T10:00:00Z"
+}
+```
+
+### API
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/rules/stats` | Get hit counts for all rules |
+
+---
+
+## 13. Future: IP Reputation
+
+Block known bad IPs before WAF evaluation.
+
+### External Feeds
+
+| Source | Format | Update |
+|--------|--------|--------|
+| abuse.ch Feodo | CSV | Daily |
+| AWS Threatlist | JSON | Hourly |
+| FireHOL | IPset | Daily |
+
+### MongoDB
+
+```json
+{
+  "ip": "192.168.1.100",
+  "source": "abuse-ch-feodo",
+  "reason": "Botnet C&C",
+  "expires_at": "2026-05-12T00:00:00Z"
+}
+```
+
+---
+
+## 14. Future: Rate Limiting
+
+Block bots behaving differently than humans.
+
+### Config Settings
+
+Add to `waf_config`:
+- `rate_limit_requests_per_minute`: 60
+- `rate_limit_requests_per_hour`: 1000
+
+
+# Task 0 — User Invite & 2FA
+
+# User Invite & 2FA Plan
+
+## 1. First-Admin Registration Flow
+
+### Current state
+- Admin is bootstrapped via `AUTH_BOOTSTRAP_ADMIN_*` environment variables
+- No self-registration endpoint exists
+
+### Target
+- The first person to access `/setup` (or first `POST /api/v1/auth/register`) becomes admin
+- Subsequent registrations without an invite are rejected
+
+### Implementation
+
+#### 1a. Registration endpoint
+`POST /api/v1/auth/register`
+
+Request body:
+```json
+{
+  "email": "admin@example.com",
+  "password": "securepassword",
+  "first_name": "Admin",
+  "last_name": "User"
+}
+```
+
+Password requirements:
+- Minimum 10 characters
+- Must contain at least: 1 uppercase, 1 lowercase, 1 number, 1 special character
+- Reject common passwords (e.g., "password123", "admin123")
+
+Logic:
+```go
+func (h *Handler) register(c *gin.Context) {
+    // Validate password requirements
+    if !isValidPassword(password) {
+        return 400 "Password must be at least 10 characters and contain uppercase, lowercase, number, and special character"
+    }
+    if isCommonPassword(password) {
+        return 400 "Password is too common, choose a stronger password"
+    }
+    
+    count, _ := h.users.CountDocuments(ctx, bson.M{})
+    
+    if count == 0 {
+        // First user → admin
+        role = "admin"
+        emailVerified = false // will verify via 2FA setup
+    } else {
+        // Not first user → reject (must use invite)
+        return 403 "Registration closed. Ask an admin to invite you."
+    }
+    
+    // Create user, set is_active=true, require_2fa_setup=true
+    // Return success, redirect to 2FA setup
+}
+```
+
+#### 1b. Bootstrap fallback with user check
+Keep the existing `AUTH_BOOTSTRAP_ADMIN_*` env vars as a fallback for headless deployments. If set:
+- Check if users already exist in the database
+- If users exist → SKIP bootstrap (do not overwrite or create new admin)
+- If no users exist → create the bootstrap admin
+- Log a warning if bootstrap is skipped due to existing users
+
+This preserves backward compatibility for Docker deployments and prevents accidental admin creation.
+
+#### 1c. `/setup` page
+A dedicated onboarding page served only when no users exist. 
+- If users already exist → redirect to login
+- Serve `/setup` only when `GET /api/v1/auth/status` returns `{"has_users": false}`
+
+---
+
+## 2. Invite Flow
+
+### 2a. Role restriction
+Remove `admin` from the role dropdown in `settings.html`. Admin role can only be acquired via:
+- First-user registration
+- Bootstrap env vars
+- Direct MongoDB update (emergency)
+
+Updated dropdown:
+```html
+<select id="invite-role" class="invite-role">
+    <option value="analyst" selected>Analyst</option>
+    <option value="viewer">Viewer</option>
+</select>
+```
+
+### 2b. Invite endpoint with rate limiting (updated)
+`POST /api/v1/users/invite` (admin only)
+
+Request body:
+```json
+{
+  "email": "invitee@gmail.com",
+  "role": "analyst"
+}
+```
+
+Rate limiting:
+- Maximum 10 invites per hour per admin
+- Return 429 "Rate limit exceeded. Try again later."
+
+What changes:
+- Generate a time-limited invite token (24h expiry)
+- Store invite in a new `invitations` collection:
+  ```json
+  {
+    "_id": ObjectId,
+    "email": "invitee@gmail.com",
+    "role": "analyst",
+    "invited_by": "admin@modintel.local",
+    "token": "crypto-random-hex-64",
+    "status": "pending",
+    "expires_at": ISODate("+24h"),
+    "created_at": ISODate()
+  }
+  ```
+- Send email FROM admin's email TO invitee's email with a link: `https://modintel.local/accept-invite?token=<token>`
+- Return `{"success": true, "message": "Invitation sent to invitee@gmail.com"}`
+
+### 2c. Accept-invite endpoint
+`POST /api/v1/auth/accept-invite`
+
+Request body:
+```json
+{
+  "token": "crypto-random-hex-64",
+  "password": "chosen-password",
+  "first_name": "Jane",
+  "last_name": "Doe"
+}
+```
+
+Password requirements same as registration.
+
+Logic:
+- Look up token in `invitations` collection
+- Validate: exists, status=pending, not expired
+- Create user in `users` collection with the assigned role
+- Auto-verify email (email_verified = true) since invitee clicked the link
+- Mark invite status as "accepted"
+- Return success, redirect to 2FA setup
+
+### 2d. Accept-invite page
+`/accept-invite` — a minimal page with a password form. Reads `?token=` from URL. On submit, calls `POST /api/v1/auth/accept-invite`.
+
+---
+
+## 3. Password Reset Flow (NEW)
+
+### 3a. Request reset
+`POST /api/v1/auth/reset-password/request`
+
+Request body:
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+Logic:
+- Look up user by email
+- If exists → generate reset token (1h expiry)
+- Store in `password_resets` collection:
+  ```json
+  {
+    "user_id": ObjectId,
+    "token": "crypto-random-hex-64",
+    "expires_at": ISODate("+1h"),
+    "used": false
+  }
+  ```
+- Send email with reset link
+- Return success (don't reveal if email exists or not - prevents enumeration)
+
+### 3b. Complete reset
+`POST /api/v1/auth/reset-password/complete`
+
+Request body:
+```json
+{
+  "token": "crypto-random-hex-64",
+  "new_password": "newsecurepassword"
+}
+```
+
+Logic:
+- Validate token exists, not expired, not used
+- Validate new password requirements
+- Update user password hash
+- Mark token as used
+- Invalidate all existing refresh tokens for user
+- Return success
+
+### 3c. Reset page
+`/reset-password` — form to enter new password after clicking link in email.
+
+---
+
+## 4. Email Sending (SMTP)
+
+### 4a. Why admin's email as sender
+Since this is a self-hosted app, the admin configures their own SMTP credentials (Gmail, SendGrid, Mailgun, etc.) during first-time setup. Emails are sent from that address, so invitees see the admin's email as the sender.
+
+### 4b. SMTP configuration
+Store in a new `settings` collection in MongoDB, or as part of the admin user profile:
+
+```json
+{
+  "smtp_host": "smtp.gmail.com",
+  "smtp_port": 587,
+  "smtp_username": "admin@gmail.com",
+  "smtp_password": "app-password",
+  "smtp_from": "admin@gmail.com",
+  "smtp_from_name": "ModIntel Security"
+}
+```
+
+Admin configures this via Settings → Email Configuration. The password is encrypted at rest.
+
+### 4c. SMTP endpoint
+`PUT /api/v1/settings/smtp` (admin only)
+
+An `email` package in the auth-service handles sending via Go's `net/smtp` or a library like `gomail`.
+
+### 4d. Invite email template
+```
+Subject: You've been invited to ModIntel
+
+From: Admin Name <admin@gmail.com>
+To: invitee@gmail.com
+
+Hi,
+
+Admin Name has invited you to join ModIntel as an Analyst.
+
+Click here to accept: https://modintel.local/accept-invite?token=abc123
+
+This link expires in 24 hours.
+```
+
+---
+
+## 5. Two-Factor Authentication (2FA)
+
+### 5a. TOTP-based (Time-based One-Time Password)
+Use TOTP (RFC 6238) — the same algorithm used by Google Authenticator, Authy, 1Password, etc. No SMS costs, works offline, industry standard.
+
+### 5b. User model additions
+Add to `User` struct:
+```go
+type User struct {
+    // ... existing fields
+    TOTPSecret        string `bson:"totp_secret,omitempty" json:"-"`
+    TOTPEnabled       bool   `bson:"totp_enabled" json:"totp_enabled"`
+    TOTPVerifiedAt    *time.Time `bson:"totp_verified_at,omitempty" json:"totp_verified_at,omitempty"`
+}
+```
+
+### 5c. 2FA setup flow (mandatory for admin, optional for others)
+1. After registration/invite-accept: redirect to `/setup-2fa`
+2. Generate TOTP secret, store in DB (not yet enabled)
+3. Show QR code + manual setup key
+4. User scans with authenticator app, enters the 6-digit code
+5. Verify code against secret → set `totp_enabled: true`, `totp_verified_at: now()`
+6. Issue access + refresh tokens
+
+### 5d. 2FA enforcement
+- **Admin**: 2FA is mandatory. Login returns `{"require_2fa": true}` if not yet set up. Must complete setup before accessing any protected route.
+- **Analyst/Viewer**: 2FA is optional. If enabled, required for login.
+
+### 5e. 2FA endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/auth/2fa/status` | Returns whether 2FA is required/setup for current user |
+| `POST` | `/api/v1/auth/2fa/setup` | Generates TOTP secret, returns QR code URI and manual key |
+| `POST` | `/api/v1/auth/2fa/verify` | Verifies a TOTP code to complete setup |
+| `POST` | `/api/v1/auth/2fa/login` | During login: submits TOTP code to get access token |
+| `POST` | `/api/v1/auth/2fa/disable` | Disables 2FA (admin only, requires password re-entry) |
+
+### 5f. Secure intermediate 2FA token
+The `2fa_token` (intermediate JWT) must be secured:
+- Short expiry: 5 minutes maximum
+- Include user_id and purpose claim
+- Cannot be used for refresh token rotation
+- Invalidate after successful 2FA verification or expiry
+
+```go
+// 2FA token claims
+type TwoFactorClaims struct {
+    UserID    string `json:"sub"`
+    Purpose   string `json:"purpose"` // "2fa_login"
+    Type      string `json:"type"`    // "intermediate"
+    jwt.RegisteredClaims
+}
+```
+
+### 5g. Login flow with 2FA
+1. `POST /login` with email + password
+2. If `totp_enabled == false` and role is not admin → issue tokens directly
+3. If `totp_enabled == true` or role is admin → 
+   - Generate 2FA token with 5-min expiry
+   - Return `{"require_2fa": true, "2fa_token": "intermediate-jwt"}`
+4. Client prompts for 6-digit code
+5. `POST /api/v1/auth/2fa/login` with `2fa_token` + TOTP code
+6. Server validates:
+   - 2FA token not expired
+   - TOTP code valid
+7. Issue full access + refresh tokens
+8. Invalidate the 2FA token immediately
+
+### 5h. Recovery codes
+Generate 8 recovery codes (one-time use) during 2FA setup. Store **hashed** in DB:
+- `POST /api/v1/auth/2fa/recover` — enter a recovery code to bypass 2FA (consumes the code)
+- Admin can regenerate recovery codes (invalidates old ones)
+
+---
+
+## 6. Settings Page Updates
+
+### 6a. Invite section
+- Remove "Admin" from role dropdown → only "Analyst" and "Viewer"
+- After successful invite, modal shows: "Invitation sent to invitee@gmail.com. They have 24 hours to accept."
+
+### 6b. Email configuration section (new)
+- SMTP host, port, username, password, from name fields
+- "Test Email" button sends a test to the admin's own address
+- Only visible/adjustable by admin
+
+### 6c. 2FA section (new)
+- Show 2FA status (Enabled/Disabled)
+- "Set Up 2FA" button → shows QR code + setup key in modal
+- "Disable 2FA" button (admin only, with password confirmation)
+- "Regenerate Recovery Codes" button
+
+### 6d. Password reset section (new)
+- "Forgot Password?" link on login page
+- "Request Password Reset" form
+
+---
+
+## 7. Implementation Order
+
+| Phase | Task | Files |
+|-------|------|-------|
+| 1 | Add TOTP fields to User model | `models/user.go` |
+| 2 | Add TOTP utility package (generate, verify, QR) | `auth/totp.go` |
+| 3 | Add invitations collection + model | `models/invitation.go` |
+| 4 | Add password_resets collection + model | `models/password_reset.go` |
+| 5 | Add password validation utilities | `auth/password.go` |
+| 6 | SMTP config struct + email package | `email/smtp.go` |
+| 7 | First-admin registration endpoint | `api/handler.go` |
+| 8 | Updated invite endpoint (token + email + rate limit) | `api/handler.go` |
+| 9 | Accept-invite endpoint + page | `api/handler.go`, `dashboard/accept-invite.html` |
+| 10 | Password reset endpoints | `api/handler.go`, `dashboard/reset-password.html` |
+| 11 | 2FA setup/verify/login endpoints | `api/handler.go` |
+| 12 | Remove admin from invite dropdown | `dashboard/settings.html` |
+| 13 | SMTP settings endpoint | `api/handler.go` |
+| 14 | 2FA settings/setup UI | `dashboard/settings.html`, `dashboard/js/settings.js` |
+| 15 | Email config settings UI | `dashboard/settings.html`, `dashboard/js/settings.js` |
+| 16 | `/setup` onboarding page | `dashboard/setup.html`, `dashboard/css/setup.css` |
+| 17 | Accept-invite frontend page | `dashboard/accept-invite.html`, `dashboard/js/accept-invite.js` |
+| 18 | Forgot password page | `dashboard/forgot-password.html`, `dashboard/js/forgot-password.js` |
+
+---
+
+# Task 1 — Layer 2 ML-Based Blocking
+
+## Architecture Overview
+
+```
+Request → WAF (misses) → Backend
+                            │
+                       access.log
+                            │
+                    Log Collector
+                      ├── regex match hit
+                      ├── rate_score (per-IP freq + burst)
+                      ├── rep_score (internal + external feeds)
+                      └── POST /eval-miss ──► Inference Engine
+                                                 │
+                            ◄── { ml, rate, rep, composite, decision }
+                            │
+                    if composite >= 50%:
+                      → upsert alert to dashboard (already done)
+                    if composite >= 85%:
+                      → add IP to in-memory blocklist
+                      → write to blocked_ips.txt in proxy-waf/overrides/
+                      → Coraza @ipMatchFromFile blocks subsequent requests
+```
+
+---
+
+## Phase 1 — Rate Tracking (Log Collector)
+
+**Goal:** Per-IP request frequency + burst detection from Caddy access logs.
+
+**Files:** `services/log-collector/main.go`
+
+**Changes:**
+
+1. New in-memory struct in log-collector:
+   - `IPRateTracker` — sliding window counters per IP: request timestamps (60s window)
+   - `frequency_score` = (requests_in_window / max_expected) capped at 1.0
+   - `burst_score` = detect if current rate exceeds rolling avg by 3σ → 0.0–1.0
+   - `rate_score` = 0.6 × frequency + 0.4 × burst
+
+2. Wire into miss-detection pipeline (Caddy access log parsing):
+   - After regex match, look up `rate_score` for the source IP
+   - Include `rate_score` in the payload sent to inference engine
+
+**Rate scoring formula:**
+```
+frequency_score = min(requests_in_60s / 120, 1.0)   // 120 req/min = 1.0
+burst_score     = sigmoid((current_rate - baseline) / baseline - 2)  // 3σ above baseline → ~0.9
+rate_score      = 0.6 × frequency_score + 0.4 × burst_score
+```
+
+---
+
+## Phase 2 — Reputation Scoring (Log Collector)
+
+**Goal:** Score IPs based on internal alert history + external threat feeds.
+
+**Files:** `services/log-collector/main.go`, `services/log-collector/db/mongo.go`
+
+### 2a — Internal Reputation (MongoDB)
+
+- Query `alerts` collection for IPs with `human_label: "true_positive"`
+- `internal_score` = (tp_count_30d / total_requests_30d_from_ip) capped at 1.0
+- Cache in-memory, refresh every 60s
+
+### 2b — External Threat Feeds
+
+- Three sources layered:
+  - **AlienVault OTX** — poll `https://otx.alienvault.com/api/v1/indicators/ip/{ip}/general`
+  - **abuse.ch SSLBL** — download `https://sslbl.abuse.ch/blacklist/sslipblacklist.txt`
+  - **abuse.ch URLhaus** — download `https://urlhaus.abuse.ch/downloads/hostfile/`
+- Poll bulk feeds every 5 min, cache in-memory
+- `external_score` = 1.0 if in any feed, else 0.0
+
+### 2c — Combined Reputation
+
+```
+rep_score = 0.7 × internal_score + 0.3 × external_score
+```
+
+- Include `rep_score` in payload sent to inference engine alongside `rate_score`
+
+---
+
+## Phase 3 — Composite Scoring Endpoint (Inference Engine)
+
+**Goal:** New endpoint `/eval-miss` that computes the full composite and returns a decision.
+
+**Files:** `services/inference-engine/main.py`
+
+### Request Schema (POST /eval-miss)
+
+```json
+{
+  "features": { ... },
+  "rate_score": 0.45,
+  "rep_score": 0.70
+}
+```
+
+### Processing
+
+1. Run existing ML prediction (same as `/predict-miss`) → `ml_score` (0–1)
+2. Compute composite:
+
+```
+composite = (ml_score × 0.6) + (rate_score × 0.2) + (rep_score × 0.2)
+```
+
+3. Decision:
+
+| Composite Range | Decision | Action |
+|-----------------|----------|--------|
+| < 0.50 | `allow` | No alert (below threshold, skip) |
+| 0.50 – 0.84 | `monitor` | Alert logged to dashboard (existing behavior) |
+| ≥ 0.85 | `block` | Alert logged + IP added to blocklist |
+
+### Response Schema
+
+```json
+{
+  "ml_score": 0.72,
+  "rate_score": 0.45,
+  "rep_score": 0.70,
+  "composite": 0.662,
+  "decision": "monitor",
+  "breakdown": {
+    "ml_contribution": 0.432,
+    "rate_contribution": 0.090,
+    "rep_contribution": 0.140
   }
 }
 ```
 
-Offset-based response envelope:
-```json
-{
-  "data": [...],
-  "pagination": {
-    "page": 1,
-    "limit": 50,
-    "total": 312,
-    "total_pages": 7,
-    "has_next": true,
-    "has_prev": false
-  }
-}
+---
+
+## Phase 4 — Blocklist Management (Log Collector)
+
+**Goal:** When composite ≥ 0.85, add IP to blocklist so Coraza blocks future requests.
+
+**Files:** `services/log-collector/main.go`, `services/log-collector/api/handler.go`
+
+### 4a — In-Memory Blocklist
+
+- `sync.Map[ip → expiry_timestamp]` in log-collector
+- Default TTL: 30 minutes (configurable, `BLOCKLIST_TTL` env var)
+- Fast lookup via `IsBlocked(ip) bool` method
+
+### 4b — File Sync
+
+- Write blocked IPs to `proxy-waf/overrides/blocked_ips.txt` (one IP per line)
+- Sync interval: every 10s (or immediately on new block event, whichever comes first)
+- Remove expired IPs from both memory + file on each sync
+
+**File format (blocked_ips.txt):**
+```
+10.0.0.1
+10.0.0.2
 ```
 
-#### 1.2 Update Endpoints
-Paginate these existing endpoints with the appropriate method:
-- `GET /api/alerts` → `GET /api/alerts?cursor=<id>&limit=20` (cursor-based)
-- `GET /api/logs` → `GET /api/logs?cursor=<id>&limit=50` (cursor-based)
-- `GET /api/rules` → `GET /api/rules?page=1&limit=50` (offset-based)
+### 4c — Docker Volume
 
-Initial request uses no cursor/offset to get first page:
-- `GET /api/alerts?limit=20` → returns first 20 + `next_cursor`
-- `GET /api/logs?limit=50` → returns first 50 + `next_cursor`
-- `GET /api/rules?page=1&limit=50` → returns first 50
+- Add `./proxy-waf/overrides:/waf-overrides` mount to log-collector in docker-compose.yml
+- Log-collector writes to `/waf-overrides/blocked_ips.txt`
 
-#### 1.3 Frontend Updates
-- Logs/Alerts: render "Load more" / "Next" using `next_cursor`; no page numbers
-- Rules: render standard page number navigation with "Previous" / "Next" and page indicators
-- Store cursor or page in URL query params for shareability
-- Pair cursor pagination on the "live" view with SSE or SSE for realtime new entries
+### 4d — Admin API
 
-### Affected Files
-| File | Changes |
-|------|---------|
-| `services/review-api/api/pagination.go` | New file - cursor + offset pagination helpers |
-| `services/review-api/api/handler.go` | Add cursor/limit and page/limit params to queries |
-| `services/review-api/main.go` | Register pagination middleware |
-| `dashboard/js/*.js` | Add pagination UI components (cursor-based + offset-based) |
-
-### Testing
-1. Request `/api/alerts?limit=5` → verify 5 items returned with `next_cursor`
-2. Request `/api/alerts?cursor=<next_cursor>&limit=5` → verify next 5 items, no duplicates from prior page
-3. Insert new alert between requests → verify existing cursor still returns stable results
-4. Request `/api/rules?page=1&limit=5` → verify offset-based response with `total` and `total_pages`
-5. Request `/api/alerts?limit=1000` → verify capped at reasonable max (e.g., 100)
-6. Dashboard pagination controls work correctly for both cursor and offset modes
+```
+GET /api/blocklist → list of currently blocked IPs + remaining TTL
+DELETE /api/blocklist/{ip} → manually unblock an IP
+```
 
 ---
 
-## 2. Async Logging
+## Phase 5 — WAF Enforcement (Coraza)
 
-### What
-Use a bounded async logging pipeline with batching, retries, and clear durability tiers. This reduces request-path I/O while preserving security-critical events during failures.
+**Goal:** Coraza reads the blocklist file and denies matching IPs.
 
-### Why for ModIntel
-- **Review-API Access Logs**: Every API request currently writes to MongoDB synchronously
-- **Log-Collector**: Already tails Coraza logs; batching writes prevents write amplification
-- **Performance Gain**: Lower p95/p99 latency by removing blocking DB writes from request path
-- **MongoDB Load**: Batching reduces connection overhead and write operations
-- **Reliability Under Failure**: Explicit backpressure and retry behavior prevents silent log loss
+**Files:** `proxy-waf/custom_rules.conf`
 
-### Current State
-- Review-api writes to MongoDB on every request synchronously
-- Log-collector writes enriched logs immediately after parsing
+### Rule Addition
 
-### Implementation Steps
-
-#### 2.1 Define Durability Tiers (Policy First)
-Classify logs before implementation:
-- **Tier A (critical security/audit events)**: synchronous write path (or write-ahead durable spool) required
-- **Tier B (high-volume operational logs)**: async buffered + batched write path
-
-This avoids losing high-value evidence during crashes or DB outages.
-
-#### 2.2 Review-API: Buffered Logger
-Create `api/async_logger.go` in review-api:
+At the end of `custom_rules.conf` (or as a new file in overrides):
 
 ```
-type AsyncLogger struct {
-    buffer        chan LogEntry
-    batchSize     int
-    flushInterval time.Duration
-    collection    *mongo.Collection
-    maxRetries    int
-    retryBackoff  time.Duration
-    overflowMode  string // drop_newest | drop_oldest | block | spill_to_disk
-}
-
-- `Log(entry)` is non-blocking for Tier B logs
-- If buffer is full, apply configured `overflowMode` and increment drop/overflow metrics
-- Batch collector flushes when `batchSize` reached OR `flushInterval` elapsed
-- Flush errors trigger retry with exponential backoff; on final failure move batch to spool/dead-letter queue
-- Graceful shutdown drains buffer with timeout and flushes remaining entries
+# Block known malicious IPs (populated by log-collector)
+SecRule REMOTE_ADDR "@ipMatchFromFile /etc/coraza/overrides/blocked_ips.txt" \
+    "id:1000000,\
+    phase:1,\
+    deny,\
+    status:403,\
+    log,\
+    msg:'Request from blocked malicious IP'"
 ```
 
-#### 2.3 Log-Collector: Batch Inserts + Failure Handling
-Update MongoDB write logic in log-collector:
-
-```
-- Accumulate parsed logs in slice
-- Flush to MongoDB when slice reaches 100 items OR 5 seconds elapsed
-- Use unordered bulk writes for performance (document that insertion order is not guaranteed)
-- On write failure: retry with backoff; if still failing, write to local spool for replay
-```
-
-#### 2.4 Replay Worker for Spool/Dead-Letter
-Add a background replay worker:
-```
-- Reads failed batches from spool/dead-letter storage
-- Re-attempts insert with rate limits
-- Emits success/failure metrics
-- Retains failed artifacts for forensic recovery window
-```
-
-#### 2.5 Observability and SLO Signals
-Expose metrics and logs for operations:
-```
-async_log_buffer_depth
-async_log_dropped_total
-async_log_flush_total
-async_log_flush_failed_total
-async_log_flush_latency_ms
-async_log_retry_total
-async_log_spool_size_bytes
-```
-
-#### 2.6 Configuration
-Add to `.env`:
-```
-ASYNC_LOG_BUFFER_SIZE=1000
-ASYNC_LOG_BATCH_SIZE=100
-ASYNC_LOG_FLUSH_INTERVAL=5s
-ASYNC_LOG_MAX_RETRIES=5
-ASYNC_LOG_RETRY_BACKOFF=250ms
-ASYNC_LOG_OVERFLOW_MODE=drop_newest
-ASYNC_LOG_SHUTDOWN_TIMEOUT=10s
-ASYNC_LOG_ENABLE_SPOOL=true
-ASYNC_LOG_SPOOL_PATH=/var/lib/modintel/async-log-spool
-```
-
-Set sane caps in code:
-```
-limit ASYNC_LOG_BUFFER_SIZE to max allowed value
-limit ASYNC_LOG_BATCH_SIZE to max allowed value
-reject invalid overflow mode values
-```
-
-### Affected Files
-| File | Changes |
-|------|---------|
-| `services/review-api/api/async_logger.go` | New file - async logging logic |
-| `services/review-api/api/handler.go` | Route Tier A vs Tier B logging paths |
-| `services/review-api/main.go` | Initialize AsyncLogger on startup |
-| `services/log-collector/main.go` | Add batch insert + retry/spool logic |
-| `services/review-api/api/log_replay.go` | New file - spool replay worker |
-| `services/review-api/metrics/*.go` | Add async logging metrics |
-| `.env` | Add async config variables |
-
-### Testing
-1. Send 100 API requests rapidly → verify writes are batched, not one write/request
-2. Fill buffer intentionally → verify configured `overflowMode` behavior and metrics
-3. Simulate MongoDB outage → verify retries happen, failed batches are spooled
-4. Recover MongoDB → verify replay worker drains spool and restores backlog
-5. Simulate process crash → verify Tier A durability requirements are met
-6. Trigger graceful shutdown under load → verify drain+flush within shutdown timeout
-7. Validate memory remains bounded under sustained high ingress
-8. Validate p95/p99 API latency improves versus synchronous baseline
+This requires knowing the container-side path of the overrides mount. The current mount maps `./proxy-waf/overrides` into the WAF container — verify the container path (likely `/etc/coraza/overrides/` or `/project/proxy-waf/overrides/`).
 
 ---
 
-## 3. Redis Caching
+## Phase 6 — Dashboard Visibility
 
-### What
-Use Redis as a resilient cache layer with explicit consistency policies, stampede protection, and fail-open behavior. Keep database/API correctness as source of truth while reducing repeated MongoDB queries and ML recomputation.
+**Goal:** Surface blocklist state on the dashboard.
 
-### Why for ModIntel
-- **ML Inference Results**: Same request patterns (same URI, parameters) may recur; caching ML scores avoids redundant inference
-- **WAF Rule Metadata**: Rule descriptions, categories rarely change; cache for instant lookups
-- **Dashboard Aggregations**: Attack statistics, top blocked IPs computed periodically and cached
-- **Session Data**: Dashboard user sessions can be Redis-backed for horizontal scaling
-- **Resilience**: Redis outage should degrade gracefully, not break request handling
+**Files:** `dashboard/reports.html`, `dashboard/js/reports.js` (or a new blocklist page)
 
-### Current State
-Every request hits MongoDB directly; ML inference runs on every request.
+### Blocklist Status Card
 
-### Implementation Steps
+- Count of currently blocked IPs
+- "Recently Blocked" mini-table (timestamp, IP, score breakdown)
+- Manual unblock button (DELETE to log-collector API)
 
-#### 3.1 Add Redis Dependency
-```
-go get github.com/redis/go-redis/v9
-```
+### Alert Tagging
 
-#### 3.2 Define Caching Policy Per Data Type
-Use explicit policy by endpoint/domain:
-```
-- ML inference: cache-aside + short TTL + optional stale-while-revalidate
-- Rules metadata: cache-aside + event-driven invalidation on rule updates
-- Dashboard stats: cache-aside + single-flight recompute + stale-while-revalidate
-- Sessions (if enabled): Redis as primary session store with strict TTL and revoke support
-```
-
-Fail-open rule:
-```
-If Redis is unavailable, continue serving from MongoDB/ML path.
-Cache errors must not fail user/API requests.
-```
-
-#### 3.3 Define Cache Keys
-```
-ml:inference:{hash(features)} → ML score (TTL: 5min)
-rules:all → Rule list JSON (TTL: 1hr)
-stats:daily:{date} → Daily attack statistics (TTL: 10min)
-session:{token} → User session data (TTL: 30min)
-```
-
-Key safety rules:
-```
-- Canonicalize input before hashing for ml:inference keys (stable field order, normalized numeric precision)
-- Avoid raw PII/secrets in keys
-- Prefix keys by environment (dev/stage/prod) to avoid cross-env collisions
-- Keep values small; compress large JSON payloads if needed
-```
-
-#### 3.4 Implement Cache Service
-Create `services/cache/redis.go`:
-```
-type RedisCache struct {
-    client *redis.Client
-}
-
-func (c *RedisCache) Get(key string) ([]byte, error)
-func (c *RedisCache) Set(key string, value []byte, ttl time.Duration) error
-func (c *RedisCache) Delete(key string) error
-func (c *RedisCache) DeletePattern(pattern string) error
-func (c *RedisCache) GetOrCompute(key string, ttl time.Duration, fn func() ([]byte, error)) ([]byte, error)
-```
-
-Implementation notes:
-```
-- Add context deadlines for all Redis operations
-- Distinguish cache miss from Redis error
-- Instrument hit/miss/error and latency metrics
-- Add optional local in-process single-flight to coalesce concurrent misses
-```
-
-#### 3.5 Add Stampede Protection and Freshness Controls
-```
-- Use single-flight for hot misses (one recompute, many waiters)
-- Add TTL jitter (e.g., +/-10%) to avoid synchronized expirations
-- Use stale-while-revalidate for stats/rules where acceptable
-- Add max recompute concurrency guard for expensive ML paths
-```
-
-#### 3.6 Update Inference Endpoint
-```
-1. Hash incoming features
-2. Check Redis for cached score
-3. If HIT: return cached score immediately
-4. If MISS: single-flight compute inference, cache result, return
-5. If Redis error: continue with inference path; return result without failing request
-```
-
-#### 3.7 Update Dashboard Stats
-```
-1. Check Redis for cached stats
-2. If HIT: return immediately
-3. If MISS: single-flight query/compute, cache, return
-4. If cache stale and SWR enabled: serve stale quickly and refresh in background
-```
-
-#### 3.8 Rules Cache Invalidation
-```
-- On rule create/update/delete, delete keys: rules:all and rules:* selectors
-- Keep TTL as safety net, not primary invalidation mechanism
-- Add admin endpoint/hook for manual cache purge during incident response
-```
-
-#### 3.9 Session Store Hardening (if Redis sessions used)
-```
-- Store minimal session payload only (no sensitive plaintext)
-- Enforce short TTL + sliding renewal policy
-- Rotate tokens and support explicit revoke on logout/password reset
-- Separate key namespace for sessions
-```
-
-#### 3.10 Configuration
-Add to `.env`:
-```
-REDIS_URL=redis://redis:6379
-REDIS_POOL_SIZE=100
-REDIS_MIN_IDLE_CONNS=10
-REDIS_DIAL_TIMEOUT=2s
-REDIS_READ_TIMEOUT=500ms
-REDIS_WRITE_TIMEOUT=500ms
-REDIS_ENABLE_TLS=false
-
-CACHE_ML_TTL=5m
-CACHE_RULES_TTL=1h
-CACHE_STATS_TTL=10m
-CACHE_TTL_JITTER_PCT=10
-CACHE_ENABLE_SWR=true
-CACHE_FAIL_OPEN=true
-CACHE_SINGLEFLIGHT_ENABLED=true
-```
-
-Set sane caps in code:
-```
-- Clamp TTLs to min/max allowed ranges
-- Reject invalid jitter percentage
-- Enforce max value size before cache set
-```
-
-### Affected Files
-| File | Changes |
-|------|---------|
-| `services/review-api/go.mod` | Add `go-redis/v9` |
-| `services/review-api/services/cache/redis.go` | New file - Redis client wrapper |
-| `services/review-api/services/cache/inference.go` | New file - ML cache logic |
-| `services/review-api/services/cache/singleflight.go` | New file - miss coalescing helper |
-| `services/review-api/api/handler.go` | Add caching to relevant handlers |
-| `services/review-api/main.go` | Initialize Redis connection |
-| `services/review-api/metrics/*.go` | Add cache hit/miss/error and latency metrics |
-| `docker-compose.yml` | Add Redis service |
-| `.env` | Add Redis URL |
-
-### Testing
-1. Send identical inference request twice -> second request should be faster (cache hit)
-2. Simulate concurrent identical misses -> verify single-flight runs only one backend compute
-3. Wait for TTL expiry -> verify miss then recache behavior
-4. Force Redis outage -> verify API remains functional via fail-open path
-5. Update/delete rules -> verify immediate invalidation and fresh read on next request
-6. Validate hit rate and fallback/error metrics in normal and failure scenarios
-7. Check Redis memory and key cardinality remain bounded under sustained load
-8. Security test: ensure session keys/payloads do not leak sensitive data
+- Miss-detection alerts caused by composite ≥ 0.5 get an extra tag column: `ML BLOCKED` / `ML MONITORED`
+- Add `ml_action: "block"|"monitor"` to alert document
 
 ---
 
-## 4. Connection Pooling
+## Phase 7 — Configuration & Environment
 
-### What
-Tune and manage MongoDB and Redis connection pools as first-class runtime controls with timeouts, saturation policies, and observability. Goal is predictable latency under burst traffic without exhausting backend connection limits.
-
-### Why for ModIntel
-- **MongoDB Connections**: Both review-api and log-collector connect to MongoDB; connection overhead is significant under load
-- **Traffic Spikes**: WAF attacks generate bursts of logs; connection pooling handles spikes without connection exhaustion
-- **Random Failures**: Without pooling, random "connection refused" errors occur when DB limits are hit
-- **Resource Efficiency**: Fewer TCP handshakes, less memory fragmentation
-- **Stability Under Degradation**: Explicit pool/timeouts prevent cascading failures when DB/Redis slows down
-
-### Current State
-- Review-api uses `mongo.Connect()` - likely creates pool but may not configure limits
-- Log-collector creates new connections on reconnection
-
-### Implementation Steps
-
-#### 4.1 Define Pooling and Timeout Policy
-Set baseline policy before code changes:
-```
-- One shared long-lived client per process per backend (MongoDB/Redis)
-- No per-request connect/disconnect
-- Strict operation deadlines for all DB/cache calls
-- Bounded wait queues and fail-fast behavior under saturation
-```
-
-#### 4.2 Review-API: Configure MongoDB Pool
-Update `main.go`:
-```go
-clientOpts := options.Client().
-    ApplyURI(mongoURI).
-    SetMaxPoolSize(100).
-    SetMinPoolSize(10).
-    SetMaxConnIdleTime(30 * time.Second).
-    SetServerSelectionTimeout(3 * time.Second).
-    SetConnectTimeout(3 * time.Second).
-    SetSocketTimeout(10 * time.Second).
-    SetWaitQueueTimeout(2 * time.Second)
-
-client, err := mongo.Connect(ctx, clientOpts)
-```
-
-Operational notes:
-```
-- Keep one global `*mongo.Client` and reuse collection handles
-- Wrap each query/insert with context timeout
-- Fail fast when wait queue timeout is exceeded; return controlled error
-```
-
-#### 4.3 Log-Collector: Configure MongoDB Pool
-Use same strategy with tuned values for ingest profile:
-```
-- Higher max pool may be needed for burst ingest
-- Keep min pool modest to avoid idle resource waste
-- Reconnect loops must not recreate clients repeatedly
-```
-
-#### 4.4 Review-API: Configure Redis Pool (if caching implemented)
-```go
-redisOpts := &redis.Options{
-    Addr:         redisAddr,
-    PoolSize:     100,
-    MinIdleConns: 10,
-    DialTimeout:  2 * time.Second,
-    ReadTimeout:  500 * time.Millisecond,
-    WriteTimeout: 500 * time.Millisecond,
-    PoolTimeout:  1 * time.Second,
-    MaxConnAge:   5 * time.Minute,
-}
-```
-
-#### 4.5 Saturation and Backpressure Behavior
-Define explicit behavior when pools are exhausted:
-```
-- API read paths: fail fast with retriable 503/controlled error (do not hang)
-- Async writers: enqueue to bounded buffer/spool and retry based on policy
-- Never allow unbounded goroutine buildup waiting on connections
-```
-
-#### 4.6 Connection Health Checks
-Use startup and periodic health checks:
-```go
-// Startup readiness
-err = client.Ping(ctx, nil)
-
-// Liveness/readiness probes should validate backend connectivity with timeout
-```
-
-#### 4.7 Graceful Shutdown
-```go
-defer func() {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
-    client.Disconnect(ctx)
-}()
-```
-
-Shutdown notes:
-```
-- Stop accepting new requests before disconnect
-- Drain async workers, then close DB/cache clients
-- Emit shutdown metrics/logs for unfinished work
-```
-
-#### 4.8 Configuration
-Add to `.env`:
-```
-MONGO_MAX_POOL_SIZE=100
-MONGO_MIN_POOL_SIZE=10
-MONGO_MAX_CONN_IDLE_TIME=30s
-MONGO_CONNECT_TIMEOUT=3s
-MONGO_SERVER_SELECTION_TIMEOUT=3s
-MONGO_SOCKET_TIMEOUT=10s
-MONGO_WAIT_QUEUE_TIMEOUT=2s
-
-REDIS_POOL_SIZE=100
-REDIS_MIN_IDLE_CONNS=10
-REDIS_DIAL_TIMEOUT=2s
-REDIS_READ_TIMEOUT=500ms
-REDIS_WRITE_TIMEOUT=500ms
-REDIS_POOL_TIMEOUT=1s
-REDIS_MAX_CONN_AGE=5m
-```
-
-Set sane caps in code:
-```
-- Clamp pool sizes to safe min/max ranges
-- Reject negative/zero timeout values
-- Log effective runtime pool settings at startup
-```
-
-### Affected Files
-| File | Changes |
-|------|---------|
-| `services/review-api/main.go` | Configure MongoDB and Redis pool options |
-| `services/review-api/db/mongo.go` | Add pool + timeout configuration |
-| `services/review-api/cache/redis.go` | Add Redis pool and timeout configuration |
-| `services/log-collector/main.go` | Configure MongoDB pool options for ingest profile |
-| `services/log-collector/db/mongo.go` | Add pool + timeout configuration |
-| `services/review-api/metrics/*.go` | Add pool saturation/latency/error metrics |
-| `.env` | Add pool and timeout config variables |
-
-### Testing
-1. Load test with steady and burst traffic -> verify connections stay within configured limits
-2. Concurrent requests -> verify connection reuse and reduced connect churn
-3. Saturation test -> verify fail-fast behavior when wait queue/pool timeouts are exceeded
-4. Inject MongoDB latency/outage -> verify controlled errors, no request hangs, and recovery after backend returns
-5. Inject Redis latency/outage -> verify cache timeouts and graceful fallback behavior
-6. Long idle period -> verify idle connections trimmed and min pool behavior is as configured
-7. Shutdown under load -> verify workers drain and all clients disconnect cleanly
-8. Verify pool/timeout metrics and alerts trigger at expected thresholds
+| Env Var | Default | Purpose |
+|---------|---------|---------|
+| `BLOCKLIST_TTL` | `30m` | How long an IP stays blocked |
+| `BLOCKLIST_SYNC_INTERVAL` | `10s` | How often to sync to file |
+| `MONITOR_THRESHOLD` | `0.50` | Composite threshold for logging |
+| `BLOCK_THRESHOLD` | `0.85` | Composite threshold for blocking |
+| `RATE_WINDOW_SECONDS` | `60` | Rate tracking sliding window |
+| `REP_CACHE_TTL` | `60s` | Internal reputation cache refresh |
+| `ALIENVAULT_API_KEY` | — | OTX API key (optional) |
 
 ---
 
 ## Implementation Order
 
-| Priority | Task | Section | Rationale |
-|----------|------|---------|-----------|
-| 1 | Connection Pooling | §4 | Foundation - improves everything, low risk |
-| 2 | Pagination | §1 | High user impact, straightforward implementation |
-| 3 | Redis Caching | §3 | Significant performance gain for ML and stats |
-| 4 | Async Logging | §2 | Backend optimization, improves write throughput |
-| 5 | Access Control Hardening | §5 | Security-critical; blocks staging/UAT rollout if missing |
-| 6 | Error Handling and Crash Recovery | §6 | Reliability baseline; stabilizes all prior work |
-| 7 | Rule Refactor and Custom Rules | §7 | Data ownership fix; unblocks custom rule authoring |
-| 8 | SSE Real-Time Alerts | §8 | Replaces polling with sub-second push delivery |
+| Step | What | Depends On |
+|------|------|------------|
+| 1 | Rate tracker in log-collector | — |
+| 2 | Internal reputation (MongoDB queries in log-collector) | Step 1 |
+| 3 | External feed polling in log-collector | Step 2 |
+| 4 | `/eval-miss` endpoint in inference engine | — |
+| 5 | Wire log-collector to call `/eval-miss` with rate + rep | Steps 3, 4 |
+| 6 | In-memory blocklist + file sync in log-collector | Step 5 |
+| 7 | Coraza `@ipMatchFromFile` rule + volume mount | Step 6 |
+| 8 | Dashboard blocklist visibility | Step 6 |
+| 9 | Env vars, config cleanup, documentation | All |
 
 ---
 
-## Branch Strategy
+## Open Questions for Design Review
 
-- Branch from: `modintel-base`
-- Feature branch: `feat/scalability-practices`
-
-Implement in order above. Each practice should be a separate commit with tests passing before moving to next.
-
----
-
-## Success Metrics
-
-| Section | Practice | Metric | Target |
-|---------|----------|--------|--------|
-| §1 | Pagination | Dashboard load time with 10K alerts | < 500ms |
-| §1 | Pagination | Cursor stability under concurrent inserts | No duplicates or skipped entries |
-| §2 | Async Logging | Review-api p99 latency (vs sync baseline) | < 50ms |
-| §2 | Async Logging | Log loss on crash within flush interval | 0 Tier A events; ≤ flush_interval of Tier B |
-| §3 | Redis Caching | Cache hit rate | > 80% |
-| §3 | Redis Caching | API availability during Redis outage | 100% (fail-open) |
-| §4 | Connection Pooling | Connection errors under load | 0 |
-| §4 | Connection Pooling | Request hang on pool saturation | 0 (fail-fast instead) |
-| §5 | Access Control | Unauthenticated page access (direct URL) | 0 |
-| §5 | Access Control | Auth-service outage behavior | Fail-closed, no bypass |
-| §6 | Error Handling | Leaked internal details in API responses | 0 |
-| §6 | Error Handling | Service recovery after dependency outage | < circuit-breaker open timeout |
-| §7 | Rule Refactor | Frontend hardcoded rule metadata remaining | 0 |
-| §7 | Rule Refactor | Custom rule create/persist/toggle | End-to-end functional |
-| §7 | Rule Refactor | Managed overrides after rule mutations | Correct and deterministic |
-| §8 | Real-Time Alerts | Alert delivery latency (insert -> dashboard render, p95) | < 1s |
-| §8 | Real-Time Alerts | Dashboard reconnect recovery after review-api restart | < 10s |
-| §8 | Real-Time Alerts | Polling fallback availability after WS failure | 100% |
+1. **Container path** for the overrides mount: what does Coraza see internally? (Run `docker inspect proxy-waf` to confirm `/etc/coraza/overrides/` vs something else)
+2. **AlienVault OTX API key** — needs to be sourced and added to `.env`
+3. **retroactive blocking** — should the log-collector blocklist IPs retroactively from past TP alerts (batch), or only from real-time miss-detections?
 
 ---
 
-## 5. Dashboard Access Control Hardening (Auth/RBAC Gaps)
+# Task 2 — Miss Model Training Pipeline (Layer 2)
 
-### Goal
-Enforce authentication and authorization as a full-stack control (frontend UX + server/proxy enforcement) with deny-by-default behavior, secure token handling, and auditable decisions.
+> Train the model that powers `/predict-miss` — the ONNX model that detects
+> attacks Coraza misses. No Coraza features, no anomaly scores. Pure raw HTTP
+> request data (method, URI, headers, body) → 135 features → predict.
 
-### Current Gaps
-- Route protection is mostly client-side (`requireAuth()`), so static page URLs are not server-denied.
-- No frontend role-based page guards (admin/analyst/viewer page-level access matrix not enforced in UI routing).
-- Sign-in has demo fallback auth path when auth-service is unavailable.
-- Frontend token storage uses `localStorage` (higher XSS exposure risk than httpOnly cookies).
-- Auth semantics are not explicit (`401` vs `403` behavior inconsistent across UI/API).
-- No guaranteed bootstrap gate to prevent protected-content flash before auth check completes.
-- Missing centralized audit trail for authorization denials and privilege changes.
-
-### Implementation Steps
-
-#### 5.1 Define Access Model (Deny by Default)
-Create a centralized access matrix:
-```
-- Roles: admin, analyst, viewer
-- Resources: dashboard pages + API capability groups
-- Decision: default deny unless explicit allow
-```
-
-Requirements:
-```
-- UI checks improve UX only; backend API RBAC remains source of truth
-- Any mismatch between UI role and API role resolves to API role
-- Add versioned policy file for traceability
-```
-
-#### 5.2 Remove Insecure Auth Paths
-```
-- Remove demo fallback login flow and hardcoded credentials from signin flow
-- Fail closed if auth-service is unavailable (show service-unavailable page)
-- Disallow local bypass modes in staging/UAT and production-like builds
-```
-
-#### 5.3 Secure Token Storage and Session Flow
-Adopt cookie-based session/JWT transport:
-```
-- httpOnly + Secure + SameSite cookies
-- Short access-token/session TTL with refresh rotation
-- Explicit revoke on logout, password reset, and admin session revoke
-- CSRF protection for state-changing requests (token or same-site strategy)
-```
-
-#### 5.4 Frontend Guard and Bootstrap Gate
-Implement a centralized route guard in `dashboard/js/auth.js`:
-```
-1. App bootstrap calls `/api/whoami`
-2. Block protected page render until auth state resolves
-3. If unauthenticated -> redirect to `/signin`
-4. If authenticated but unauthorized -> render `/403`
-5. If token expired/invalid -> clear auth state and redirect cleanly
-```
-
-#### 5.5 Server-Side Route Protection (Caddy + API)
-```
-- Caddy enforces unauthenticated dashboard route redirects to `/signin`
-- Backend APIs enforce RBAC on every protected endpoint
-- Never trust client role claims without server verification
-- Return standardized status codes: 401 unauthenticated, 403 unauthorized
-```
-
-#### 5.6 Unauthorized and Error UX
-```
-- Add dedicated 403 page with least-privilege messaging
-- Avoid leaking internal authorization details to users
-- Keep navigation safe (no open redirect vectors in return URLs)
-```
-
-#### 5.7 Auditing and Observability
-Add security telemetry:
-```
-auth_login_success_total
-auth_login_failure_total
-authz_denied_total{resource,action,role}
-auth_token_expired_total
-auth_session_revoked_total
-```
-
-Audit events:
-```
-- login/logout, token refresh, role change, authz deny, suspicious replay/tamper attempts
-```
-
-#### 5.8 Configuration
-Add to `.env`:
-```
-AUTH_COOKIE_SECURE=true
-AUTH_COOKIE_HTTPONLY=true
-AUTH_COOKIE_SAMESITE=Lax
-AUTH_ACCESS_TTL=15m
-AUTH_REFRESH_TTL=7d
-AUTH_FAIL_CLOSED=true
-AUTH_ENFORCE_RBAC=true
-AUTH_ENABLE_AUDIT_LOG=true
-```
-
-### Affected Files
-| File | Changes |
-|------|---------|
-| `dashboard/js/signin.js` | Remove demo fallback and hardcoded dev credentials |
-| `dashboard/js/auth.js` | Add centralized bootstrap guard and role checks |
-| `dashboard/js/router.js` | Enforce deny-by-default page access mapping |
-| `dashboard/403.html` | New file - explicit unauthorized page |
-| `dashboard/*.html` | Apply centralized guard consistently |
-| `proxy-waf/Caddyfile` | Enforce route-level redirects for unauthenticated access |
-| `services/review-api/api/middleware/auth.go` | Standardize 401/403 handling and RBAC checks |
-| `services/review-api/api/handler.go` | Enforce per-endpoint RBAC scopes |
-| `docs/AUTHENTICATION_GUIDE.md` | Document authn/authz model, token flow, and failure modes |
-| `.env` | Add auth hardening config values |
-
-### Verification
-1. Unauthenticated request to `/events`, `/monitor`, `/settings` redirects to `/signin`.
-2. Authenticated viewer access to admin pages renders `/403` and no privileged content is shown.
-3. API request without auth returns `401`; API request with insufficient role returns `403`.
-4. Expired/invalid/tampered token clears session and redirects cleanly without render flash.
-5. Auth-service outage in staging/UAT results in fail-closed behavior (no silent bypass).
-6. Logout/password reset/session revoke invalidates active session immediately.
-7. Attempted open-redirect return URLs are rejected/sanitized.
-8. Audit logs and auth/authz metrics capture login, deny, revoke, and token-expiry events.
 ---
 
-## 6. Graceful Error Handling and Crash Recovery
+## Current Problems
 
-### What
-Implement a unified reliability model across Go and Python services: sanitized client errors, structured diagnostics, bounded retries, circuit breaking, and crash-safe shutdown/recovery. Focus on fail-safe behavior without leaking internal details.
+| Problem | Impact |
+|---------|--------|
+| Current miss model (`modintel.onnx`) is pre-trained on static external data | Doesn't learn from YOUR traffic patterns |
+| Reviewed alerts are mostly attacks → dataset is heavily imbalanced | Model biases toward attack, high FP on benign |
+| No benign traffic sampling from the actual backend | Model doesn't learn real normal patterns |
+| 4 fixed model configs, no tuning | Suboptimal performance per dataset |
+| Single train/val/test split (no CV) | Metrics can be noisy/lucky split |
+| No augmentation for rare attack families | Minority attack types get poor recall |
 
-### Why for ModIntel
-- **Security**: Prevents exposure of internal details (e.g., stack traces, DB errors) in API responses.
-- **Reliability**: Handles transient failures (network issues, DB timeouts) with retries and fallbacks.
-- **Maintainability**: Structured logging aids debugging; consistent patterns reduce bugs.
-- **User Experience**: Generic error messages for clients; graceful degradation during failures.
-- **Operational Control**: Standardized recovery behavior avoids cascading failures during backend incidents.
+---
 
-### Current State
-- Basic error handling exists but inconsistent (e.g., some APIs return full exceptions).
-- Logging is minimal; no structured format or centralized aggregation.
-- No retries or circuit breakers for external calls.
-- ML pipelines lack fallbacks; services may crash without recovery.
+## Key Constraint — No Coraza Dependence
 
-### Implementation Steps
+The miss model must work **independently** of Coraza:
 
-#### 6.1 Define Error Taxonomy and API Contract
-Create shared error classes and response schema:
+| Do NOT use | Use Instead |
+|------------|-------------|
+| `anomaly_score` | Raw URI, method, headers |
+| `triggered_rules[]` | Raw body bytes |
+| Coraza audit log format | Caddy access log (raw HTTP) |
+| WAFFeatureExtractor (22+ features) | MissONNXInference (135 raw HTTP features) |
+
+Training data stores raw HTTP fields from the Caddy access log — same format
+the log-collector already parses in its miss-detection pipeline.
+
+---
+
+## Dataset Schema — Stripped & Clean
+
+No Coraza fields, no AI enrichment fields, no metadata noise. Just raw HTTP
+request data + a binary label.
+
+### Fields Kept (raw HTTP only)
+
+| Field | Type | Source |
+|-------|------|--------|
+| `method` | string | Caddy log |
+| `uri` | string | Caddy log |
+| `body` | string | Caddy log (base64 or truncated) |
+| `headers` | map[string]string | Caddy log |
+| `body_length` | int | computed |
+| `header_count` | int | computed |
+| `query_params` | map[string]string | parsed from URI |
+| `content_type` | string | from headers |
+| `client_ip` | string | Caddy log |
+| `timestamp` | string | Caddy log |
+| `label` | string | `"attack"` or `"benign"` |
+
+### Fields Stripped (not in training dataset)
+
+| Field | Reason |
+|-------|--------|
+| `triggered_rules` | Coraza-specific, useless for miss model |
+| `anomaly_score` | Coraza-specific |
+| `rule_details` | Coraza-specific |
+| `raw_log` | Coraza-specific, bloated |
+| `http_status` | Response status, not request feature |
+| `ai_score`, `ai_confidence`, etc. | Inference output, not input feature |
+| `ai_priority`, `ai_explanation` | Inference output |
+| `human_label` | Mapped to `label` instead |
+| `reviewed_by`, `reviewed_at` | Operational metadata |
+| `source`, `status` | Internal pipeline tracking |
+| `request_fingerprint` | Internal dedup |
+| `matched_signatures` | Rule artifact, not a feature |
+
+### Label Mapping
+
+| Source Data | Mapped To | Condition |
+|-------------|-----------|-----------|
+| Reviewed TP miss-detection | `label: "attack"` | `source = "ml_miss_detector"` AND `human_label = "true_positive"` |
+| Reviewed FP miss-detection | `label: "benign"` | `source = "ml_miss_detector"` AND `human_label = "false_positive"` |
+| Live benign recording | `label: "benign"` | No sig match, no Coraza flag |
+
+Both FP misses AND recorded live traffic become `"benign"` — they represent
+normal traffic the model should not flag.
+
+---
+
+## Architecture — Dataset Lifecycle
+
 ```
-- Client errors: validation/auth/authz/not found/rate limit
-- Transient server errors: timeout, dependency unavailable, deadlock, network reset
-- Fatal/internal errors: unexpected panic/exception
+┌───────────────────────────────────────────────────────────────────────────┐
+│                        DATASET STATE MACHINE                              │
+│                                                                           │
+│  User reviews miss-detection alerts → exports all labeled TP ✅ + FP ❌   │
+│         │                                                                 │
+│         ▼                                                                 │
+│  ┌──────────────────────┐                                                 │
+│  │  ATTACK + BENIGN     │                                                 │
+│  │  FROM REVIEW         │   TP misses → label "attack"                    │
+│  │                      │   FP misses → label "benign"                    │
+│  └──┬────────┬──────────┘                                                 │
+│     │        │                                                            │
+│     ▼        ▼                                                            │
+│  attack     benign                                                        │
+│  count      count_from_review                                             │
+│     │        │                                                            │
+│     └───┬────┘                                                            │
+│         ▼                                                                 │
+│  remaining_benign_needed = attacks × (0.4/0.6) - benign_from_review       │
+│         │                                                                 │
+│         ▼ (if remaining_benign_needed > 0)                               │
+│  ┌────────────────┐   Log-collector starts passive recording:            │
+│  │  RECORDING     │   ✓ No signature match                               │
+│  │  BENIGN        │   ✓ No Coraza flag                                  │
+│  └──────┬─────────┘   ✓ Raw HTTP from WAF access log                    │
+│         │                                                                 │
+│         ▼ (when buffer >= remaining_needed)                              │
+│  ┌────────────────┐                                                       │
+│  │  READY TO      │   Dataset = attacks ⚔️ + all benign 🙝               │
+│  │  TRAIN         │   ↓ raw HTTP fields + label → Parquet                │
+│  └────────────────┘   Training UI enables "Start Training" button       │
+└───────────────────────────────────────────────────────────────────────────┘
+
+Training produces:
+  ├── modintel.onnx         → new ONNX model for /predict-miss
+  ├── modintel.pt           → PyTorch checkpoint
+  └── feature_extractor.joblib → fitted MissONNX feature extractor
 ```
 
-Standard response envelope:
+---
+
+## Phase 1 — Benign Traffic Recording
+
+**Goal:** Passively record normal traffic from live WAF logs when the system
+needs benign samples to balance a pending dataset.
+
+**Files:** `services/log-collector/main.go`, `services/training-api/main.py`,
+`ml-pipeline/dataset_builder.py`
+
+### Logic
+
+The log-collector already tails the Caddy access log. It's already applying
+regex signatures and checking Coraza flags. The ask is:
+
+**For every request that passes both checks** (no signature match, no Coraza
+flag), tag it as a benign candidate. If a benign recording job is active,
+persist it.
+
+### Decision Tree
+
+```
+For each Caddy access log line:
+  ├── regex signature matched?          → YES → skip (potential attack)
+  ├── Coraza anomaly score > 0?        → YES → skip (WAF had doubts)
+  ├── URI in exclude list?              → YES → skip (/admin, /api/system/*)
+  ├── HTTP status != 200?               → YES → skip (error, not "normal")
+  │
+  └── ALL CLEAR → benign candidate
+        ├── Is there an active benign recording job?
+        │     YES → append to job buffer
+        │     NO  → discard (no one needs it yet)
+        └── Check: has buffer hit the target count?
+              YES → mark recording job complete, dataset is ready
+```
+
+### Recording Job State
+
+Managed in MongoDB `datasets` collection — a dataset document gets lifecycle
+fields:
+
 ```json
 {
-  "error": {
-    "code": "internal_error",
-    "message": "Internal server error",
-    "request_id": "req-abc123"
+  "name": "waf_dataset_v4",
+  "status": "recording_benign",
+  "type": "training",
+  "attack_samples": 9000,
+  "benign_needed": 6000,
+  "benign_collected": 3400,
+  "attack_exported_at": "2026-05-06T10:00:00Z",
+  "benign_collection_started_at": "2026-05-06T10:00:05Z",
+  "benign_sources": ["waf_access_log"]
+}
+```
+
+States: `attacks_exported` → `recording_benign` → `ready` → `training` → `done`
+
+### Trigger — User Exports Reviewed Attacks
+
+When the analyst clicks "Cut Dataset" on the review page, the system
+**strips and maps** as it exports:
+
+```
+1. Query MongoDB for:
+   ├── source = "ml_miss_detector" (only miss-detection alerts)
+   └── human_label exists (reviewed at least once)
+
+2. For each alert:
+   ├── strip: triggered_rules, anomaly_score, rule_details, raw_log
+   ├── strip: ai_score, ai_confidence, ai_priority, ai_explanation, etc.
+   ├── strip: reviewed_by, reviewed_at, status, source, request_fingerprint
+   └── map label:
+         human_label = "true_positive"  →  label = "attack"
+         human_label = "false_positive" →  label = "benign"
+
+3. Save to data/processed/attack_samples_v{N}.jsonl (raw HTTP fields + label only)
+
+4. Count:
+   ├── attack_count = samples with label="attack"
+   └── benign_from_review = samples with label="benign"
+
+5. Calculate remaining benign_needed:
+   └── max(0, attack_count × (0.4/0.6) - benign_from_review)
+
+6. If remaining_benign_needed > 0:
+   ├── create dataset record with status "recording_benign"
+   ├── target = remaining_benign_needed
+   └── log-collector starts passive recording (Phase 1)
+
+7. If remaining_benign_needed <= 0:
+   ├── mark status "ready" immediately
+   └── dataset is balanced from review labels alone
+```
+
+MongoDB alerts are **never modified** by this process — they keep all Coraza
+and AI fields for operational traceability. The clean copy lives in the
+exported JSONL / Parquet.
+
+### What Benign Recording Stores
+
+Store raw HTTP data — same format the miss model consumes (no Coraza fields):
+
+| Field | Source |
+|-------|--------|
+| `method` | Caddy log |
+| `uri` | Caddy log |
+| `body` | Caddy log (base64 or truncated) |
+| `headers` | Caddy log |
+| `body_length` | computed |
+| `header_count` | computed |
+| `query_params` | parsed from URI |
+| `content_type` | from headers |
+| `client_ip` | Caddy log |
+| `timestamp` | Caddy log |
+| `label` | `"benign"` |
+
+### Storage
+
+Benign samples are stored in-memory in the log-collector initially (ring
+buffer, max ~10k), then flushed to a JSONL file in
+`data/processed/benign_buffer.jsonl` periodically. The dataset builder picks
+them up from there.
+
+### Dashboard Feedback
+
+While `recording_benign`:
+- Datasets page shows a progress bar: `3,400 / 6,000 benign samples collected`
+- Estimated time remaining based on current traffic rate
+
+---
+
+## Phase 2 — Attack Family Balancing
+
+**Goal:** Ensure minority attack types aren't drowned out by majority ones.
+
+**Files:** `ml-pipeline/dataset_builder.py`
+
+### Per-Family Sampling
+
+```
+For each attack family:
+  family_count = count of reviewed TP alerts for this family
+  target_per_family = max(min_floor, total_attacks / num_families)
+
+  If family_count >= target:
+    → Random subsample to target (preserve variety)
+  If family_count < target AND > 0:
+    → Keep all, apply augmentation (Phase 3)
+  If family_count == 0:
+    → Fall back to static attack dataset for this family
+```
+
+### Default Configuration
+
+| Parameter | Value | Why |
+|-----------|-------|-----|
+| `attack_ratio` | 0.60 | 60% attacks, 40% benign |
+| `min_samples_per_family` | 50 | Ensures each family has enough for training |
+| `max_samples_per_family` | 3000 | Prevents SQLi/XSS from drowning out others |
+| `augment_until` | 50 | Augment families with <50 samples up to 50 |
+
+---
+
+## Phase 3 — Attack Augmentation
+
+**Goal:** Increase variety for families with few real samples.
+
+**Files:** `ml-pipeline/dataset_builder.py` — new augmentation module
+
+### Lightweight Mutations (no GANs, no LLMs)
+
+For each attack payload, randomly apply 1–3 of these:
+
+| Mutation | Applies To | Effect |
+|----------|-----------|--------|
+| Case shuffle | SQLi, XSS | `SELECT` ↔ `select` ↔ `Select` |
+| Whitespace insertion | All | `union select` ↔ `union%0a%09select` |
+| URL-encode some chars | All | `'` ↔ `%27`, `<` ↔ `%3C` |
+| Comment injection | SQLi | `SELECT` ↔ `SE/**/LECT` |
+| Add benign prefix/suffix | All | `/?q=<script>` ↔ `/?search=hello&q=<script>` |
+| Double encoding | LFI, Path | `../` ↔ `%252e%252e%252f` |
+
+Each mutated sample is treated as a separate training example. The original is always kept.
+
+### Guardrails
+
+- Max 5 mutated copies per original payload (avoid overfitting on synthetic data)
+- Track `augmented: true` in dataset metadata
+- Never augment benign samples (only attacks)
+
+---
+
+## Phase 4 — Bayesian Hyperparameter Tuning
+
+**Goal:** Replace 4 fixed model configs with Optuna-driven search.
+
+**Files:** `ml-pipeline/train_model.py` — major rewrite of model training section
+
+### Optuna Integration
+
+```
+study = optuna.create_study(
+    direction="maximize",
+    sampler=optuna.samplers.TPESampler(),   // Tree-structured Parzen Estimator
+    pruner=optuna.pruners.MedianPruner()    // Early-stop bad trials
+)
+study.optimize(objective, n_trials=10)
+```
+
+The `objective` function for each trial:
+1. Sample hyperparameters from the search space
+2. Train model on 4 of 5 stratified folds
+3. Evaluate on held-out fold
+4. Return composite score: `F1×0.4 + (1-ECE)×0.3 + AUROC×0.2 + (1-FPR)×0.1`
+5. After all trials: train best config on full training set, evaluate on test set
+
+### Search Spaces
+
+**XGBoost (10 trials):**
+
+| Param | Range | Scale |
+|-------|-------|-------|
+| `n_estimators` | 100–500 | linear |
+| `max_depth` | 3–12 | linear |
+| `learning_rate` | 0.01–0.3 | log |
+| `subsample` | 0.6–1.0 | linear |
+| `colsample_bytree` | 0.6–1.0 | linear |
+| `min_child_weight` | 1–10 | linear |
+| `reg_alpha` | 1e-8–10 | log |
+| `reg_lambda` | 1e-8–10 | log |
+| `scale_pos_weight` | 1–10 (or computed) | linear |
+
+**LightGBM (10 trials):**
+
+| Param | Range | Scale |
+|-------|-------|-------|
+| `n_estimators` | 100–500 | linear |
+| `max_depth` | 3–15 | linear |
+| `learning_rate` | 0.01–0.3 | log |
+| `num_leaves` | 15–127 | linear |
+| `subsample` | 0.6–1.0 | linear |
+| `colsample_bytree` | 0.6–1.0 | linear |
+| `min_child_samples` | 5–50 | linear |
+| `reg_alpha` | 1e-8–10 | log |
+| `reg_lambda` | 1e-8–10 | log |
+| `class_weight` | "balanced" or None | choice |
+
+**Random Forest (10 trials):**
+
+| Param | Range | Scale |
+|-------|-------|-------|
+| `n_estimators` | 100–500 | linear |
+| `max_depth` | 5–30 (or None) | linear |
+| `min_samples_split` | 2–20 | linear |
+| `min_samples_leaf` | 1–10 | linear |
+| `max_features` | "sqrt", "log2", 0.3–0.8 | choice + linear |
+| `class_weight` | "balanced", "balanced_subsample", None | choice |
+
+**Logistic Regression (10 trials):**
+
+| Param | Range | Scale |
+|-------|-------|-------|
+| `C` | 1e-4–100 | log |
+| `penalty` | "l1", "l2", "elasticnet" | choice |
+| `solver` | "saga" | fixed |
+| `l1_ratio` | 0–1 (only if elasticnet) | linear |
+| `class_weight` | "balanced" or None | choice |
+
+### Cross-Validation Strategy
+
+- **5-fold stratified** (maintains attack/benign ratio per fold)
+- Each fold: train on 4/5, validate on 1/5
+- Final evaluation: train on all 5 folds combined, test on held-out 20% test split
+- Metrics reported as: `mean ± std` across folds
+
+---
+
+## Phase 5 — Calibration & Model Selection
+
+**Files:** `ml-pipeline/train_model.py`
+
+### Calibration Flow (per optimized model)
+
+```
+For each model returned by Optuna:
+  ├── Platt (sigmoid) calibration on validation set → ECE_sigmoid
+  └── Isotonic calibration on validation set → ECE_isotonic
+  
+  Selected calibrator = argmin(ECE_sigmoid, ECE_isotonic)
+  ↳ Both saved as calibrator_*.joblib for later comparison
+```
+
+### Model Selection
+
+```
+For each model type (XGBoost, LightGBM, RF, LR):
+  ├── Get best trial from Optuna
+  └── train on full train set → evaluate on test set
+
+Composite scores:
+  ├── winner = argmax(composite_score) across all 4 model types
+  └── winner saved as models/v{N}/ with all calibrator variants
+
+If winner's composite < previous active model's composite + margin:
+  → Warn but still save (manual approval gate)
+```
+
+### Minimum Improvement Gate
+
+```
+improvement = new_composite - previous_composite
+if improvement < 0.01:
+  → Training succeeds but model is NOT auto-activated
+  → Dashboard shows: "New model v{N} (no significant improvement over v{prev})"
+  → Analyst can manually activate if desired
+```
+
+---
+
+## Phase 6 — Training API Changes
+
+**Files:** `services/training-api/main.py`
+
+### New Endpoint Parameters
+
+```
+POST /api/training/start
+{
+  "dataset": "waf_dataset_v4",
+  "model_type": "auto",          // auto = try all 4 with tuning
+  "val_split": 0.2,
+  "tuning_trials": 50,           // Optuna trials per model type
+  "attack_ratio": 0.6,
+  "tuning_trials": 10,
+  "balance_strategy": "attack_weighted",
+  "min_family_samples": 50
+}
+```
+
+### Job Status Enrichment
+
+Current: `{job_id, status, progress, model_version}`
+
+New:
+```json
+{
+  "job_id": "abc123",
+  "status": "tuning_xgboost",    // granular phase tracking
+  "progress": 0.45,              // 0.0–1.0
+  "model_version": null,
+  "tuning_results": {
+    "best_trial": { "params": {...}, "score": 0.992 },
+    "trials_completed": 22
+  },
+  "dataset_summary": {
+    "total": 15000,
+    "attack_ratio": 0.60,
+    "families": {...}
   }
 }
 ```
 
-Rules:
-```
-- Never return stack traces, raw DB errors, or dependency internals to clients
-- Always attach request ID/correlation ID in response and logs
-- Enforce consistent status mapping (400/401/403/404/409/429/500/502/503/504)
-```
+---
 
-#### 6.2 Go Service Hardening (review-api, log-collector)
-```
-- Use typed/sentinel errors with wrapping (`fmt.Errorf("...: %w", err)`)
-- Add panic recovery middleware that logs stack internally and returns sanitized 500
-- Enforce operation timeouts with context on DB/cache/network calls
-- Use early returns and explicit error translation at API boundary
-```
+## Phase 7 — Evaluation Report Enhancements
 
-#### 6.3 Python Service Hardening (inference-engine, ml-pipeline)
-```
-- Use specific exceptions (no bare `except`)
-- Convert internal exceptions to sanitized API/domain errors
-- Add timeout controls for model load/inference/external I/O
-- Add guarded fallback model/path with explicit confidence marker
-```
+**Files:** `ml-pipeline/evaluate_model.py`
 
-#### 6.4 Structured Logging and Correlation
-```
-- Standardize JSON logs across services
-- Required fields: ts, level, service, env, request_id, trace_id, user_id (if available), error_code
-- Log full internal error context only on server side
-- Redact secrets/PII in logs
-```
+### New Sections in HTML Report
 
-#### 6.5 Retry, Backoff, and Idempotency Rules
-Apply retries only to retriable failures:
-```
-- Retry on timeout/connection reset/5xx from dependencies
-- Do not retry on validation/auth/authz/not-found/conflict errors
-- Use exponential backoff + jitter + max attempts
-- Require idempotency key or idempotent operation for write retries
-```
-
-#### 6.6 Circuit Breakers and Degradation Paths
-```
-- Add circuit breakers per dependency (MongoDB, Redis, model backend)
-- Open circuit after threshold; half-open probe for recovery
-- Degraded mode: serve reduced features where safe (never bypass auth/RBAC)
-- Surface dependency health in readiness endpoint
-```
-
-#### 6.7 Crash Recovery and Shutdown Discipline
-```
-- Graceful shutdown order: stop intake -> drain workers -> flush buffers/spool -> close connections
-- Persist in-flight critical artifacts (spool/checkpoints) before exit
-- Add startup recovery to replay spool/checkpoints after crash
-```
-
-#### 6.8 Configuration
-Add to `.env`:
-```
-ERROR_INCLUDE_REQUEST_ID=true
-ERROR_SANITIZE_ENABLED=true
-LOG_FORMAT=json
-LOG_REDACT_SECRETS=true
-
-RETRY_MAX_ATTEMPTS=5
-RETRY_BASE_BACKOFF=100ms
-RETRY_MAX_BACKOFF=5s
-RETRY_JITTER=true
-
-CIRCUIT_BREAKER_ENABLED=true
-CIRCUIT_BREAKER_FAILURE_THRESHOLD=10
-CIRCUIT_BREAKER_OPEN_TIMEOUT=30s
-
-REQUEST_TIMEOUT=10s
-SHUTDOWN_GRACE_PERIOD=15s
-```
-
-Set sane caps in code:
-```
-- Cap max retry attempts and backoff upper bound
-- Reject unsafe timeout values
-- Disable debug/stacktrace response mode in production
-```
-
-### Affected Files
-| File | Changes |
-|------|---------|
-| `services/review-api/api/handler.go` | Standardize error translation and response envelope |
-| `services/review-api/api/middleware/recovery.go` | New file - panic recovery middleware |
-| `services/log-collector/main.go` | Add timeout/retry/circuit-breaker integration |
-| `services/inference-engine/main.py` | Sanitize exceptions, add fallback paths, structured logging |
-| `services/inference-engine/error_types.py` | New file - domain exception mapping |
-| `ml-pipeline/train_model.py` | Add checkpoint-safe error handling and recovery hooks |
-| `services/review-api/go.mod` | Add resilience/logging dependencies |
-| `services/inference-engine/requirements.txt` | Add retry/circuit-breaker libraries as needed |
-| `docs/ERROR_HANDLING_GUIDE.md` | New file - shared error and recovery contract |
-| `.env` | Add reliability and recovery config values |
-
-### Testing
-1. Simulate dependency failure (Mongo/Redis down) -> verify sanitized 5xx with request ID and internal diagnostic logs
-2. Simulate validation/auth errors -> verify correct non-5xx codes and no retries
-3. Retry tests -> verify backoff + jitter + max-attempt behavior on transient failures
-4. Circuit-breaker tests -> verify open/half-open/close transitions and degraded behavior
-5. Panic/exception injection -> verify process survives request path and returns sanitized 500
-6. Crash/restart test -> verify spool/checkpoint replay and no critical data loss beyond policy
-7. Logging verification -> ensure JSON fields present and secrets are redacted
-8. Load test during partial outage -> verify latency/error budgets remain within targets
+| Section | What It Shows |
+|---------|---------------|
+| **Tuning History** | Trial → composite score scatter plot, top-10 parameter table |
+| **Cross-Validation** | Fold-by-fold metrics table (+ mean ± std) |
+| **Per-Family Confusion** | Heatmap of FP/FN per attack family |
+| **Calibration Comparison** | Reliability diagram with both Platt + Isotonic curves |
+| **Cost Analysis** | Estimated FP/FN cost at different thresholds (simulated) |
+| **Data Composition** | Attack/benign split bar chart, family distribution pie |
 
 ---
 
-## 7. Rule Refactor and Custom Rule Implementation
+## Implementation Order
 
-### Goals
-- Move rule metadata ownership from frontend hardcoded maps to backend data sources.
-- Keep `GET /api/rules` as the single source of truth for Rules page rendering.
-- Implement the left-panel `Write Custom Rule` flow end-to-end.
-- Preserve current rule toggle behavior and managed override generation.
-
-### Current Problems
-- Rule metadata is split across layers (backend defaults + frontend `ruleNotes`).
-- Frontend can drift from backend rule definitions over time.
-- Custom rule form is present but not wired to persistence, validation, or deployment.
-- No explicit versioning/approval lifecycle for newly authored custom rules.
-
-### Target Architecture
-
-#### Rule Data Ownership
-- Backend owns all rule records and optional analyst metadata.
-- Frontend only renders API responses; no embedded hardcoded catalog.
-- Database stores both built-in rule metadata and user-authored custom rules.
-
-#### Rule Types
-- `builtin`: CRS/custom preloaded baseline rules managed by system.
-- `custom`: user-created rules from UI form.
-
-#### Rule States
-- `enabled`/`disabled` for enforcement.
-- `draft`/`active`/`archived` lifecycle for custom rules (optional but recommended).
-
-### Data Model Plan (Mongo)
-- Create a unified `waf_rules` schema with fields like:
-  - identity: `id`, `type`, `source`
-  - display: `category`, `description`
-  - analyst docs: `purpose`, `triggers`, `impact`, `analyst_guidance`
-  - execution: `enabled`, `syntax`, `phase`, `action`
-  - audit: `created_at`, `updated_at`, `created_by`, `updated_by`
-  - lifecycle: `status` (`draft|active|archived`)
-- Add indexes:
-  - unique on `id`
-  - optional compound indexes for listing/filtering (`type`, `status`, `enabled`)
-
-### API Refactor Plan
-
-#### Read APIs
-- Update `GET /api/rules` to return DB-backed rule catalog only.
-- Add optional query params for filtering (`type`, `status`, `enabled`, `category`).
-- Include analyst metadata fields in response so frontend can render details panel.
-
-#### Write APIs
-- Add `POST /api/rules` for creating custom rules.
-- Add `PUT /api/rules/:id` for metadata/status updates.
-- Add `PATCH /api/rules/:id/enabled` for enable/disable toggles.
-- Add `DELETE /api/rules/:id` or archive endpoint for safe deactivation.
-
-#### Validation
-- Validate rule ID format and uniqueness.
-- Validate syntax structure and required directives.
-- Validate category against allowed set + allow custom categories.
-- Reject unsafe or malformed payloads with sanitized errors.
-
-### Migration Plan
-- Step 1: Seed DB with current built-in rules from backend defaults.
-- Step 2: Migrate frontend rule annotation content into DB analyst metadata fields (`purpose`, `triggers`, `impact`, `analyst_guidance`).
-- Step 3: Switch `GET /api/rules` to DB-only path behind feature flag.
-- Step 4: Remove backend hardcoded defaults after parity verification.
-- Step 5: Remove frontend hardcoded `ruleNotes` permanently.
-
-### Frontend Plan (Rules Page)
-
-#### Data Loading
-- Remove all hardcoded rule fallback behavior.
-- Render only API response data for both list and details.
-- Show explicit empty/error states from API outcomes.
-
-#### Details Panel
-- Populate rule detail expansion from API metadata fields.
-- Gracefully handle missing analyst metadata with neutral placeholders.
-
-#### Toggle Behavior
-- Keep per-rule enable/disable actions via API.
-- Keep pending restart indicator after state changes.
-
-### "Write Custom Rule" Implementation Plan
-
-#### Left Panel UI Improvements
-- Redesign form layout for clarity and faster authoring (group fields by identity, metadata, syntax).
-- Add explicit form inputs for backend first-class fields so frontend matches schema exactly.
-- Add a dedicated "Trigger Conditions" area to capture what causes the rule to fire.
-- Keep a fixed, predictable field order for authoring:
-  - core: `rule-id`, `category`, `description`
-  - behavior: `purpose`, `triggers`, `impact`, `analyst_guidance`
-  - execution: `syntax`, `phase`, `action`, `enabled`, `status`
-- Add helper text under each field and validation hints before submit.
-- Add syntax textarea improvements:
-  - monospace font
-  - larger default height
-  - optional expand/collapse
-  - live character count
-- Add rule template picker (SQLi/XSS/RCE/etc.) to prefill safe starter syntax.
-- Add preview/summary panel before submission (ID, category, action, enabled state).
-- Improve action area with clear primary/secondary hierarchy (`Add Rule`, `Clear`, optional `Save Draft`).
-- Add success/error toast and inline error states aligned with existing modal patterns.
-- Ensure mobile responsiveness and accessibility (labels, focus order, keyboard interactions, contrast).
-
-#### Form Behavior
-- Enforce required fields: `rule-id`, `category`, `description`, `rule-syntax`.
-- Enforce required behavior fields for custom rules: `purpose`, `triggers`.
-- Add client-side basic validation and clear inline errors.
-- Disable submit during request; show progress and success/failure messages.
-
-#### API Integration
-- Wire `Add Rule` to `POST /api/rules`.
-- Submit payload with `type=custom`, `status=draft` or `active` per design.
-- Submit explicit backend fields (including `triggers`) as top-level typed properties, not only free-form extras.
-- On success:
-  - clear form
-  - refresh rules table
-  - set pending restart flag if rule is active/enabled
-
-#### Endpoint Consistency
-- `PUT /api/rules/:id` handles metadata/lifecycle edits.
-- `PATCH /api/rules/:id/enabled` handles toggle-only state changes.
-- Frontend uses toggle endpoint for list actions and update endpoint for editor form saves.
-
-#### Extensible Field Model
-- Prefer first-class schema fields for known rule metadata used by UI and analysts.
-- If truly needed, keep optional `custom_fields` as secondary extension storage only.
-- Ensure frontend always renders first-class fields directly (especially `triggers`).
-
-#### Safety Controls
-- Restrict custom rule creation/update to authorized roles.
-- Add server-side syntax/lint validation before saving.
-- Optionally require approval flow before activation in staging/UAT mode.
-
-### WAF Sync Plan
-- Extend managed overrides sync to include custom rule deployment state.
-- Define output strategy:
-  - disabled rules -> `SecRuleRemoveById`
-  - active custom rules -> generated include file entries
-- Keep generated files deterministic and auditable.
-- Trigger sync on create/update/toggle/archive operations.
-
-### Security and Compliance
-- Keep CSP strict (`script-src 'self'`) and avoid inline scripts.
-- Sanitize all API errors and rule content handling paths.
-- Enforce RBAC for create/update/delete operations.
-- Log audit events for rule changes with actor, before/after, and timestamp.
-
-### Affected Files
-| File | Changes |
-|------|---------|
-| `services/review-api/api/handler.go` | Add POST/PUT/PATCH/DELETE rule endpoints, update GET with filters |
-| `services/review-api/api/middleware/auth.go` | RBAC checks on rule mutation endpoints |
-| `services/review-api/db/rules.go` | New file - rule CRUD and query logic |
-| `services/review-api/db/rules_seed.go` | New file - built-in rule seeding |
-| `services/review-api/api/validation.go` | New file - rule ID, syntax, category validation |
-| `dashboard/js/rules.js` | Remove hardcoded ruleNotes, render API data, wire custom rule form |
-| `dashboard/js/rule-form.js` | New file - custom rule form behavior and validation |
-| `dashboard/rules.html` | Update rule detail panel, add custom rule form UI |
-| `dashboard/403.html` | Exists from §5 (no changes needed here) |
-| `.env` | Add feature flags and rule config |
-
-### Testing
-1. Unit tests for validation, ID collisions, and lifecycle transitions.
-2. Integration tests for `GET/POST/PUT/DELETE` rule APIs.
-3. E2E tests for Rules page: load list, expand details, toggle status, create custom rule, restart-required visual state.
-4. Regression tests for managed overrides file generation after rule mutations.
-5. Verify no hardcoded rule metadata remains in frontend code.
-6. RBAC enforcement: unauthorized role cannot create/update/delete rules.
-7. Audit log captures rule change events with actor, before/after, and timestamp.
-
-### Rollout Plan (Pre-Production)
-- Phase 1: Introduce schema + seed + read path parity checks.
-- Phase 2: Enable DB-backed details and remove frontend hardcoded metadata.
-- Phase 3: Enable custom rule creation UI/API in controlled environment.
-- Phase 4: Staging/UAT enablement with monitoring and rollback path.
-
-### Acceptance Criteria
-- Rules page shows only backend-provided data.
-- No hardcoded rule metadata remains in frontend code.
-- Custom rule form successfully creates and persists rules.
-- Created rules appear in list immediately and can be toggled.
-- Managed override artifacts remain correct after rule changes.
-- Authz and audit controls are enforced for all rule mutations.
+| Step | What | Files | Depends On |
+|------|------|-------|------------|
+| 1 | Benign candidate tagging in log-collector (passive, always-on) | `services/log-collector/main.go` | — |
+| 2 | Dataset lifecycle state machine (MongoDB status field + transitions) | `services/training-api/main.py` | — |
+| 3 | Benign recording job — log-collector reads active jobs, starts buffering | `services/log-collector/main.go`, `services/training-api/main.py` | Steps 1, 2 |
+| 4 | Dataset cut triggers benign calculation + spawns recording job | `services/training-api/main.py` | Step 3 |
+| 5 | Dataset builder merges attacks + recorded benign → balanced Parquet | `ml-pipeline/dataset_builder.py` | Step 4 |
+| 6 | Attack family grouping + balanced sampling | `ml-pipeline/dataset_builder.py` | Step 5 |
+| 7 | Attack augmentation (lightweight mutations) | `ml-pipeline/dataset_builder.py` (new module) | Step 6 |
+| 8 | Optuna integration (search spaces + objective) | `ml-pipeline/train_model.py` | Step 7 |
+| 9 | Stratified k-fold cross-validation | `ml-pipeline/train_model.py` | Step 8 |
+| 10 | Calibration selection (Platt vs Isotonic) | `ml-pipeline/train_model.py` | Step 9 |
+| 11 | Model selection with improvement gate | `ml-pipeline/train_model.py` | Step 10 |
+| 12 | Training API new params + job status | `services/training-api/main.py` | Step 11 |
+| 13 | Evaluation report enhancements | `ml-pipeline/evaluate_model.py` | Step 11 |
+| 14 | Dashboard: dataset progress bar + ready-to-train indicator | `dashboard/datasets.html`, `dashboard/js/datasets.js`, `dashboard/training.html`, `dashboard/js/training.js` | Step 4 |
+| 15 | End-to-end testing with attack_suite | — | All |
 
 ---
 
-## 8. SSE Real-Time Alerts
+## Open Questions
 
-### Goal
-Replace HTTP polling for live alerts with a secure, resilient SSE pipeline delivering sub-second updates from Review-API to Dashboard, while preserving fallback behavior.
-
-
-
-### Current State
-- Dashboard currently polls every 5s (`dashboard/js/monitor.js`), no push channel exists.
-- Review-API has no SSE endpoint or broadcast hub.
-- MongoDB watch support depends on replica set configuration, which may not be guaranteed in all environments.
-
-### Architecture Decision
-- **Primary path**: MongoDB Change Stream -> Review-API WS Hub -> Dashboard clients.
-- **Fallback path**: `POST /api/notify` from log-collector -> Review-API broadcast.
-- **Client fallback**: if WS fails after bounded retries, temporarily revert to HTTP polling.
-
-### Implementation Steps
-
-#### 8.1 Backend - SSE Hub and Endpoints
-- Add SSE dependency in `services/review-api/go.mod`.
-- Create `services/review-api/api/ws_hub.go`:
-  - client register/unregister
-  - fan-out broadcast channel
-  - bounded send queues + slow-consumer eviction
-- Add `GET /api/ws` endpoint in review-api for upgrades.
-- Add `POST /api/notify` endpoint for fallback notifications from log-collector.
-
-#### 8.2 Auth and Security (Required)
-- Require authentication on WS upgrade (token/cookie validation using existing auth middleware model).
-- Enforce role checks for real-time stream access (`admin|analyst|viewer` as policy allows).
-- Rate-limit WS connects/reconnect storms and validate origin.
-- Use WSS in deployed environments behind Caddy.
-
-#### 8.3 Data Source Strategy (Primary + Fallback)
-- **Option A (preferred)**: MongoDB Change Stream watcher for `modintel.alerts` inserts.
-- **Option B**: timestamp/cursor polling watcher when change streams unavailable.
-- **Option C**: hybrid (A/B + `/api/notify`) for resilience.
-- Startup behavior:
-  - detect change stream capability
-  - auto-select strategy
-  - expose selected mode via health/metrics
-
-#### 8.4 Log-Collector Notification Path
-- After successful insert/upsert, enqueue non-blocking notify call to Review-API `/api/notify`.
-- Keep notify fire-and-forget with timeout and retry budget (must not block ingestion loop).
-- Include minimal payload (`alert_id`, `timestamp`) so Review-API fetches canonical document before broadcast.
-
-#### 8.5 Frontend Migration (Dashboard)
-- Replace primary polling loop with SSE client in `dashboard/js/monitor.js` (or `dashboard/js/index.js` as page ownership dictates).
-- On WS message:
-  - prepend alert row
-  - update live counters
-  - preserve current table state filters where applicable
-- Add reconnection with exponential backoff + jitter.
-- Add connection state indicator (`connected`, `reconnecting`, `disconnected`).
-- Fallback to HTTP polling after N failed reconnect attempts; auto-return to WS on next successful handshake.
-
-#### 8.6 Message Contract
-Use versioned envelope:
-```json
-{
-  "type": "new_alert",
-  "version": 1,
-  "data": {
-    "id": "...",
-    "timestamp": "...",
-    "client_ip": "...",
-    "uri": "...",
-    "anomaly_score": 5,
-    "triggered_rules": ["942100"],
-    "ai_score": 0.87,
-    "ai_confidence": 0.92,
-    "ai_priority": "critical"
-  }
-}
-```
-
-Validation rules:
-- Unknown `type` ignored safely by client.
-- Backward-compatible additive fields only for `version=1`.
-
-#### 8.7 Observability and Operations
-Add metrics:
-```
-ws_connections_active
-ws_broadcast_total
-ws_broadcast_failed_total
-ws_message_latency_ms
-ws_reconnect_total
-ws_fallback_polling_total
-watcher_mode{change_stream|polling|hybrid}
-```
-
-Add structured logs for connect/disconnect/reconnect/fallback transitions.
-
-### Affected Files
-| File | Changes |
-|------|---------|
-| `services/review-api/go.mod` | Add SSE dependency |
-| `services/review-api/api/ws_hub.go` | New file - hub, client lifecycle, broadcast logic |
-| `services/review-api/api/watcher.go` | New file - change stream/polling watcher |
-| `services/review-api/api/handler.go` | Add `/api/ws` and `/api/notify` endpoints |
-| `services/review-api/main.go` | Initialize WS hub + watcher and register routes |
-| `services/log-collector/main.go` | Add non-blocking notify path after insert |
-| `dashboard/js/monitor.js` | Replace primary polling with SSE + reconnection/fallback logic |
-| `dashboard/css/monitor.css` | Connection state indicator styles |
-| `proxy-waf/Caddyfile` | Ensure WS upgrade headers and route support |
-
-### Testing
-1. Open dashboard -> verify WS connects and status shows connected.
-2. Trigger attack/log insert -> verify alert rendered in <1s (p95).
-3. Kill review-api -> verify client shows disconnected then reconnecting.
-4. Restart review-api -> verify auto-reconnect and resumed live updates.
-5. Disable change streams environment -> verify fallback watcher mode still delivers alerts.
-6. Force WS handshake failures -> verify HTTP polling fallback activates and data still updates.
-7. Open multiple tabs/clients -> verify fan-out consistency across clients.
-8. Auth tests: unauthenticated WS upgrade rejected; authorized roles succeed.
-
-### Acceptance Criteria
-- Polling is no longer the primary live-alert mechanism.
-- Sub-second live alert delivery is achieved under normal conditions.
-- Automatic reconnect and polling fallback behavior is reliable.
-- WS channel enforces authentication/authorization and does not bypass §5 controls.
-- Real-time path remains operational when change streams are unavailable (fallback mode).
+1. **Optuna storage** — in-memory per job (ephemeral) or persistent SQLite? SQLite keeps trial history across restarts for reproducibility.
+2. **Cost-sensitive evaluation weights** — what's the assumed cost ratio of FN vs FP? Default: FN costs 10× more than FP in WAF context.
+3. **Benign buffer durability** — if log-collector restarts mid-recording, should the buffer survive? Write to JSONL on disk every N samples, reload on startup.
+4. **Minimum attack threshold** — how many reviewed TP alerts should trigger the benign recording? 100? 500? (Affects Phase 1 trigger).
 
 ---
 
-## 9. Production Security Hardening (Runtime + Plane Separation)
+# Task 3 — Update SDS Document
 
-### Goal
-Harden runtime security and strictly separate public traffic handling (data plane) from administrative surfaces (management plane), so one edge compromise cannot cascade into full environment takeover.
+> Bring `docs/SDS.pdf` in line with the current system. Every section of the
+> SDS references the old ModSecurity-centric design and needs updating.
 
-### Scope
-- Container runtime hardening (non-root, capabilities, filesystem, privileges)
-- Compose/network boundary design (public vs internal services)
-- Dashboard serving path moved away from `proxy-waf`
-- Management API exposure controls (allowlist/reverse proxy/auth gates)
-- Secrets and config hygiene for deployment
+---
 
-### Current Risks
-- Some services still run with root privileges.
-- Dashboard static assets are served from the traffic-facing stack.
-- Management services may be reachable too broadly.
-- Secret handling relies on local discipline without strong guardrails.
-- Startup ordering may allow partial boot with unavailable dependencies.
+## Sections to Update
 
-### Target Architecture
+### Section 1 — Introduction
 
-#### Data Plane
-- `proxy-waf` is public-facing and handles only protected app traffic.
-- No dashboard/admin static assets mounted into `proxy-waf`.
-- Minimal runtime privileges and read-only filesystem where possible.
+| Current (SDS) | Needs To Say |
+|---------------|--------------|
+| "Modular extension to ModSecurity" | ModIntel is a standalone hybrid WAF platform built on Coraza, not ModSecurity |
+| "Intercepts CRS audit logs" | Two-layer architecture: Layer 1 (Coraza WAF) + Layer 2 (ML miss-detection) |
+| "Decision-support layer" | No longer advisory-only — Layer 2 can actively block via composite scoring |
+| 4 subsystems (Parsing, Intelligence, Explainability, Presentation) | 3 layers (Deterministic WAF, ML Detection, Platform Services) |
+| "Fail-Safe Stability: failure in Python ML Service does not crash Web Server" | Now 10 Docker containers with health aggregator, SSE monitoring |
 
-#### Management Plane
-- Dashboard + management APIs served by `review-api` (or dedicated admin-web service).
-- Exposed via separate host/path and strict access controls.
-- Internal services stay on private Docker network by default.
+### Section 2 — System Design Model
 
-### Implementation Steps
+**2.1 Subsystem Decomposition:**
 
-#### 9.1 Run Services as Non-Root
-- Update Dockerfiles with explicit non-root `USER`.
-- In Compose, enforce `user: "<uid>:<gid>"` for runtime.
-- Ensure writable paths use explicit owned volumes only.
+Add new subsystems:
+- Miss Detection Subsystem (regex + `/predict-miss` ONNX)
+- Composite Scoring Subsystem (`/eval-miss`: `0.6×ml + 0.2×rate + 0.2×rep`)
+- Blocklist Management Subsystem (in-memory + `@ipMatchFromFile` + file sync)
+- Dataset Lifecycle Management Subsystem (state machine: `attacks_exported` → `recording_benign` → `ready`)
+- Benign Traffic Recording Subsystem (passive recording from live Caddy logs)
+- Rate Tracking Subsystem (per-IP sliding window freq + burst detection)
+- Reputation Scoring Subsystem (internal MongoDB TP history + external feed polling)
 
-#### 9.2 Harden Container Runtime
-- Add `read_only: true` where service allows.
-- Add `cap_drop: ["ALL"]` and selectively add only required caps.
-- Set `security_opt: ["no-new-privileges:true"]`.
-- Avoid `privileged: true` and avoid mounting `docker.sock`.
+Rename/merge:
+- "Integration Layer" → now Log Collector (dual-pipeline: Coraza audit + Caddy access)
+- "Feature Extraction Module" → split into WAFFeatureExtractor (22 features) + MissONNXInference (135 raw HTTP features)
+- "Alert Prioritization and Policy Engine" → now Composite Scorer + Blocklist Manager
 
-#### 9.3 Separate Dashboard from proxy-waf
-- Remove dashboard volume mount from `proxy-waf`.
-- Serve dashboard static build from `review-api` (or dedicated admin-web).
-- Keep `proxy-waf` focused on WAF + reverse proxy only.
+**2.2 Hardware/Software Mapping:**
 
-#### 9.4 Lock Down Management Exposure
-- Publish only required public ports.
-- Put management endpoints behind dedicated reverse-proxy route/host.
-- Restrict management ingress with IP allowlist/VPN where applicable.
-- Enforce authenticated access and deny-by-default route policy.
+Replace the 3-node deployment diagram with the actual 10-container Docker Compose setup:
 
-#### 9.5 Network Segmentation in Compose
-- Create distinct networks:
-  - `public_net` for edge-facing services only
-  - `private_net` for internal APIs/datastores
-- Attach MongoDB/auth/internal services only to `private_net` unless explicitly required.
+| Container | Language | Port |
+|-----------|----------|------|
+| mongodb | Mongo 7 | 27018:27017 |
+| proxy-waf-custom | Caddy | 8080, 3000 |
+| proxy-waf | Caddy+Coraza | internal |
+| juice-shop | Node.js | internal |
+| log-collector | Go | 8081 |
+| inference-engine | Python | 8083 |
+| review-api | Go | 8082 |
+| health-aggregator | Go | 8090 |
+| training-api | Python | 8085 |
+| auth-service | Go | 8084 |
 
-#### 9.6 Secrets and Env Hygiene
-- Move secrets to runtime env injection or secret manager.
-- Keep `.env.example` in repo; keep real `.env` out of git.
-- Add secret scanning in CI and pre-commit checks.
+Also add named volumes: `modintel_mongo_data`, `modintel_waf-logs`, `modintel_caddy_logs`, plus the new blocklist volume for `proxy-waf/overrides/`.
 
-#### 9.7 Health-Gated Startup
-- Add `healthcheck` to critical services.
-- Use `depends_on` with `condition: service_healthy` where supported.
-- Fail fast when dependencies are unavailable instead of silent degraded boot.
+**2.3 Access Control:**
 
-#### 9.8 Observability + Audit Controls
-- Log and metric events for auth failures, denied management access, and config drift.
-- Add startup logs showing effective hardening config (uid/gid, readonly, caps).
-- Alert on unexpected privileged settings in deployed manifests.
+The current roles are close (Security Analyst, System Administrator, Developer). Update to match actual RBAC:
+- Re-label: `viewer` (read-only), `analyst` (review + datasets), `admin` (full control)
+- Add: analyst can now cut/export datasets and trigger training
+- Add: admin can manage blocklist (unblock IPs, view blocked list)
+- Add: admin can manage user invites
+- Remove "Cannot deploy, retrain, or replace ML models" restriction — analysts CAN now (that's the whole point of the training UI)
 
-### Affected Files
-| File | Changes |
-|------|---------|
-| `docker-compose.yml` | Add users, security opts, caps, read-only fs, network segmentation, health-gated dependencies |
-| `proxy-waf/Dockerfile` | Create non-root runtime user and permissions |
-| `services/review-api/Dockerfile` | Ensure non-root user and minimal writable paths |
-| `services/auth-service/Dockerfile` | Ensure non-root user and reduced privileges |
-| `proxy-waf/Caddyfile` | Keep only edge/public routing; remove dashboard serving concerns |
-| `services/review-api/main.go` | Serve dashboard static assets securely (or route to admin-web) |
-| `.env.example` | Document non-secret runtime config values |
-| `.gitignore` | Ensure `.env` and secret files are excluded |
-| `.github/workflows/*.yml` | Add secret scanning and deployment hardening checks |
+### Section 3 — Object Model
 
-### Verification
-1. `docker compose ps` confirms all app services run as non-root UID/GID.
-2. Container inspection confirms `no-new-privileges`, dropped caps, and read-only fs where configured.
-3. `proxy-waf` container no longer contains dashboard mount/path.
-4. Dashboard is reachable only through management route/service, not edge WAF path.
-5. Internal services are not reachable from public interface/ports.
-6. Secrets are absent from git history and excluded from future commits.
-7. Service startup waits for healthy dependencies and fails clearly when dependencies are down.
-8. Authz-denied and access-control logs/metrics appear in monitoring.
+**3.1 Class Diagram:**
 
-### Rollout Plan
-- Phase 1: Non-root + runtime hardening in staging.
-- Phase 2: Dashboard serving migration and network split.
-- Phase 3: Management exposure restrictions and allowlists.
-- Phase 4: CI enforcement (secret scan + hardening policy checks).
-- Phase 5: Production cutover with rollback plan and smoke tests.
+Add these new classes with their relationships:
 
-### Acceptance Criteria
-- No critical service runs as root in production.
-- Public-facing `proxy-waf` does not serve or mount dashboard/admin assets.
-- Management plane is isolated and access-controlled.
-- Secrets are not committed and are managed via secure runtime injection.
-- Startup and runtime guardrails prevent insecure drift.
+| New Class | Parent / Association | Key Difference from Current |
+|-----------|---------------------|----------------------------|
+| `CaddyLogParser` | → LogCollector | Parses raw HTTP (method, URI, headers, body), not Coraza audit format |
+| `MissONNXInference` | → InferenceEngine | 135 raw HTTP features, no Coraza fields |
+| `CorazaLogParser` | → LogCollector | Rename from ModSecurityAuditLogParser, now handles Coraza JSON format |
+| `CompositeScorer` | → InferenceEngine | New: `evaluate(ml, rate, rep) → decision{allow, monitor, block}` |
+| `BlocklistManager` | → LogCollector | `addIP()`, `removeIP()`, `syncToFile()`, `isBlocked()`. In-memory set + `@ipMatchFromFile` sync |
+| `RateTracker` | → LogCollector | Sliding window per-IP: `frequency_score + burst_score` |
+| `ReputationScorer` | → LogCollector | `internal_score` (MongoDB TP history) + `external_score` (AlienVault + abuse.ch feeds) |
+| `DatasetBuilder` | → TrainingAPI | State machine: `attacks_exported → recording_benign → ready → training → done` |
+| `BenignRecorder` | → LogCollector | Passive recording from live traffic when a dataset job is active |
+| `WAFFeatureExtractor` | → InferenceEngine | Rename from `FeatureExtractor`, 22+ features including rule/anomaly groups |
+
+Remove/replace:
+- `ModSecurityAuditLogParser` → replaced by `CorazaLogParser` + `CaddyLogParser`
+- `AlertPrioritizer` → replaced by `CompositeScorer` (richer scoring, not just priority)
+- `ExplanationGenerator` → keep but merge into `InferenceEngine` as part of `/predict` response
+
+Update:
+- `MLClassifier.threshold` → now a configurable tri-threshold: `monitor_threshold: 0.50`, `block_threshold: 0.85`
+- `ModelTrainer` → add `optimizeHyperparams(searchSpace, nTrials)`, `calibrate(method)`, `augmentAttack()`, `stratifiedKFold()`, attribute `tuningTrials: Integer` (default 10)
+
+**3.2 Sequence Diagrams:**
+
+Add 3 new diagrams:
+
+1. **Miss Detection Flow:**
+   ```
+   Caddy Access Log → Log Collector
+     → regex match (SQLi/XSS/CMDi)
+     → POST /predict-miss (MissONNXInference)
+     → upsert alert (source: ml_miss_detector)
+     → SSE broadcast to dashboard
+   ```
+
+2. **Composite Scoring & Blocking Flow:**
+   ```
+   Miss alert → Log Collector
+     → lookup rate_score (RateTracker)
+     → lookup rep_score (ReputationScorer)
+     → POST /eval-miss (Inference Engine)
+     → composite = 0.6×ml + 0.2×rate + 0.2×rep
+     → if ≥ 0.85: add IP to BlocklistManager
+     → sync to blocked_ips.txt
+     → Coraza @ipMatchFromFile blocks next request
+   ```
+
+3. **Dataset Building Flow:**
+   ```
+   Analyst clicks "Cut Dataset"
+     → TrainingAPI exports reviewed TP/FP → strips Coraza fields → maps labels
+     → calculates benign_needed = attacks × (0.4/0.6) - benign_from_review
+     → creates dataset record (status: recording_benign)
+     → LogCollector starts BenignRecorder for live traffic
+     → when buffer hits target → status flips to ready
+     → DatasetBuilder merges → Parquet
+     → TrainingUI enables "Start Training"
+   ```
+
+Update existing diagrams:
+- **ML-Assisted Request Classification**: Change ModSecurity → Coraza WAF, add Layer 2 miss-detection path
+- **Offline Model Training**: Change to show Optuna tuning (10 trials), stratified CV, calibration selection, balanced dataset from reviews + recorded benign
+- **Model Deployment and Rollback**: Add retraining trigger (cut dataset → record benign → train → activate)
+
+**3.3 State Chart:**
+
+Current: `Generated → Classified → Reviewed → Resolved`
+
+Add two more state machines:
+- **Dataset Lifecycle**: `attacks_exported → recording_benign → ready → training → done`
+- **Blocked IP Lifecycle**: `monitoring → blocked (30 min TTL) → expired`
+
+### Section 4 — Detailed Design
+
+**4.1 ModSecurityAuditLogParser → split into CorazaLogParser + CaddyLogParser:**
+
+`CorazaLogParser` (replaces ModSecurityAuditLogParser):
+- Rename class, update `logSource` to Coraza JSON audit log path
+- Operations: `parseCorazaEntry()`, `getTriggeredRules()`, `getAnomalyScore()`, `extractRequestMetadata()`
+
+`CaddyLogParser` (new):
+- `logSource: String` (path to `waf-access.json`)
+- Operations: `parseCaddyEntry()`, `extractRawHTTP()` → returns method, URI, body, headers only
+
+**4.2 FeatureExtractor → split:**
+
+`WAFFeatureExtractor` (22+ features, for `/predict`):
+- `ruleEncoder: Dictionary`, `maxFeatures: Integer`
+- Operations: `extract()`, `encodeRules()`, `normalizeScore()`
+
+`MissONNXInference` (new, for `/predict-miss`):
+- `onnxModel: ONNXModel`, `featureCount: 135`
+- Operations: `loadONNX(path)`, `predictRawHTTP(method, uri, headers, body) → attackProbability`
+
+**4.3 MLClassifier → update:**
+
+Add threshold tri-state: `monitorThreshold: 0.50`, `blockThreshold: 0.85`
+Operation `classify()` → now returns `{ label, confidence, decision: allow|monitor|block }`
+
+**4.4 AlertPrioritizer → replace with CompositeScorer (new):**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `mlWeight` | Float | Weight for ML score (0.6) |
+| `rateWeight` | Float | Weight for rate score (0.2) |
+| `repWeight` | Float | Weight for reputation score (0.2) |
+| `monitorThreshold` | Float | Composite ≥ this → log (0.50) |
+| `blockThreshold` | Float | Composite ≥ this → block (0.85) |
+
+| Operation | Return | Description |
+|-----------|--------|-------------|
+| `evaluate(ml, rate, rep)` | `{composite, decision, breakdown}` | Compute composite, return decision with per-component breakdown |
+| `computeBreakdown(ml, rate, rep)` | Dictionary | Return component contributions for dashboard display |
+
+**4.5 ModelTrainer → update:**
+
+Update:
+- Add `tuningTrials: Integer` (default 10)
+- Add `searchSpaces: Dictionary` (per-model hyperparameter ranges)
+- Update `trainAndEvaluate()` to use Optuna + stratified k-fold CV
+- Add `optimizeHyperparams()` — runs Bayesian search with TPE sampler
+- Add `calibrate(method)` — tries Platt + Isotonic, picks best ECE
+- Add `augmentAttack(payload)` — lightweight mutations on minority attack families
+- Add `buildBalancedDataset(attacks, benign)` — 60/40 split with family balancing
+- Update `computeMetrics()` → add per-family metrics, cost analysis
+
+**4.6 DashboardController → update:**
+
+Add:
+- `blocklistView: List` — current blocked IPs
+- `datasetProgress: Float` — 0.0–1.0 for benign recording progress
+- `renderBlocklist()` — display blocked IPs with TTL
+- `renderDatasetProgress()` — progress bar for benign recording
+- `unblockIP(ip)` — remove IP from blocklist
+
+### New Sections to Add
+
+Add detailed design tables for these new classes (not currently in the SDS):
+
+| New Class | Attributes | Operations |
+|-----------|------------|------------|
+| `RateTracker` | `windowSize: 60s`, `ipCounters: Map<IP, SlidingWindow>` | `recordRequest(ip)`, `getFrequency(ip) → 0-1`, `getBurst(ip) → 0-1`, `getRateScore(ip) → 0-1` |
+| `ReputationScorer` | `internalCache: Map<IP, score>`, `externalFeeds: [AlienVault, abuse.ch]` | `queryInternal(ip) → score`, `pollFeeds()`, `getScore(ip) → 0-1` |
+| `BlocklistManager` | `blockedIPs: Map<IP, expiry>`, `syncInterval: 10s` | `addIP(ip, ttl)`, `removeIP(ip)`, `isBlocked(ip) → bool`, `syncToFile()`, `listBlocked() → [IP+TTL]` |
+| `DatasetBuilder` | `dataset: MongoDB record`, `benignBuffer: JSONL file` | `exportReviewed(only_misses) → str`, `calculateBenignNeeded() → int`, `buildParquet()`, `getState() → enum` |
+| `BenignRecorder` | `activeJob: Dataset | null`, `buffer: RingBuffer<HTTPRecord>` | `startJob(dataset)`, `recordCandidate(request)`, `bufferSize()`, `flushToDisk()` |
+
+### Data Flows (new section needed in SDS)
+
+The SDS currently has no data flow section. Add the following flows (matching status.md Section 8):
+
+1. Attack Detection Pipeline (Layer 1 + Layer 2)
+2. Composite Scoring & Blocking Flow (new)
+3. Benign Recording Flow (new)
+4. Dataset Building Lifecycle Flow (new)
+5. AI Enrichment Pipeline (existing but needs updating)
+6. Analyst Review Flow (existing, minor updates for dataset cut trigger)
+
+### References
+
+Add:
+- Optuna documentation (hyperparameter optimization framework)
+- Coraza WAF documentation (replaces ModSecurity Handbook reference)
+- ONNX Runtime documentation (miss model inference)
+- Caddy Server documentation (reverse proxy config)
+
+---
+
+## Summary of All Changes
+
+| SDS Section | Type of Change |
+|-------------|---------------|
+| 1. Introduction | Rewrite — new architecture, 3 layers, active blocking |
+| 2.1 Subsystem Decomposition | Major overhaul — 10 new/renamed subsystems |
+| 2.2 Hardware/Software Mapping | Rewrite — 10 Docker containers |
+| 2.3 Access Control | Update — reflect actual RBAC (+dataset/training perms) |
+| 3.1 Class Diagram | Overhaul — 8 new classes, 3 removed, 3 renamed |
+| 3.2 Sequence Diagrams | Add 3 new, update 3 existing |
+| 3.3 State Chart | Add 2 new state machines (dataset, blocklist) |
+| 4.1 ModSecurityAuditLogParser → split | Rename + split |
+| 4.2 FeatureExtractor → split | Rename + split |
+| 4.3 MLClassifier | Update — tri-threshold, composite decision |
+| 4.4 AlertPrioritizer → CompositeScorer | Replace entirely |
+| 4.5 ExplanationGenerator | Merge into InferenceEngine |
+| 4.6 ModelTrainer | Major update — Optuna, CV, calibration, augmentation, balancing |
+| 4.7 DashboardController | Update — blocklist view, dataset progress |
+| New: RateTracker | Add detailed design table |
+| New: ReputationScorer | Add detailed design table |
+| New: BlocklistManager | Add detailed design table |
+| New: DatasetBuilder | Add detailed design table |
+| New: BenignRecorder | Add detailed design table |
+| New: Data Flows section | Add 6 data flow diagrams |
+| References | Update — add Optuna, Coraza, ONNX, Caddy |
+
+---
+
+# Task 4 — Comprehensive System Testing
+
+> Unit, integration, e2e, and acceptance tests across the full stack. Metrics
+> for Layer 1 (Coraza WAF) vs Layer 2 (ML miss model) vs combined, benchmarked
+> against a Coraza-only baseline.
+
+---
+
+## Testing Pyramid
+
+| Level | What | Who Runs | Frequency |
+|-------|------|----------|-----------|
+| **Unit** | Individual functions, classes, methods | CI | On push |
+| **Model** | ML metrics: accuracy, precision, recall, F1, AUROC, ECE, FPR, FNR | CI + nightly | Per training run + nightly |
+| **Integration** | Service interactions: log-collector → inference-engine → MongoDB → SSE | CI | Per PR |
+| **E2E** | Full pipeline: attack → WAF → log → ML → dashboard → review | Scheduled | Nightly |
+| **Acceptance** | Requirements verification against SRS | Manual | Per release |
+| **Benchmark** | Layer 1 vs Layer 2 vs Coraza-only — head-to-head | Manual | Per model deploy |
+
+---
+
+## Phase 1 — Unit Tests
+
+### 1a — Log Collector (Go)
+
+| Package | Priority | What to Test |
+|---------|----------|-------------|
+| `parsers/coraza.go` | High | Parse Coraza JSON audit log: extract URI, method, IP, triggered rules, anomaly score, HTTP status. Edge cases: malformed JSON, missing fields, empty body, long body truncation |
+| `parsers/caddy.go` | High | Parse Caddy access log: extract method, URI, status, body, headers. Edge cases: missing body, no captured_body, query-only GET, multipart forms |
+| `signatures/prefilter.go` | High | Regex matching against known SQLi/XSS/CMDi payloads (each of the ~720 signature patterns). False-positive check on benign payloads. Performance: time per evaluation |
+| `main.go` | Medium | `uniqueAlertKey()` determinism, `uniqueMissKey()` determinism, `isAlreadyEnriched()` logic, `isInternalIP()` accuracy (Docker 172.x, localhost) |
+| `api/handler.go` | Medium | `/health`, `/api/logs`, `/api/stats`, `/api/waf_traffic`. Response format, status codes |
+
+### 1b — Inference Engine (Python)
+
+| Test | Priority | What to Test |
+|------|----------|-------------|
+| `test_feature_extractor.py` | High | WAFFeatureExtractor: fit + transform on sample alerts, feature count (22+), schema parity validation, missing field handling |
+| `test_miss_onnx.py` | High | MissONNXInference: load ONNX model, predict on sample HTTP requests, fallback to heuristic when ONNX fails, feature count = 135 |
+| `test_main_predict.py` | High | `/predict`: valid request → response schema, missing fields → 422, malformed → 400 |
+| `test_main_predict_miss.py` | High | `/predict-miss`: ONNX path, force fallback → heuristic path, response schema |
+| `test_main_batch.py` | Medium | `/predict/batch`: multiple inputs → array output, empty array |
+| `test_main_health.py` | Medium | `/health`, `/metrics`, `/model-info`: expected fields, uptime, prediction count |
+
+### 1c — Training API (Python)
+
+| Test | Priority | What to Test |
+|------|----------|-------------|
+| `test_main_training.py` | High | `/api/training/start` validation, `/api/training/status`, `/api/training/history` format |
+| `test_audit_client.py` | Low | HTTP audit event POST to review-api, retry on failure |
+
+### 1d — ML Pipeline (Python)
+
+| Test | Priority | What to Test |
+|------|----------|-------------|
+| `test_feature_extractor_pipeline.py` | High | WAFFeatureExtractor training-parity with inference-engine version |
+| `test_train_model.py` | High | Metrics computation correctness (accuracy, precision, recall, F1, AUROC, ECE, Brier) |
+| `test_build_dataset.py` | High | Parquet load/save, column schema, label encoding |
+
+### 1e — Review API (Go)
+
+| Test | Priority | What to Test |
+|------|----------|-------------|
+| `api/auth_middleware_test.go` | High | Already exists — keep passing |
+| `api/pagination_test.go` | Medium | Cursor encoding/decoding, empty results, offset boundary conditions |
+| `api/audit_log_test.go` | Medium | Audit event creation, filtering, CSV export format |
+
+### 1f — Auth Service (Go)
+
+Already has: `handler_test.go`, `session_handlers_test.go`, `sessions_test.go`, `jwt_test.go`, `password_test.go`, `auth_rate_limit_test.go`. No new tests needed.
+
+---
+
+## Phase 2 — Model Tests (ML Metrics)
+
+### 2a — Metrics Suite
+
+Run on every training run + nightly. Script: `ml-pipeline/test_models.py`
+
+| Metric | What It Measures | Target (v3 baseline) |
+|--------|-----------------|---------------------|
+| **Accuracy** | Overall correct predictions | 99.9% |
+| **Precision** | TP / (TP + FP) | 99.87% |
+| **Recall** | TP / (TP + FN) | 97.94% |
+| **F1 Score** | Harmonic mean of precision + recall | 98.90% |
+| **AUROC** | Discrimination ability across thresholds | 99.98% |
+| **PR-AUC** | Precision-Recall curve area | >0.99 |
+| **FPR** | False positive rate | 0.036% |
+| **FNR** | False negative rate | 2.06% |
+| **ECE** | Expected Calibration Error | 0.00013 |
+| **Brier Score** | Mean squared prediction error | 0.0031 |
+| **Composite** | `F1×0.4 + (1-ECE)×0.3 + AUROC×0.2 + (1-FPR)×0.1` | 0.9955 |
+
+All metrics reported for Coraza-only, miss model only, and combined.
+
+### 2b — Confusion Matrix
+
+```
+                      ┌─────────────┬─────────────┐
+                      │ Predicted   │ Predicted   │
+                      │ Attack      │ Benign      │
+──────────────┬───────┼─────────────┼─────────────┤
+Actual Attack │  TP   │   True      │   False     │
+              │       │   Positive  │   Negative  │
+──────────────┼───────┼─────────────┼─────────────┤
+Actual Benign │  FP   │   False     │   True      │
+              │       │   Positive  │   Negative  │
+──────────────┴───────┴─────────────┴─────────────┘
+```
+
+Generate one matrix for each: Coraza-only, miss model only, combined.
+
+### 2c — Calibration
+
+- Reliability diagram (predicted probability vs observed frequency, 10 bins)
+- ECE + MCE (Maximum Calibration Error)
+- Platt vs Isotonic comparison on held-out validation
+
+### 2d — Threshold Sweep
+
+Sweep block threshold from 0.50 to 0.95 in 0.05 increments:
+- For each: precision, recall, F1, FPR, FNR
+- Identify threshold that maximizes `F1 - FPR`
+- Recommend optimal threshold with FN-cost = 10× FP-cost
+
+---
+
+## Phase 3 — Integration Tests
+
+### 3a — Service Contracts
+
+| From | To | Test |
+|------|----|------|
+| log-collector | inference-engine | Send Coraza audit event → receive `/predict` response |
+| log-collector | inference-engine | Send Caddy miss event → receive `/predict-miss` response |
+| log-collector | MongoDB | Upsert alert → verify document with correct fields |
+| review-api | MongoDB | Query alerts, rules, datasets, audit logs |
+| review-api | Docker socket | Restart WAF → container actually restarts |
+| training-api | review-api | Audit event → appears in audit log query |
+| training-api | Docker socket | Activate model → inference restarts |
+| auth-service | MongoDB | Login → user found, refresh stored, tokens valid |
+| auth-service | review-api | JWT from auth → authenticated request succeeds |
+| SSE | dashboard | Alert inserted → dashboard receives SSE event |
+| health-aggregator | all services | Probe each → correct status returned |
+
+### 3b — Alert Lifecycle
+
+```
+1. Send attack → WAF blocks (403) → audit log written
+2. Log-collector reads → POST /predict
+3. Inference returns AI enrichment → MongoDB upsert
+4. Dashboard receives SSE "alert" event
+5. Analyst reviews → sets human_label = "true_positive"
+6. Verify MongoDB has ai_score, ai_priority, human_label, reviewed_by, reviewed_at
+```
+
+### 3c — Miss Detection Lifecycle
+
+```
+1. Send attack that bypasses Coraza (obfuscated SQLi)
+2. Caddy access log written (status 200)
+3. Log-collector reads → regex matches → POST /predict-miss
+4. Alert created with source = "ml_miss_detector"
+5. Dashboard receives SSE event
+6. Analyst reviews → labels TP
+```
+
+---
+
+## Phase 4 — End-to-End Tests
+
+### 4a — Attack Simulation Suite
+
+Update `scripts/attack_suite.ps1`:
+
+| Category | Payloads | Expected Layer 1 | Expected Layer 2 |
+|----------|----------|-----------------|------------------|
+| SQLi | `' OR 1=1--`, `UNION SELECT`, time-based | Block (403) | Alert (if bypasses) |
+| SQLi (obfuscated) | Hex-encoded, comment-injected, case-mangled | Might pass | Should detect |
+| XSS | `<script>`, `<img onerror=>`, `javascript:` | Block (403) | Alert |
+| XSS (DOM) | `onmouseover=`, `document.cookie` | Might pass | Should detect |
+| LFI | `../../../etc/passwd`, `....//....//` | Block (403) | Alert |
+| CMDi | Backticks, `\|`, `$(cat)` | Block (403) | Alert |
+| NoSQLi | `$ne`, `$gt`, `$regex` in JSON body | Might pass | Should detect |
+| SSTI | `{{7*7}}`, `${7*7}`, `{{config}}` | Might pass | Should detect |
+| SSRF | `http://169.254.169.254/`, `gopher://` | Block (403) | Alert |
+| Log4Shell | `${jndi:ldap://}` in headers | Block (403) | Alert |
+| CRLF | `%0d%0a` in headers | Block (403) | Alert |
+| XXE | `<!ENTITY xxe SYSTEM "file:///etc/passwd">` | Block (403) | Alert |
+| Benign | GET `/`, POST `/login`, GET `/api/products` | Allow (200) | No alert |
+| Benign edge | Long URIs, binary bodies, emoji, multipart | Allow (200) | No alert |
+
+### 4b — Measure Per Run
+
+For each attack execution:
+- Blocked by Coraza (status = 403)
+- Allowed by Coraza but caught by ML (miss alert created)
+- Total blocked
+- Blind spots (passed both)
+- False positives (benign flagged by either)
+
+Run data logged to `data/test/results/{run_id}.json`
+
+### 4c — Baseline: Coraza-Only
+
+Run full attack suite **with ML disabled** (inference stopped, log-collector not enriching):
+
+| Metric | Value |
+|--------|-------|
+| Attacks detected | Count |
+| Attacks missed | Count |
+| Detection rate | % |
+| Benign FPs | Count |
+| FP rate | % |
+
+### 4d — Combined: Coraza + Miss Model
+
+Run full attack suite **with both layers active**:
+
+| Metric | Value |
+|--------|-------|
+| Attacks detected (Coraza) | Count |
+| Attacks detected (ML miss) | Count |
+| Total attacks caught | Count |
+| Missed by both | Count |
+| Total detection rate | % |
+| Benign FPs (Coraza) | Count |
+| Benign FPs (ML miss) | Count |
+| Total FP rate | % |
+
+### 4e — Head-to-Head Comparison
+
+| Metric | Coraza-Only | + Miss Model | Improvement |
+|--------|------------|-------------|-------------|
+| Detection rate | % | % | +/- % |
+| Missed attacks | N | N | +/- N |
+| False positives | N | N | +/- N |
+| FP rate | % | % | +/- % |
+| Precision | % | % | +/- % |
+| Recall | % | % | +/- % |
+| F1 | % | % | +/- % |
+
+### 4f — Performance Benchmarks
+
+| Test | Metric | Acceptable | Target |
+|------|--------|-----------|--------|
+| Request latency (Layer 1) | p50 / p95 / p99 | <50ms / <200ms / <500ms | <20ms / <100ms / <300ms |
+| Log → alert delay (Layer 2) | p50 / p95 | <5s / <30s | <2s / <10s |
+| Inference throughput | Req/sec | >100 | >500 |
+
+---
+
+## Phase 5 — Acceptance Tests
+
+### 5a — Requirements Traceability
+
+Map each SRS requirement to test cases (update as tests are written):
+
+| Req | Description | Test Cases | Status |
+|-----|------------|-----------|--------|
+| FR-1 | WAF blocks attacks via CRS rules | E2E: each attack → 403 | ❌ |
+| FR-2 | ML enriches CRS alerts | Integration: alert → `/predict` → ai_score | ❌ |
+| FR-3 | Analyst reviews and labels alerts | E2E: review → TP/FP → MongoDB | ❌ |
+| FR-4 | Miss detection catches CRS bypasses | E2E: obfuscated attack → miss alert | ❌ |
+| FR-5 | Dashboard receives real-time events | Integration: SSE → browser | ❌ |
+| FR-6 | Role-based access control | Unit: admin/analyst/viewer perms | ❌ |
+| FR-7 | Audit logging of actions | Integration: action → audit_logs | ❌ |
+| FR-8 | System health monitoring | Integration: health-aggregator probes | ❌ |
+
+### 5b — UAT Scenarios
+
+| Scenario | Steps | Expected |
+|----------|-------|----------|
+| Analyst reviews alert | Login as analyst → /review → label TP | Status changed, SSE fires |
+| Viewer tries to review | Login as viewer → /review | Buttons hidden/disabled |
+| System survives ML outage | Stop inference-engine | Coraza still blocks, dashboard shows degraded |
+| Training completes | Dataset ready → start → wait | Artifacts saved, history updated |
+
+---
+
+## Phase 6 — Documentation
+
+### 6a — Test Report
+
+Generate after each run. Script: `scripts/generate_test_report.ps1`
+
+```
+# ModIntel Test Report — {date}
+
+Unit: {pass}/{total} | Integration: {pass}/{total}
+E2E: {pass}/{total} | Model composite: {score}
+Improvement over Coraza-only: {+X%}
+
+## Combined Performance
+Detection rate: {value} (vs {baseline})
+FP rate: {value} (vs {baseline})
+F1: {value} (vs {baseline})
+
+## Failed Tests
+- {test}: {reason}
+```
+
+### 6b — Acceptance Sign-Off
+
+| Item | Signed Off | Date |
+|------|-----------|------|
+| All SRS functional requirements tested | _ | _ |
+| Coraza-only baseline established | _ | _ |
+| Combined performance documented | _ | _ |
+| Regression baseline established | _ | _ |
+| Benchmarks met | _ | _ |
+
+### 6c — Test Infrastructure
+
+| Artifact | Location | Purpose |
+|----------|----------|---------|
+| Test dataset (60/40 balanced) | `data/test/waf_test_dataset.parquet` | Reproducible model eval |
+| Attack payload catalog | `data/test/attack_payloads.jsonl` | 500+ labeled samples, all categories |
+| Benign request catalog | `data/test/benign_requests.jsonl` | 1000+ real benign requests |
+| Coraza-only baseline | `data/test/baseline_coraza_only.json` | Benchmark reference |
+| Test reports archive | `data/test/reports/` | Track metrics over time |
+
+---
+
+## Implementation Order
+
+| Step | What | Est. |
+|------|------|------|
+| 1 | Write missing unit tests: review api endpoints, parsers, inference engine, training API | 2 days |
+| 2 | Write pipeline tests: feature extractor parity, metrics computation | 1 day |
+| 3 | Build attack payload catalog (500+ samples across all categories) | 1 day |
+| 4 | Write integration tests: alert lifecycle, miss detection | 1 day |
+| 5 | Run Coraza-only baseline (ML disabled) | 0.5 day |
+| 6 | Run combined benchmark (both layers) | 0.5 day |
+| 7 | Generate head-to-head comparison | 0.5 day |
+| 8 | Write acceptance tests + traceability matrix | 0.5 day |
+| 9 | Build test report script + CI integration | 1 day |
+| 10 | Documentation: report template, sign-off checklist | 0.5 day |
+
+**Total: ~8.5 days**
+
+---
+
+## Success Criteria
+
+| Criterion | Threshold |
+|-----------|-----------|
+| Unit test pass rate | 100% |
+| Integration test pass rate | 100% |
+| E2E test pass rate | 100% |
+| Acceptance test pass rate | 100% |
+| Model F1 vs v3 baseline | Maintained or improved |
+| Combined detection rate vs Coraza-only | ≥ 2% absolute |
+| Combined FP rate vs Coraza-only | Not increased |
+| p50 inference latency | ≤ 20ms |
+| p50 log → alert delay | ≤ 2s |
+| All SRS reqs traceable to a test | 100% |
+
+---
+
+*Last updated: 2026-05-06*
