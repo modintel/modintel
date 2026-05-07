@@ -315,13 +315,6 @@ func (h *Handler) refresh(c *gin.Context) {
 
 	claims, err := h.issuer.ParseRefreshToken(refreshToken)
 	if err != nil {
-		h.logAuditEvent(auditEvent{
-			Action:    "auth_refresh",
-			Outcome:   "failure",
-			Details:   map[string]interface{}{"reason": "invalid token"},
-			ClientIP:  c.ClientIP(),
-			UserAgent: c.Request.UserAgent(),
-		})
 		c.JSON(http.StatusUnauthorized, errResp("Invalid refresh token", "AUTH_002"))
 		return
 	}
@@ -379,14 +372,6 @@ func (h *Handler) refresh(c *gin.Context) {
 	var user models.User
 	userOID, err := primitive.ObjectIDFromHex(claims.UserID)
 	if err != nil {
-		h.logAuditEvent(auditEvent{
-			Action:    "auth_refresh",
-			Outcome:   "failure",
-			UserID:    claims.UserID,
-			Details:   map[string]interface{}{"reason": "invalid user id in token"},
-			ClientIP:  c.ClientIP(),
-			UserAgent: c.Request.UserAgent(),
-		})
 		c.JSON(http.StatusUnauthorized, errResp("User no longer active", "AUTH_003"))
 		return
 	}
@@ -395,14 +380,6 @@ func (h *Handler) refresh(c *gin.Context) {
 		"password_hash": 0,
 	})).Decode(&user)
 	if err != nil {
-		h.logAuditEvent(auditEvent{
-			Action:    "auth_refresh",
-			Outcome:   "failure",
-			UserID:    claims.UserID,
-			Details:   map[string]interface{}{"reason": "user not found or inactive"},
-			ClientIP:  c.ClientIP(),
-			UserAgent: c.Request.UserAgent(),
-		})
 		c.JSON(http.StatusUnauthorized, errResp("User no longer active", "AUTH_003"))
 		return
 	}
@@ -415,17 +392,6 @@ func (h *Handler) refresh(c *gin.Context) {
 
 	h.setAccessTokenCookie(c, accessToken, time.Until(accessExp))
 	h.setRefreshTokenCookie(c, newRefresh, time.Until(refreshExp))
-
-	h.logAuditEvent(auditEvent{
-		Action:    "auth_refresh",
-		Outcome:   "success",
-		UserID:    claims.UserID,
-		UserEmail: user.Email,
-		UserRole:  user.Role,
-		Details:   map[string]interface{}{"rotated": true},
-		ClientIP:  c.ClientIP(),
-		UserAgent: c.Request.UserAgent(),
-	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":    true,
@@ -700,12 +666,11 @@ func (h *Handler) listUsers(c *gin.Context) {
 		return
 	}
 
-	// Sort users: active first, then by creation date descending
 	sort.Slice(users, func(i, j int) bool {
 		if users[i].IsActive != users[j].IsActive {
-			return users[i].IsActive // active users first
+			return users[i].IsActive
 		}
-		return users[i].CreatedAt.After(users[j].CreatedAt) // newer first
+		return users[i].CreatedAt.After(users[j].CreatedAt)
 	})
 
 	result := make([]gin.H, len(users))
