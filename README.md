@@ -134,14 +134,6 @@ docker compose up -d
 
 The WAF proxy will be available at `http://localhost:8080` and the dashboard at `http://localhost:3000`.
 
-### Commit Hooks
-This project uses [lefthook](https://github.com/evilmartians/lefthook) for commit validation.
-
-```bash
-npm install
-npx lefthook install
-```
-
 ### Attack Testing
 
 Run the 47-payload attack suite against the WAF:
@@ -152,16 +144,7 @@ Run the 47-payload attack suite against the WAF:
 
 ## Roadmap
 
-See [todo.md](todo.md) and open GitHub issues (#14–#21):
-
-- **#14** Connection Pooling & Timeouts
-- **#15** Cursor and Offset-based Pagination
-- **#16** Distributed Caching with Redis
-- **#17** Asynchronous Buffered Logging
-- **#18** Dashboard Access Control Hardening
-- **#19** Unified Error Handling & Crash Recovery
-- **#20** Rule Management Refactor
-- **#21** Real-Time Alerts with SSE
+See [todo.md](todo.md):
 
 ## License
 
