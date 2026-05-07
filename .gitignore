@@ -34,6 +34,4 @@ proxy-waf/overrides/managed-overrides.conf
 
 modintel_regex.signatures
 concurrency.md
-rules.md
 agents.md
-invite.md
