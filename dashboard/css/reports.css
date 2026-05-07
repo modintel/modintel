@@ -347,11 +347,12 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 0.75rem;
+    text-align: center;
 }
 
 .ip-table thead th {
     padding: 4px 8px;
-    text-align: left;
+    text-align: center;
     font-size: 0.625rem;
     font-weight: 600;
     text-transform: uppercase;
