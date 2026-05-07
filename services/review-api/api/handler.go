@@ -1474,7 +1474,6 @@ func isAllowedAuditAction(action string) bool {
 	switch action {
 	case "auth_login",
 		"auth_logout",
-		"auth_refresh",
 		"session_revoke",
 		"session_revoke_all",
 		"profile_update",
