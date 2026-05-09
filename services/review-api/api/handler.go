@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -909,8 +910,18 @@ func GetTrend(c *gin.Context) {
 		}
 	}
 
+	startStr := start.Format(time.RFC3339)
+	endStr := now.Add(time.Minute).Format(time.RFC3339)
+
+	filter := bson.M{
+		"timestamp": bson.M{
+			"$gte": startStr,
+			"$lte": endStr,
+		},
+	}
+
 	opts := options.Find().SetProjection(bson.M{"timestamp": 1})
-	cursor, err := collection.Find(ctx, bson.M{}, opts)
+	cursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
 		log.Println("Error fetching trend data:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
@@ -1261,45 +1272,91 @@ func GetStats(c *gin.Context) {
 
 	collection := db.GetCollection("modintel", "alerts")
 
-	total, err := collection.CountDocuments(ctx, bson.M{})
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$facet", Value: bson.M{
+			"total": bson.A{
+				bson.D{{Key: "$count", Value: "count"}},
+			},
+			"coraza": bson.A{
+				bson.D{{Key: "$match", Value: bson.M{"source": bson.M{"$in": bson.A{"coraza", "waf_blocked"}}}}},
+				bson.D{{Key: "$count", Value: "count"}},
+			},
+			"ml_miss": bson.A{
+				bson.D{{Key: "$match", Value: bson.M{"source": "ml_miss_detector"}}},
+				bson.D{{Key: "$count", Value: "count"}},
+			},
+			"ai_enriched": bson.A{
+				bson.D{{Key: "$match", Value: bson.M{"ai_status": "enriched"}}},
+				bson.D{{Key: "$count", Value: "count"}},
+			},
+			"blocked": bson.A{
+				bson.D{{Key: "$match", Value: bson.M{"anomaly_score": bson.M{"$gte": 5}}}},
+				bson.D{{Key: "$count", Value: "count"}},
+			},
+			"latest_priority": bson.A{
+				bson.D{{Key: "$match", Value: bson.M{"ai_priority": bson.M{"$type": "string"}}}},
+				bson.D{{Key: "$sort", Value: bson.D{{Key: "_id", Value: -1}}}},
+				bson.D{{Key: "$limit", Value: 1}},
+				bson.D{{Key: "$project", Value: bson.M{"ai_priority": 1, "_id": 0}}},
+			},
+		}}},
+	}
+
+	cursor, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
-		log.Println("Error counting alerts:", err)
+		log.Println("Error aggregating stats:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var results []bson.M
+	if err := cursor.All(ctx, &results); err != nil {
+		log.Println("Error decoding stats:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 		return
 	}
 
-	corazaCount, err := collection.CountDocuments(ctx, bson.M{"source": bson.M{"$in": []string{"coraza", "waf_blocked"}}})
-	if err != nil {
-		log.Println("Error counting Coraza alerts:", err)
-		corazaCount = 0
-	}
-
-	mlMissCount, err := collection.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
-	if err != nil {
-		log.Println("Error counting ml misses:", err)
-		mlMissCount = 0
-	}
-
-	aiEnrichedCount, err := collection.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
-	if err != nil {
-		log.Println("Error counting AI enriched documents:", err)
-		aiEnrichedCount = 0
-	}
-
-	opts := options.FindOne().SetSort(bson.D{{Key: "timestamp", Value: -1}})
-	var result bson.M
+	var total, corazaCount, mlMissCount, aiEnrichedCount, blockedCount int64
 	latestPriority := "—"
-	err = collection.FindOne(ctx, bson.M{"ai_priority": bson.M{"$type": "string"}}, opts).Decode(&result)
-	if err == nil {
-		if priority, ok := result["ai_priority"].(string); ok && priority != "" {
-			latestPriority = priority
-		}
-	}
 
-	blockedCount, err := collection.CountDocuments(ctx, bson.M{"anomaly_score": bson.M{"$gte": 5}})
-	if err != nil {
-		log.Println("Error counting blocked alerts:", err)
-		blockedCount = 0
+	if len(results) > 0 {
+		faceted := results[0]
+
+		extractCount := func(key string) int64 {
+			arr, ok := faceted[key].(bson.A)
+			if !ok || len(arr) == 0 {
+				return 0
+			}
+			doc, ok := arr[0].(bson.M)
+			if !ok {
+				return 0
+			}
+			switch v := doc["count"].(type) {
+			case int32:
+				return int64(v)
+			case int64:
+				return v
+			case float64:
+				return int64(v)
+			default:
+				return 0
+			}
+		}
+
+		total = extractCount("total")
+		corazaCount = extractCount("coraza")
+		mlMissCount = extractCount("ml_miss")
+		aiEnrichedCount = extractCount("ai_enriched")
+		blockedCount = extractCount("blocked")
+
+		if priorityArr, ok := faceted["latest_priority"].(bson.A); ok && len(priorityArr) > 0 {
+			if priorityDoc, ok := priorityArr[0].(bson.M); ok {
+				if p, ok := priorityDoc["ai_priority"].(string); ok && p != "" {
+					latestPriority = p
+				}
+			}
+		}
 	}
 
 	var blockedPct float64
