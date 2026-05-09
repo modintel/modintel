@@ -114,9 +114,15 @@
         </div>
         <div class="panel-right" style="overflow-y: auto;">
             <div class="panel-right-header" style="display: flex; justify-content: space-between; align-items: center;">
-                <div
-                    style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
-                    Training History</div>
+                <div class="header-left-group">
+                    <div
+                        style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
+                        Training History</div>
+                    <div class="view-toggle">
+                        <button class="view-btn active" data-view="layer1">Layer 1</button>
+                        <button class="view-btn" data-view="layer2">Layer 2</button>
+                    </div>
+                </div>
                 <div id="training-actions" style="display: none;">
                     <button class="btn btn-sm btn-danger" id="delete-selected-training-btn" type="button">Delete Selected</button>
                 </div>

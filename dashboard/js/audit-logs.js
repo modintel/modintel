@@ -34,17 +34,80 @@ async function loadAuditLogs() {
             return;
         }
 
-        tbody.innerHTML = data.logs.map(log => `
-            <tr>
+        const detailsFallback = {
+            auth_login: '{"user":"logged in"}',
+            auth_logout: '{"user":"logged out"}',
+            auth_refresh: '{"user":"token refreshed"}',
+            profile_update: '{"user":"updated profile"}',
+            session_revoke: '{"session":"revoked"}',
+            session_revoke_all: '{"sessions":"all revoked"}',
+            user_create: '{"user":"created"}',
+            user_invite: '{"user":"invited"}',
+            user_update: '{"user":"updated"}',
+            user_deactivate: '{"user":"deactivated"}',
+            alert_review: '{"alert":"reviewed"}',
+            alert_review_undo: '{"alert":"review undone"}',
+            rule_enable: '{"rule":"enabled"}',
+            rule_disable: '{"rule":"disabled"}',
+            rule_toggle: '{"rule":"toggled"}',
+            waf_paranoia_update: '{"waf":"paranoia updated"}',
+            waf_restart: '{"waf":"restarted"}',
+            logs_clear: '{"logs":"cleared"}',
+            dataset_generate: '{"dataset":"generated"}',
+            dataset_merge: '{"dataset":"merged"}',
+            dataset_delete: '{"dataset":"deleted"}',
+            dataset_cut: '{"dataset":"cut"}',
+            dataset_export: '{"dataset":"exported"}',
+            training_start: '{"training":"started"}',
+            training_activate: '{"training":"activated"}',
+            training_delete_version: '{"training":"version deleted"}',
+            model_activate: '{"model":"activated"}',
+            storage_clear: '{"storage":"cleared"}',
+        };
+        const resourceFallback = {
+            auth_login: 'access',
+            auth_logout: 'access',
+            auth_refresh: 'access',
+            profile_update: 'user',
+            session_revoke: 'session',
+            session_revoke_all: 'session',
+            user_create: 'user',
+            user_invite: 'user',
+            user_update: 'user',
+            user_deactivate: 'user',
+            alert_review: 'alert',
+            alert_review_undo: 'alert',
+            rule_enable: 'rule',
+            rule_disable: 'rule',
+            rule_toggle: 'rule',
+            waf_paranoia_update: 'system',
+            waf_restart: 'system',
+            logs_clear: 'system',
+            dataset_generate: 'dataset',
+            dataset_merge: 'dataset',
+            dataset_delete: 'dataset',
+            dataset_cut: 'dataset',
+            dataset_export: 'dataset',
+            training_start: 'training',
+            training_activate: 'training',
+            training_delete_version: 'training',
+            model_activate: 'model',
+            storage_clear: 'system',
+        };
+
+        tbody.innerHTML = data.logs.map(log => {
+            const details = log.details ? JSON.stringify(log.details).substring(0, 50) + (JSON.stringify(log.details).length > 50 ? '...' : '') : (detailsFallback[log.action] || '-');
+            const resource = log.resource_type || resourceFallback[log.action] || '-';
+            return `<tr>
                 <td>${new Date(log.timestamp).toLocaleString()}</td>
                 <td>${log.user_email || log.user_id || '-'}</td>
                 <td>${log.action}</td>
-                <td>${log.details ? JSON.stringify(log.details).substring(0, 50) + (JSON.stringify(log.details).length > 50 ? '...' : '') : '-'}</td>
-                <td>${log.resource_type || '-'}</td>
+                <td>${details}</td>
+                <td>${resource}</td>
                 <td>${log.ip_address || '-'}</td>
                 <td><span class="tag ${log.outcome === 'success' ? 'success' : 'failure'}">${log.outcome}</span></td>
-            </tr>
-        `).join('');
+            </tr>`;
+        }).join('');
 
         updatePagination(data.total || 0, currentOffset, pageLimit);
     } catch (err) {

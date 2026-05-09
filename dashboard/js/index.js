@@ -245,16 +245,13 @@ function updateStatCards(stats) {
 
 function prependAlertRow(alert) {
     const tbody = document.getElementById('logs-body');
-    const firstRow = tbody.querySelector('tr');
-    const firstAlertTs = firstRow ? firstRow.querySelector('td')?.textContent : null;
+    if (alert.alert_key && tbody.querySelector('tr[data-alert-key="' + alert.alert_key.replace(/"/g, '') + '"]')) return;
 
     let ts = alert.timestamp || '-';
     if (ts.includes('/')) {
         ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
     }
     const tsFormatted = new Date(ts).toLocaleTimeString();
-
-    if (firstAlertTs && tsFormatted <= firstAlertTs) return;
 
     const source = alert.source || 'coraza';
     const isMiss = source === 'ml_miss_detector';
@@ -280,7 +277,7 @@ function prependAlertRow(alert) {
         '<td style="text-align: center;">' + aiScore + '</td>' +
         '<td style="text-align: center;">' + aiConf + '</td>' +
         '<td style="text-align: center;">' + aiPriority + '</td>';
-    tbody.insertBefore(row, firstRow);
+    tbody.insertBefore(row, tbody.firstChild);
 
     applyStreamSearch();
 }
@@ -326,17 +323,15 @@ async function updateLogsNewOnly() {
         if (!data.data || data.data.length === 0) return;
 
         const tbody = document.getElementById('logs-body');
-        const firstRow = tbody.querySelector('tr');
-        const firstAlertTs = firstRow ? firstRow.querySelector('td')?.textContent : null;
 
-        data.data.reverse().forEach((alert, i) => {
+        data.data.reverse().forEach((alert) => {
+            if (alert.alert_key && tbody.querySelector('tr[data-alert-key="' + alert.alert_key.replace(/"/g, '') + '"]')) return;
+
             const ts = alert.timestamp || '-';
             if (ts.includes('/')) {
                 ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
             }
             const tsFormatted = new Date(ts).toLocaleTimeString();
-
-            if (firstAlertTs && tsFormatted <= firstAlertTs) return;
 
             const source = alert.source || 'coraza';
             const isMiss = source === 'ml_miss_detector';
@@ -364,7 +359,7 @@ async function updateLogsNewOnly() {
                 <td style="text-align: center;">${aiConf}</td>
                 <td style="text-align: center;">${aiPriority}</td>
             `;
-            tbody.insertBefore(row, firstRow);
+            tbody.insertBefore(row, tbody.firstChild);
         });
 
         applyStreamSearch();
