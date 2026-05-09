@@ -21,17 +21,17 @@ type auditEvent struct {
 }
 
 type AuditEvent struct {
-	Timestamp    time.Time               `bson:"timestamp" json:"timestamp"`
-	Action       string                  `bson:"action" json:"action"`
-	Outcome      string                  `bson:"outcome" json:"outcome"`
-	UserID       string                  `bson:"user_id" json:"user_id"`
-	UserEmail    string                  `bson:"user_email" json:"user_email"`
-	UserRole     string                  `bson:"user_role" json:"user_role"`
-	ResourceType string                  `bson:"resource_type" json:"resource_type"`
-	ResourceID   string                  `bson:"resource_id" json:"resource_id"`
-	Details      map[string]interface{}  `bson:"details" json:"details"`
-	IPAddress    string                  `bson:"ip_address" json:"ip_address"`
-	UserAgent    string                  `bson:"user_agent" json:"user_agent"`
+	Timestamp    time.Time              `bson:"timestamp" json:"timestamp"`
+	Action       string                 `bson:"action" json:"action"`
+	Outcome      string                 `bson:"outcome" json:"outcome"`
+	UserID       string                 `bson:"user_id" json:"user_id"`
+	UserEmail    string                 `bson:"user_email" json:"user_email"`
+	UserRole     string                 `bson:"user_role" json:"user_role"`
+	ResourceType string                 `bson:"resource_type" json:"resource_type"`
+	ResourceID   string                 `bson:"resource_id" json:"resource_id"`
+	Details      map[string]interface{} `bson:"details" json:"details"`
+	IPAddress    string                 `bson:"ip_address" json:"ip_address"`
+	UserAgent    string                 `bson:"user_agent" json:"user_agent"`
 	ErrorMessage string                 `bson:"error_message,omitempty" json:"error_message,omitempty"`
 }
 
@@ -52,6 +52,10 @@ func (h *Handler) logAuditEvent(event auditEvent) {
 		IPAddress:    event.ClientIP,
 		UserAgent:    event.UserAgent,
 		ErrorMessage: event.ErrorMessage,
+	}
+
+	if h.db == nil || h.db.DB == nil {
+		return
 	}
 
 	if event.Details != nil {

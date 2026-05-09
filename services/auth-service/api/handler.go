@@ -407,6 +407,21 @@ func (h *Handler) logout(c *gin.Context) {
 			refreshToken = strings.TrimSpace(req.RefreshToken)
 		}
 	}
+
+	var auditUserID, auditEmail, auditRole string
+	if rawAccessToken := extractRawAccessToken(c); rawAccessToken != "" {
+		if claims, err := h.issuer.ParseAccessToken(rawAccessToken); err == nil {
+			auditUserID = claims.UserID
+			auditEmail = claims.Email
+			auditRole = claims.Role
+		}
+	}
+	if auditUserID == "" && refreshToken != "" {
+		if claims, err := h.issuer.ParseRefreshToken(refreshToken); err == nil {
+			auditUserID = claims.UserID
+		}
+	}
+
 	if refreshToken == "" {
 		h.clearAuthCookies(c)
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Logged out"})
@@ -427,6 +442,9 @@ func (h *Handler) logout(c *gin.Context) {
 		h.logAuditEvent(auditEvent{
 			Action:       "auth_logout",
 			Outcome:      "failure",
+			UserID:       auditUserID,
+			UserEmail:    auditEmail,
+			UserRole:     auditRole,
 			ClientIP:     c.ClientIP(),
 			UserAgent:    c.Request.UserAgent(),
 			ErrorMessage: "failed to revoke token",
@@ -435,28 +453,31 @@ func (h *Handler) logout(c *gin.Context) {
 		return
 	}
 
-	claimsAny, _ := c.Get("access_claims")
-	if claims, ok := claimsAny.(*auth.AccessClaims); ok && claims != nil {
-		h.logAuditEvent(auditEvent{
-			Action:    "auth_logout",
-			Outcome:   "success",
-			UserID:    claims.UserID,
-			UserEmail: claims.Email,
-			UserRole:  claims.Role,
-			ClientIP:  c.ClientIP(),
-			UserAgent: c.Request.UserAgent(),
-		})
-	} else {
-		h.logAuditEvent(auditEvent{
-			Action:    "auth_logout",
-			Outcome:   "success",
-			ClientIP:  c.ClientIP(),
-			UserAgent: c.Request.UserAgent(),
-		})
-	}
+	h.logAuditEvent(auditEvent{
+		Action:    "auth_logout",
+		Outcome:   "success",
+		UserID:    auditUserID,
+		UserEmail: auditEmail,
+		UserRole:  auditRole,
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	})
 
 	h.clearAuthCookies(c)
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Logged out"})
+}
+
+func extractRawAccessToken(c *gin.Context) string {
+	raw := c.GetHeader("Authorization")
+	parts := strings.SplitN(raw, " ", 2)
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		return parts[1]
+	}
+	token, err := c.Cookie("access_token")
+	if err == nil && token != "" {
+		return token
+	}
+	return ""
 }
 
 func (h *Handler) me(c *gin.Context) {
