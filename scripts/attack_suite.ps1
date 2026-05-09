@@ -1,5 +1,5 @@
 param(
-    [int]$LoopDelay = 5,
+    [int]$LoopDelay = 2,
     [int]$RunCount = 0
 )
 
@@ -28,7 +28,7 @@ $attacks = @(
     @{ Name = "CMDi: whoami"; URI = "/rest/products/search?q=|whoami" },
     @{ Name = "CMDi: cat /etc/passwd"; URI = "/rest/products/search?q=;cat /etc/passwd" },
     @{ Name = "CMDi: Backtick"; URI = "/rest/products/search?q=``id``" },
-    @{ Name = "CMDi: Dollar Subshell"; URI = '/rest/products/search?q=$(cat /etc/passwd)' },
+    @{ Name = "CMDi: Dollar Subshell"; URI = '/rest/pro ducts/search?q=$(cat /etc/passwd)' },
     @{ Name = "CMDi: Pipe chain"; URI = "/rest/products/search?q=|ls -la /etc/" },
     @{ Name = "RCE: PHP System"; URI = "/rest/products/search?q=<?php system('id'); ?>" },
     @{ Name = "SSRF: localhost probe"; URI = "/rest/products/search?q=http://127.0.0.1:22" },
@@ -140,7 +140,7 @@ do {
     foreach ($atk in $attacks) {
         $result = Invoke-Attack $atk
         if ($result -eq "blocked") { $blocked++ } else { $passed++ }
-        Start-Sleep -Milliseconds 300
+        Start-Sleep -Milliseconds 500
     }
 
     $totalBlocked += $blocked
