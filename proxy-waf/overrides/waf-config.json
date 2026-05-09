@@ -1,6 +1,6 @@
 {
-  "paranoia": 4,
-  "blocking_paranoia": 4,
-  "anomaly_inbound": 3,
+  "paranoia": 3,
+  "blocking_paranoia": 3,
+  "anomaly_inbound": 5,
   "rule_engine": "On"
 }
