@@ -761,3 +761,29 @@
     outline: none;
     border-color: var(--accent);
 }
+
+.panel-left {
+    position: relative;
+}
+
+.help-icon-right {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 25px;
+    height: 25px;
+    background: transparent;
+    color: var(--accent);
+    font-size: 1.1rem;
+    font-weight: 700;
+    text-decoration: none;
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.help-icon-right:hover {
+    background: var(--accent);
+    color: var(--accent-fg);
+}

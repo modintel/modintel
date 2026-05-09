@@ -217,3 +217,34 @@ input[type="checkbox"] {
     position: relative;
     top: 2px;
 }
+
+.header-left-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.view-toggle {
+    display: flex;
+    gap: 0;
+    border: 0.8px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.view-btn {
+    padding: 4px 10px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    border: none;
+    background: transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--font);
+}
+
+.view-btn.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+}

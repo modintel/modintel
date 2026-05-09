@@ -1,6 +1,7 @@
 const API_BASE = '/api';
 let trainingPollInterval = null;
 let selectedTrainingVersions = new Set();
+let allTrainingHistory = [];
 
 async function loadModelTypes() {
     var select = document.getElementById('model-type');
@@ -72,9 +73,21 @@ async function loadTrainingHistory() {
     try {
         const res = await apiFetch(`${API_BASE}/training/history`);
         const data = await res.json();
-        renderHistory(data || []);
-        if (data && data.length > 0) {
-            updateEvalMetrics(data[0]);
+        allTrainingHistory = data || [];
+
+        const activeBtn = document.querySelector('.panel-right-header .view-btn.active');
+        const view = activeBtn ? activeBtn.dataset.view : 'layer1';
+
+        let filtered = allTrainingHistory;
+        if (view === 'layer1') {
+            filtered = allTrainingHistory.filter(item => item.target_layer === 'layer1');
+        } else if (view === 'layer2') {
+            filtered = allTrainingHistory.filter(item => item.target_layer === 'layer2');
+        }
+
+        renderHistory(filtered);
+        if (filtered.length > 0) {
+            updateEvalMetrics(filtered[0]);
         }
     } catch (e) {
         console.error('Error loading training history:', e);
@@ -348,6 +361,17 @@ document.getElementById('select-all-training').addEventListener('change', functi
 });
 
 document.getElementById('delete-selected-training-btn').addEventListener('click', deleteSelectedTraining);
+
+function initViewToggle() {
+    document.querySelectorAll('.panel-right-header .view-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.panel-right-header .view-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadTrainingHistory();
+        });
+    });
+}
+initViewToggle();
 
 (async () => {
     await requireAuth();
