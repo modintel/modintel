@@ -389,7 +389,7 @@ func statsFlusher() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		collection := db.GetCollection("modintel", "alerts")
-		total, _ := collection.CountDocuments(ctx, bson.M{})
+		total, _ := collection.EstimatedDocumentCount(ctx)
 		corazaCount, _ := collection.CountDocuments(ctx, bson.M{"source": bson.M{"$in": []string{"coraza", "waf_blocked"}}})
 		mlMissCount, _ := collection.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
 		opts := options.FindOne().SetSort(bson.D{{Key: "timestamp", Value: -1}})
