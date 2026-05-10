@@ -6,77 +6,76 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-func TestAuthRateLimiterBlocksAfterFailedAttempts(t *testing.T) {
+func TestAuthRateLimiter_BlocksAfterMaxAttempts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	limiter := NewAuthRateLimiter(2)
 	router := gin.New()
+
 	router.POST("/login", limiter.Middleware(), func(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"success": false})
 	})
 
-	body := map[string]string{"email": "analyst@modintel.local", "password": "bad"}
+	body := map[string]string{"email": "test@modintel.local", "password": "wrong"}
 
-	status1 := postJSON(t, router, "/login", body)
-	status2 := postJSON(t, router, "/login", body)
-	status3 := postJSON(t, router, "/login", body)
-
-	if status1 != http.StatusUnauthorized || status2 != http.StatusUnauthorized {
-		t.Fatalf("expected first two attempts 401, got %d and %d", status1, status2)
-	}
-	if status3 != http.StatusTooManyRequests {
-		t.Fatalf("expected third attempt 429, got %d", status3)
-	}
+	t.Run("Blocks after reaching max failed attempts", func(t *testing.T) {
+		if code := postJSON(router, "/login", body); code != http.StatusUnauthorized {
+			t.Errorf("Attempt 1: expected 401, got %d", code)
+		}
+		if code := postJSON(router, "/login", body); code != http.StatusUnauthorized {
+			t.Errorf("Attempt 2: expected 401, got %d", code)
+		}
+		if code := postJSON(router, "/login", body); code != http.StatusTooManyRequests {
+			t.Errorf("Attempt 3: expected 429, got %d", code)
+		}
+	})
 }
 
-func TestAuthRateLimiterSuccessResetsFailedCount(t *testing.T) {
+func TestAuthRateLimiter_SuccessResetsCounter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	limiter := NewAuthRateLimiter(2)
-	limiter.blockFor = 50 * time.Millisecond
 
 	router := gin.New()
 	router.POST("/login", limiter.Middleware(), func(c *gin.Context) {
-		var req map[string]string
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{})
-			return
+		var req struct {
+			Password string `json:"password"`
 		}
-		if req["password"] == "ok" {
+		_ = c.ShouldBindJSON(&req)
+
+		if req.Password == "correct123" {
 			c.JSON(http.StatusOK, gin.H{"success": true})
-			return
+		} else {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false})
 		}
-		c.JSON(http.StatusUnauthorized, gin.H{"success": false})
 	})
 
-	bad := map[string]string{"email": "admin@modintel.local", "password": "bad"}
-	good := map[string]string{"email": "admin@modintel.local", "password": "ok"}
+	bad := map[string]string{"email": "user@modintel.local", "password": "wrong"}
+	good := map[string]string{"email": "user@modintel.local", "password": "correct123"}
 
-	if status := postJSON(t, router, "/login", bad); status != http.StatusUnauthorized {
-		t.Fatalf("expected bad attempt 401, got %d", status)
+	if code := postJSON(router, "/login", bad); code != http.StatusUnauthorized {
+		t.Fatal("First bad attempt should return 401")
 	}
-	if status := postJSON(t, router, "/login", good); status != http.StatusOK {
-		t.Fatalf("expected good attempt 200, got %d", status)
+
+	if code := postJSON(router, "/login", good); code != http.StatusOK {
+		t.Fatal("Successful login should return 200")
 	}
-	if status := postJSON(t, router, "/login", bad); status != http.StatusUnauthorized {
-		t.Fatalf("expected failed count reset after success, got %d", status)
+
+	if code := postJSON(router, "/login", bad); code != http.StatusUnauthorized {
+		t.Error("Counter should reset after successful login")
 	}
 }
 
-func postJSON(t *testing.T, router http.Handler, path string, payload map[string]string) int {
-	t.Helper()
-
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("marshal payload: %v", err)
-	}
-	req := httptest.NewRequest(http.MethodPost, path, bytes.NewBuffer(raw))
+// Helper
+func postJSON(router http.Handler, path string, payload map[string]string) int {
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	return rec.Code
