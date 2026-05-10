@@ -339,6 +339,7 @@ def _conformal_prediction_set(prob: float) -> List[str]:
 
 @app.post("/predict", response_model=AdvisoryResponse)
 async def predict(event: CorazaAuditEvent) -> JSONResponse:
+    logger.info(f"[/predict] enrichment request for {event.method} {event.uri}")
 
     global _prediction_count, _total_latency_ms, _recent_latencies
 
@@ -510,6 +511,7 @@ async def predict_batch(events: List[CorazaAuditEvent]) -> JSONResponse:
 
 @app.post("/predict-miss")
 async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
+    logger.info(f"[/predict-miss] miss detection for {event.method} {event.uri}")
     global _prediction_count, _total_latency_ms, _recent_latencies
 
     t_start = time.perf_counter()
