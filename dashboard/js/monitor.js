@@ -1,6 +1,8 @@
 const API_BASE = '/api';
 let currentRange = '1h';
 let requestSeriesMode = 'both';
+let _seriesRequestData = [];
+let _seriesInferenceData = [];
 
 const RANGE_MAX_POINTS = {
     '1h': 60,
@@ -83,7 +85,9 @@ function addChartHoverDots(svgId, values, width, height, padding, unit, dotClass
         circle.style.cursor = 'pointer';
 
         circle.addEventListener('mouseenter', function () {
-            tooltip.textContent = val.toFixed(1) + ' ' + unit;
+            const waf = Number.isFinite(_seriesRequestData[i]) ? _seriesRequestData[i].toFixed(1) : '0.0';
+            const inf = Number.isFinite(_seriesInferenceData[i]) ? _seriesInferenceData[i].toFixed(1) : '0.0';
+            tooltip.innerHTML = '<div style="line-height:1.6">WAF: ' + waf + ' req/min<br>Inference: ' + inf + ' inf/min</div>';
             tooltip.style.display = 'block';
         });
 
@@ -307,6 +311,8 @@ function applyMetricsData(data) {
     const sliced = timeSeries.slice(-maxPoints);
     const requestRates = extractTimeSeriesData(sliced, 'requests_per_minute');
     const inferenceRates = extractTimeSeriesData(sliced, 'predictions_per_minute');
+    _seriesRequestData = requestRates;
+    _seriesInferenceData = inferenceRates;
     const maxRate = Math.max(...requestRates, ...inferenceRates, 1);
 
     updateRequestRateChart(requestRates, maxRate);
