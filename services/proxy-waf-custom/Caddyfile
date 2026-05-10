@@ -12,6 +12,10 @@
 		reverse_proxy auth-service:8084
 	}
 
+	handle /api/v1/settings* {
+		reverse_proxy auth-service:8084
+	}
+
 	handle /api/training/* {
 		reverse_proxy training-api:8085
 	}

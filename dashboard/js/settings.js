@@ -353,9 +353,10 @@ async function sendInvite() {
         }
         const data = await res.json();
         document.getElementById('invite-email').value = '';
-        showModal('User Invited',
-            `${data.email} added as ${data.role}. Temporary password: ${data.password}`,
-            'info');
+        const msg = data.data && data.data.accept_link
+            ? `Invitation sent to ${data.data.email || email}.\n\nAccept link (share if email not configured):\n${data.data.accept_link}`
+            : (data.message || `Invitation sent to ${email}.`);
+        showModal('Invitation Sent', msg, 'info');
         loadUsers();
     } catch (e) {
         showModal('Invite Error', 'Failed to send invite.', 'error');
@@ -368,40 +369,58 @@ document.addEventListener('DOMContentLoaded', () => {
     const editBtn = document.getElementById('edit-profile-btn');
     const cancelBtn = document.getElementById('cancel-profile-btn');
 
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', loadSessions);
-    }
-    if (revokeAllBtn) {
-        revokeAllBtn.addEventListener('click', revokeAllSessionsAction);
-    }
-    if (editBtn) {
-        editBtn.addEventListener('click', () => setProfileEditable(true));
-    }
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', () => setProfileEditable(false));
-    }
+    if (refreshBtn) refreshBtn.addEventListener('click', loadSessions);
+    if (revokeAllBtn) revokeAllBtn.addEventListener('click', revokeAllSessionsAction);
+    if (editBtn) editBtn.addEventListener('click', () => setProfileEditable(true));
+    if (cancelBtn) cancelBtn.addEventListener('click', () => setProfileEditable(false));
 
     const inviteBtn = document.getElementById('invite-btn');
-    if (inviteBtn) {
-        inviteBtn.addEventListener('click', sendInvite);
-    }
+    if (inviteBtn) inviteBtn.addEventListener('click', sendInvite);
     const inviteEmail = document.getElementById('invite-email');
     if (inviteEmail && inviteBtn) {
-        inviteEmail.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') sendInvite();
-        });
+        inviteEmail.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendInvite(); });
     }
 
     const saveParanoiaBtn = document.getElementById('paranoia-save-btn');
-    if (saveParanoiaBtn) {
-        saveParanoiaBtn.addEventListener('click', saveParanoiaConfig);
+    if (saveParanoiaBtn) saveParanoiaBtn.addEventListener('click', saveParanoiaConfig);
+
+    // 2FA buttons
+    const setup2faBtn = document.getElementById('setup-2fa-btn');
+    if (setup2faBtn) setup2faBtn.addEventListener('click', () => window.location.href = '/setup-2fa');
+
+    const disable2faBtn = document.getElementById('disable-2fa-btn');
+    if (disable2faBtn) {
+        disable2faBtn.addEventListener('click', () => {
+            showPrompt('Disable 2FA', 'Enter your password to confirm:', '', async (password) => {
+                if (!password) return;
+                try {
+                    const res = await apiFetch('/api/v1/auth/2fa/disable', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) { showModal('Error', data.error || 'Failed to disable 2FA', 'error'); return; }
+                    showModal('2FA Disabled', '2FA has been disabled for your account.');
+                    load2FAStatus();
+                } catch (_) { showModal('Error', 'Network error.', 'error'); }
+            });
+        });
     }
+
+    // SMTP buttons
+    const smtpSaveBtn = document.getElementById('smtp-save-btn');
+    if (smtpSaveBtn) smtpSaveBtn.addEventListener('click', saveSMTPSettings);
+
+    const smtpTestBtn = document.getElementById('smtp-test-btn');
+    if (smtpTestBtn) smtpTestBtn.addEventListener('click', testSMTPSettings);
 
     if (getUser()) {
         loadProfile();
         loadSessions();
         loadParanoiaConfig();
         loadLayer2Threshold();
+        load2FAStatus();
         scrollToParanoia();
 
         const user = getUser();
@@ -409,9 +428,92 @@ document.addEventListener('DOMContentLoaded', () => {
             const usersPanel = document.getElementById('users-panel');
             if (usersPanel) usersPanel.style.display = 'flex';
             loadUsers();
+            // Show SMTP section for admins
+            const smtpSection = document.getElementById('section-smtp');
+            if (smtpSection) { smtpSection.style.display = 'block'; loadSMTPSettings(); }
         }
     }
 });
+
+// ── 2FA ───────────────────────────────────────────────────────────────────────
+
+async function load2FAStatus() {
+    try {
+        const res = await apiFetch('/api/v1/auth/2fa/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        const statusText = document.getElementById('twofa-status-text');
+        const setupBtn = document.getElementById('setup-2fa-btn');
+        const disableBtn = document.getElementById('disable-2fa-btn');
+        if (!statusText) return;
+        if (data.totp_enabled) {
+            statusText.textContent = '2FA is enabled on your account.';
+            statusText.style.color = 'var(--success)';
+            if (setupBtn) setupBtn.style.display = 'none';
+            if (disableBtn) disableBtn.style.display = 'inline-flex';
+        } else {
+            statusText.textContent = '2FA is not enabled. We recommend enabling it for better security.';
+            statusText.style.color = 'var(--fg-muted)';
+            if (setupBtn) setupBtn.style.display = 'inline-flex';
+            if (disableBtn) disableBtn.style.display = 'none';
+        }
+    } catch (_) {}
+}
+
+// ── SMTP ──────────────────────────────────────────────────────────────────────
+
+async function loadSMTPSettings() {
+    try {
+        const res = await apiFetch('/api/v1/settings/smtp');
+        if (!res.ok) return;
+        const data = (await res.json()).data || {};
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+        set('smtp-host', data.smtp_host);
+        set('smtp-port', data.smtp_port || 587);
+        set('smtp-username', data.smtp_username);
+        set('smtp-from', data.smtp_from);
+        set('smtp-from-name', data.smtp_from_name);
+        const tls = document.getElementById('smtp-use-tls');
+        if (tls) tls.checked = !!data.smtp_use_tls;
+    } catch (_) {}
+}
+
+async function saveSMTPSettings() {
+    const get = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+    const body = {
+        smtp_host:      get('smtp-host'),
+        smtp_port:      parseInt(get('smtp-port'), 10) || 587,
+        smtp_username:  get('smtp-username'),
+        smtp_password:  get('smtp-password'),
+        smtp_from:      get('smtp-from'),
+        smtp_from_name: get('smtp-from-name'),
+        smtp_use_tls:   document.getElementById('smtp-use-tls')?.checked || false,
+    };
+    if (!body.smtp_host || !body.smtp_from) {
+        showModal('Validation Error', 'SMTP host and from address are required.', 'error');
+        return;
+    }
+    try {
+        const res = await apiFetch('/api/v1/settings/smtp', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) { showModal('Error', data.error || 'Failed to save SMTP settings.', 'error'); return; }
+        document.getElementById('smtp-password').value = '';
+        showModal('SMTP Saved', 'Email settings saved successfully.');
+    } catch (_) { showModal('Error', 'Network error.', 'error'); }
+}
+
+async function testSMTPSettings() {
+    try {
+        const res = await apiFetch('/api/v1/settings/smtp/test', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) { showModal('Test Failed', data.error || 'SMTP test failed.', 'error'); return; }
+        showModal('Test Sent', data.message || 'Test email sent successfully.');
+    } catch (_) { showModal('Error', 'Network error.', 'error'); }
+}
 
 function scrollToParanoia() {
     if (window.location.hash === "#waf-paranoia") {
