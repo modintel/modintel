@@ -306,6 +306,12 @@ func SetupRouter() *gin.Engine {
 
 	r.GET("/", func(c *gin.Context) { c.File("/srv/dashboard/index.html") })
 	r.GET("/signin", func(c *gin.Context) { c.File("/srv/dashboard/signin.html") })
+	r.GET("/setup", func(c *gin.Context) { c.File("/srv/dashboard/setup.html") })
+	r.GET("/accept-invite", func(c *gin.Context) { c.File("/srv/dashboard/accept-invite.html") })
+	r.GET("/forgot-password", func(c *gin.Context) { c.File("/srv/dashboard/forgot-password.html") })
+	r.GET("/reset-password", func(c *gin.Context) { c.File("/srv/dashboard/reset-password.html") })
+	r.GET("/setup-2fa", func(c *gin.Context) { c.File("/srv/dashboard/setup-2fa.html") })
+	r.GET("/login-2fa", func(c *gin.Context) { c.File("/srv/dashboard/login-2fa.html") })
 	r.GET("/events", func(c *gin.Context) { c.File("/srv/dashboard/index.html") })
 	r.GET("/rules", func(c *gin.Context) { c.File("/srv/dashboard/rules.html") })
 	r.GET("/review", func(c *gin.Context) { c.File("/srv/dashboard/review.html") })
