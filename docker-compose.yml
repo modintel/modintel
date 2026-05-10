@@ -18,7 +18,6 @@ services:
     networks:
       - modintel-net
     ports:
-      - "8080:8080"
       - "3000:3000"
     restart: always
     command:
@@ -31,13 +30,16 @@ services:
 
   proxy-waf:
     image: ghcr.io/coreruleset/coraza-crs:caddy-alpine
+    ports:
+      - "8080:8080"
     volumes:
       - ./proxy-waf/Caddyfile:/config/caddy/Caddyfile
       - ./proxy-waf/coraza.conf:/opt/coraza/config.d/user.conf
       - ./proxy-waf/custom_rules.conf:/opt/coraza/config.d/custom.conf
-      - ./proxy-waf/crs-setup.conf:/opt/coraza/config/crs-setup.conf
+      - ./proxy-waf/crs-setup.conf:/opt/corazo/config/crs-setup.conf
       - ./proxy-waf/overrides:/opt/coraza/overrides
       - modintel_waf-logs:/var/log/coraza
+      - modintel_caddy_logs:/var/log/caddy
     environment:
       - BACKEND=juice-shop:3000
       - CORAZA_AUDIT_LOG=/var/log/coraza/audit.json
@@ -46,6 +48,20 @@ services:
       - modintel-net
     restart: always
     user: root
+
+  waf-blocker:
+    build: ./services/waf-blocker
+    volumes:
+      - ./services/log-collector/signatures:/app/signatures:ro
+    environment:
+      - SIGNATURES_FILE=/app/signatures/modintel_regex.signatures
+      - INFERENCE_URL=http://inference-engine:8083/predict-miss
+      - BACKEND_URL=http://juice-shop:3000
+      - BLOCK_THRESHOLD=0.5
+      - REPORT_URL=http://log-collector:8081/api/waf/block-event
+    networks:
+      - modintel-net
+    restart: always
 
   juice-shop:
     image: bkimminich/juice-shop:latest

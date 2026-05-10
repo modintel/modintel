@@ -5,6 +5,53 @@ param(
 
 $target = "http://localhost:8080"
 
+$benignRequests = @(
+    @{ Name = "GET /"; URI = "/" },
+    @{ Name = "GET /search"; URI = "/search" },
+    @{ Name = "GET /about"; URI = "/about" },
+    @{ Name = "GET /contact"; URI = "/contact" },
+    @{ Name = "GET /login"; URI = "/login" },
+    @{ Name = "GET /register"; URI = "/register" },
+    @{ Name = "GET /forgot-password"; URI = "/forgot-password" },
+    @{ Name = "GET /rest/products"; URI = "/rest/products" },
+    @{ Name = "GET /rest/products/1"; URI = "/rest/products/1" },
+    @{ Name = "GET /rest/products/2"; URI = "/rest/products/2" },
+    @{ Name = "GET /rest/products/3"; URI = "/rest/products/3" },
+    @{ Name = "GET /rest/categories"; URI = "/rest/categories" },
+    @{ Name = "GET /rest quantity"; URI = "/rest/quantitys" },
+    @{ Name = "GET /rest/user"; URI = "/rest/user" },
+    @{ Name = "GET /assets"; URI = "/assets" },
+    @{ Name = "GET /assets/public"; URI = "/assets/public" },
+    @{ Name = "GET /ftp"; URI = "/ftp" },
+    @{ Name = "GET /api"; URI = "/api" },
+    @{ Name = "GET /api-docs"; URI = "/api-docs" },
+    @{ Name = "GET /assets/public/oki"; URI = "/assets/public/oki" },
+    @{ Name = "GET /assets/public/challenge"; URI = "/assets/public/challenge" },
+    @{ Name = "GET /assets/public/js"; URI = "/assets/public/js" },
+    @{ Name = "GET /assets/public/css"; URI = "/assets/public/css" },
+    @{ Name = "GET /assets/public/img"; URI = "/assets/public/img" },
+    @{ Name = "GET /assets/public/fonts"; URI = "/assets/public/fonts" },
+    @{ Name = "GET /redirect"; URI = "/redirect" },
+    @{ Name = "GET /profile"; URI = "/profile" },
+    @{ Name = "GET /basket"; URI = "/basket" },
+    @{ Name = "GET /administration"; URI = "/administration" },
+    @{ Name = "GET /storage"; URI = "/storage" },
+    @{ Name = "GET /rest/track-order"; URI = "/rest/track-order" },
+    @{ Name = "GET /rest/track-order/test"; URI = "/rest/track-order/test" },
+    @{ Name = "GET /rest/orders"; URI = "/rest/orders" },
+    @{ Name = "GET /rest/user/authentication"; URI = "/rest/user/authentication" },
+    @{ Name = "GET /rest/recycle"; URI = "/rest/recycle" },
+    @{ Name = "GET /rest/complaints"; URI = "/rest/complaints" },
+    @{ Name = "GET /rest_memory"; URI = "/rest_memory" },
+    @{ Name = "GET /api/Users"; URI = "/api/Users" },
+    @{ Name = "GET /api/Products"; URI = "/api/Products" },
+    @{ Name = "GET /api/BasketItems"; URI = "/api/BasketItems" },
+    @{ Name = "GET /b2b"; URI = "/b2b" },
+    @{ Name = "GET /b2b/v1"; URI = "/b2b/v1" },
+    @{ Name = "GET /b2b/v2"; URI = "/b2b/v2" },
+    @{ Name = "GET /rest/file-upload"; URI = "/rest/file-upload" }
+)
+
 $attacks = @(
     @{ Name = "SQLi: OR 1=1"; URI = "/rest/products/search?q=' OR 1=1--" },
     @{ Name = "SQLi: UNION SELECT"; URI = "/rest/products/search?q=' UNION SELECT username,password FROM users--" },
@@ -113,14 +160,44 @@ function Invoke-Attack {
     }
 }
 
+function Invoke-Benign {
+    param($req)
+
+    $name = $req.Name
+    $fullUri = $target + $req.URI
+
+    try {
+        $resp = Invoke-WebRequest -Uri $fullUri -Method GET -UseBasicParsing -ErrorAction Stop -TimeoutSec 5
+        $statusCode = $resp.StatusCode
+    }
+    catch {
+        $statusCode = [int]$_.Exception.Response.StatusCode
+        if ($statusCode -eq 0) { $statusCode = "ERR" }
+    }
+
+    if ($statusCode -eq 403 -or $statusCode -eq 400 -or $statusCode -eq "ERR") {
+        Write-Host "  [BLOCKED] " -ForegroundColor Red -NoNewline
+        Write-Host "$statusCode  $name" -ForegroundColor DarkGray
+        return "blocked"
+    }
+    else {
+        Write-Host "  [PASSED]  " -ForegroundColor Green -NoNewline
+        Write-Host "$statusCode  $name" -ForegroundColor DarkGray
+        return "passed"
+    }
+}
+
 $iteration = 0
 $totalBlocked = 0
 $totalPassed = 0
+$totalBenignPassed = 0
+$totalBenignBlocked = 0
 
 Write-Host ""
 Write-Host "  CORAZA WAF ATTACK SUITE" -ForegroundColor Cyan
 Write-Host "  Target: $target" -ForegroundColor DarkGray
-Write-Host "  Payloads: $($attacks.Count)" -ForegroundColor DarkGray
+Write-Host "  Attacks: $($attacks.Count)" -ForegroundColor Red
+Write-Host "  Benign: $($benignRequests.Count)" -ForegroundColor Green
 Write-Host "  Loop Delay: ${LoopDelay}s" -ForegroundColor DarkGray
 if ($RunCount -gt 0) {
     Write-Host "  Run Count: $RunCount" -ForegroundColor DarkGray
@@ -134,8 +211,11 @@ do {
     $iteration++
     $blocked = 0
     $passed = 0
+    $benignPassed = 0
+    $benignBlocked = 0
 
     Write-Host "  [ITERATION $iteration]" -ForegroundColor Cyan
+    Write-Host "  --- Attacks ---" -ForegroundColor Red
 
     foreach ($atk in $attacks) {
         $result = Invoke-Attack $atk
@@ -143,14 +223,26 @@ do {
         Start-Sleep -Milliseconds 500
     }
 
+    Write-Host "  --- Benign ---" -ForegroundColor Green
+
+    foreach ($req in $benignRequests) {
+        $result = Invoke-Benign $req
+        if ($result -eq "blocked") { $benignBlocked++ } else { $benignPassed++ }
+        Start-Sleep -Milliseconds 200
+    }
+
     $totalBlocked += $blocked
     $totalPassed += $passed
+    $totalBenignPassed += $benignPassed
+    $totalBenignBlocked += $benignBlocked
 
     Write-Host ""
-    Write-Host "  Iteration Blocked: $blocked / $($attacks.Count)" -ForegroundColor Red
-    Write-Host "  Iteration Passed:  $passed / $($attacks.Count)" -ForegroundColor Yellow
-    Write-Host "  Total Blocked:     $totalBlocked" -ForegroundColor Red
-    Write-Host "  Total Passed:      $totalPassed" -ForegroundColor Yellow
+    Write-Host "  Attack Blocked:  $blocked / $($attacks.Count)" -ForegroundColor Red
+    Write-Host "  Attack Passed:   $passed / $($attacks.Count)" -ForegroundColor Yellow
+    Write-Host "  Benign Passed:  $benignPassed / $($benignRequests.Count)" -ForegroundColor Green
+    Write-Host "  Benign Blocked:  $benignBlocked / $($benignRequests.Count)" -ForegroundColor Red
+    Write-Host "  Total Blocked:   $totalBlocked" -ForegroundColor Red
+    Write-Host "  Total Passed:    $totalPassed" -ForegroundColor Yellow
     Write-Host ""
 
     if ($RunCount -eq 0 -or $iteration -lt $RunCount) {
@@ -179,9 +271,12 @@ function Get-DashboardStats {
 Write-Host ""
 Write-Host "  ========== FINAL SUMMARY ==========" -ForegroundColor Cyan
 Write-Host "  Total Iterations: $iteration" -ForegroundColor DarkGray
-Write-Host "  Total Blocked:    $totalBlocked" -ForegroundColor Red
-Write-Host "  Total Passed:     $totalPassed" -ForegroundColor Yellow
-Write-Host "  Malicious reqs:   $($attacks.Count * $iteration)" -ForegroundColor DarkGray
+Write-Host "  Attack Blocked:   $totalBlocked" -ForegroundColor Red
+Write-Host "  Attack Passed:    $totalPassed" -ForegroundColor Yellow
+Write-Host "  Benign Passed:    $totalBenignPassed" -ForegroundColor Green
+Write-Host "  Benign Blocked:   $totalBenignBlocked" -ForegroundColor Red
+Write-Host "  Total Attacks:    $($attacks.Count * $iteration)" -ForegroundColor DarkGray
+Write-Host "  Total Benign:     $($benignRequests.Count * $iteration)" -ForegroundColor DarkGray
 Write-Host ""
 
 $dashStats = Get-DashboardStats
@@ -193,17 +288,25 @@ if ($dashStats) {
     Write-Host "  AI enriched:      $($dashStats.ai_enriched_count)" -ForegroundColor DarkGray
     Write-Host ""
 
-    $expected = $attacks.Count * $iteration
+    $expectedAttacks = $attacks.Count * $iteration
+    $expectedBenign = $totalBenignBlocked
+    $expectedTotal = $expectedAttacks + $expectedBenign
     $actual = $dashStats.total_alerts
-    if ($actual -eq $expected) {
-        Write-Host "  MATCH: $actual / $expected alerts logged" -ForegroundColor Green
+
+    if ($totalBenignBlocked -gt 0) {
+        Write-Host "  NOTE: $totalBenignBlocked benign requests were blocked (possible false positives)" -ForegroundColor Yellow
     }
-    elseif ($actual -gt $expected) {
-        Write-Host "  WARNING: $actual logged, expected $expected (possible false positives)" -ForegroundColor Yellow
+
+    if ($actual -eq $expectedAttacks) {
+        Write-Host "  MATCH: $actual attack alerts from $expectedAttacks attack requests" -ForegroundColor Green
+    }
+    elseif ($actual -gt $expectedAttacks) {
+        $extra = $actual - $expectedAttacks
+        Write-Host "  WARNING: $actual alerts from $expectedAttacks attacks ($extra extra, likely benign blocks)" -ForegroundColor Yellow
     }
     else {
-        $deduped = $expected - $actual
-        Write-Host "  NOTE: $actual unique alerts from $expected requests ($deduped duplicates deduplicated)" -ForegroundColor Green
+        $deduped = $expectedAttacks - $actual
+        Write-Host "  NOTE: $actual unique alerts from $expectedAttacks attacks ($deduped duplicates deduplicated)" -ForegroundColor Green
     }
 }
 else {
