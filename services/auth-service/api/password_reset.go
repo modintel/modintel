@@ -56,9 +56,12 @@ func (h *Handler) requestPasswordReset(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	// Look up user — silently do nothing if not found
+	// Look up user using bson.D with explicit string cast
 	var user models.User
-	err := h.users.FindOne(ctx, bson.M{"email": req.Email, "is_active": true}).Decode(&user)
+	err := h.users.FindOne(ctx, bson.D{
+		{Key: "email", Value: string(req.Email)},
+		{Key: "is_active", Value: true},
+	}).Decode(&user)
 	if err != nil {
 		return // user not found — return success anyway
 	}
@@ -156,9 +159,9 @@ func (h *Handler) completePasswordReset(c *gin.Context) {
 
 	resetColl := h.db.DB.Collection("password_resets")
 
-	// Find the reset token — use safeToken (validated hex) not raw user input
+	// Find the reset token using bson.D with explicit string cast
 	var resetDoc models.PasswordReset
-	err := resetColl.FindOne(ctx, bson.M{"token": safeToken}).Decode(&resetDoc)
+	err := resetColl.FindOne(ctx, bson.D{{Key: "token", Value: string(safeToken)}}).Decode(&resetDoc)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, errResp("Invalid or expired reset token", "AUTH_400"))
 		return
@@ -240,7 +243,7 @@ func (h *Handler) validateResetToken(c *gin.Context) {
 
 	resetColl := h.db.DB.Collection("password_resets")
 	var resetDoc models.PasswordReset
-	err := resetColl.FindOne(ctx, bson.M{"token": safeToken},
+	err := resetColl.FindOne(ctx, bson.D{{Key: "token", Value: string(safeToken)}},
 		options.FindOne().SetProjection(bson.M{"used": 1, "expires_at": 1})).Decode(&resetDoc)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, errResp("Invalid or expired reset token", "AUTH_400"))

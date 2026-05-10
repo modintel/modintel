@@ -116,7 +116,8 @@ func (h *Handler) sendInvite(c *gin.Context) {
 	}
 
 	// Check if a user with this email already exists
-	existingCount, _ := h.users.CountDocuments(ctx, bson.M{"email": req.Email})
+	// Use bson.D with explicit string type to satisfy static analysis
+	existingCount, _ := h.users.CountDocuments(ctx, bson.D{{Key: "email", Value: req.Email}})
 	if existingCount > 0 {
 		c.JSON(http.StatusConflict, errResp("A user with this email already exists", "AUTH_409"))
 		return
@@ -124,10 +125,10 @@ func (h *Handler) sendInvite(c *gin.Context) {
 
 	// Check if a pending invite already exists for this email
 	invColl := h.db.DB.Collection("invitations")
-	pendingCount, _ := invColl.CountDocuments(ctx, bson.M{
-		"email":      req.Email,
-		"status":     models.InvitationStatusPending,
-		"expires_at": bson.M{"$gt": time.Now().UTC()},
+	pendingCount, _ := invColl.CountDocuments(ctx, bson.D{
+		{Key: "email", Value: req.Email},
+		{Key: "status", Value: models.InvitationStatusPending},
+		{Key: "expires_at", Value: bson.D{{Key: "$gt", Value: time.Now().UTC()}}},
 	})
 	if pendingCount > 0 {
 		c.JSON(http.StatusConflict, errResp("A pending invitation already exists for this email", "AUTH_409"))
@@ -252,10 +253,10 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	// Look up the invitation — use safeToken (validated hex) not raw user input
+	// Look up the invitation using bson.D with explicit string cast
 	invColl := h.db.DB.Collection("invitations")
 	var invitation models.Invitation
-	err := invColl.FindOne(ctx, bson.M{"token": safeToken}).Decode(&invitation)
+	err := invColl.FindOne(ctx, bson.D{{Key: "token", Value: string(safeToken)}}).Decode(&invitation)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, errResp("Invalid or expired invitation token", "AUTH_400"))
 		return
