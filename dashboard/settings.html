@@ -54,8 +54,53 @@
                 </div>
             </div>
 
-            <div class="section" id="waf-paranoia">
-                <div class="paranoia-header">
+            <div class="section" id="section-2fa">
+                <h3>Two-Factor Authentication</h3>
+                <p id="twofa-status-text">Loading 2FA status…</p>
+                <div class="form-actions" id="twofa-actions">
+                    <button class="btn btn-primary" id="setup-2fa-btn" type="button" style="display:none;">Set Up 2FA</button>
+                    <button class="btn btn-danger" id="disable-2fa-btn" type="button" style="display:none;">Disable 2FA</button>
+                </div>
+            </div>
+
+            <div class="section" id="section-smtp" style="display:none;">
+                <h3>Email Configuration</h3>
+                <p>Configure SMTP to send invitation and password reset emails.</p>
+                <div class="form-group">
+                    <label>SMTP Host</label>
+                    <input type="text" id="smtp-host" placeholder="smtp.gmail.com">
+                </div>
+                <div class="form-group">
+                    <label>SMTP Port</label>
+                    <input type="number" id="smtp-port" value="587" min="1" max="65535">
+                </div>
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="smtp-username" placeholder="you@gmail.com" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="smtp-password" placeholder="Leave blank to keep existing" autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label>From Address</label>
+                    <input type="email" id="smtp-from" placeholder="you@gmail.com">
+                </div>
+                <div class="form-group">
+                    <label>From Name</label>
+                    <input type="text" id="smtp-from-name" placeholder="ModIntel Security">
+                </div>
+                <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" id="smtp-use-tls" style="width:auto;">
+                    <label for="smtp-use-tls" style="margin:0;">Use implicit TLS (port 465)</label>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-primary" id="smtp-save-btn" type="button">Save SMTP Settings</button>
+                    <button class="btn btn-secondary" id="smtp-test-btn" type="button">Send Test Email</button>
+                </div>
+            </div>
+
+            <div class="section" id="waf-paranoia">                <div class="paranoia-header">
                     <h3>WAF Paranoia</h3>
                     <div class="paranoia-toggle">
                         <span class="toggle-label">Blocking</span>
@@ -129,7 +174,6 @@
                         <input type="email" id="invite-email" class="invite-input" placeholder="Enter email address">
                         <select id="invite-role" class="invite-role">
                             <option value="analyst" selected>Analyst</option>
-                            <option value="admin">Admin</option>
                             <option value="viewer">Viewer</option>
                         </select>
                         <button class="btn btn-primary" id="invite-btn">Invite</button>
