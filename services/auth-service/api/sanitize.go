@@ -34,16 +34,6 @@ func sanitizeEmail(email string) (string, bool) {
 	return emailRegexpSanitizer.FindString(email), true
 }
 
-// sanitizeDBString returns a fresh string copy of a pre-validated value.
-// Allocating a new []byte and converting back to string fully severs the
-// taint chain that CodeQL tracks from HTTP input to the database query,
-// because the resulting value has no provenance link to the original input.
-func sanitizeDBString(s string) string {
-	b := make([]byte, len(s))
-	copy(b, s)
-	return string(b)
-}
-
 // sanitizeEmailHeader removes CR, LF, and null bytes from values that will
 // appear in email headers or be interpolated into email body content.
 func sanitizeEmailHeader(s string) string {
