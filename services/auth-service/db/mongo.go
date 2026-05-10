@@ -8,6 +8,7 @@ import (
 
 	"modintel/services/auth-service/config"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -69,6 +70,38 @@ func ensureIndexes(ctx context.Context, database *mongo.Database) error {
 	})
 	if err != nil {
 		return fmt.Errorf("refresh_tokens indexes: %w", err)
+	}
+
+	// Invitations collection
+	invitations := database.Collection("invitations")
+	_, err = invitations.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{Keys: map[string]int{"token": 1}, Options: options.Index().SetUnique(true)},
+		{Keys: map[string]int{"email": 1}},
+		{Keys: map[string]int{"expires_at": 1}, Options: options.Index().SetExpireAfterSeconds(0)},
+	})
+	if err != nil {
+		return fmt.Errorf("invitations indexes: %w", err)
+	}
+
+	// Invite logs collection (for rate limiting)
+	inviteLogs := database.Collection("invite_logs")
+	_, err = inviteLogs.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{Keys: bson.D{{Key: "invited_by", Value: 1}, {Key: "created_at", Value: -1}}},
+		{Keys: bson.D{{Key: "created_at", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(3600)},
+	})
+	if err != nil {
+		return fmt.Errorf("invite_logs indexes: %w", err)
+	}
+
+	// Password resets collection
+	passwordResets := database.Collection("password_resets")
+	_, err = passwordResets.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{Keys: map[string]int{"token": 1}, Options: options.Index().SetUnique(true)},
+		{Keys: map[string]int{"user_id": 1}},
+		{Keys: map[string]int{"expires_at": 1}, Options: options.Index().SetExpireAfterSeconds(0)},
+	})
+	if err != nil {
+		return fmt.Errorf("password_resets indexes: %w", err)
 	}
 
 	return nil

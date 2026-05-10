@@ -91,6 +91,8 @@ func SetupRouter(cfg config.Config, database *db.Database) *gin.Engine {
 	authGroup := v1.Group("/auth")
 	loginLimiter := middleware.NewAuthRateLimiter(cfg.RateLimitAuthPerMin)
 	{
+		authGroup.GET("/status", h.authStatus)
+		authGroup.POST("/register", h.register)
 		authGroup.POST("/login", loginLimiter.Middleware(), h.login)
 		authGroup.POST("/refresh", h.refresh)
 		authGroup.POST("/logout", h.logout)
@@ -107,9 +109,38 @@ func SetupRouter(cfg config.Config, database *db.Database) *gin.Engine {
 		users.GET("", h.requireRoles("admin"), h.listUsers)
 		users.GET(":id", h.requireRoles("admin"), h.getUser)
 		users.POST("", h.requireRoles("admin"), h.createUser)
-		users.POST("/invite", h.requireRoles("admin"), h.inviteUser)
+		users.POST("/invite", h.requireRoles("admin"), h.sendInvite)
 		users.PUT(":id", h.requireRoles("admin"), h.updateUser)
 		users.DELETE(":id", h.requireRoles("admin"), h.deactivateUser)
+	}
+
+	// Public accept-invite endpoint
+	authGroup.POST("/accept-invite", h.acceptInvite)
+
+	// Password reset (public)
+	authGroup.POST("/reset-password/request", h.requestPasswordReset)
+	authGroup.POST("/reset-password/complete", h.completePasswordReset)
+	authGroup.GET("/reset-password/validate", h.validateResetToken)
+
+	// 2FA public endpoints (use intermediate token, not access token)
+	authGroup.POST("/2fa/login", h.twoFALogin)
+	authGroup.POST("/2fa/recover", h.twoFARecover)
+
+	// 2FA authenticated endpoints
+	twoFAGroup := authGroup.Group("/2fa", h.authMiddleware())
+	{
+		twoFAGroup.GET("/status", h.twoFAStatus)
+		twoFAGroup.POST("/setup", h.twoFASetup)
+		twoFAGroup.POST("/verify", h.twoFAVerify)
+		twoFAGroup.POST("/disable", h.twoFADisable)
+	}
+
+	// Settings (admin only)
+	settingsGroup := v1.Group("/settings", h.authMiddleware(), h.requireRoles("admin"))
+	{
+		settingsGroup.GET("/smtp", h.getSMTPSettings)
+		settingsGroup.PUT("/smtp", h.updateSMTPSettings)
+		settingsGroup.POST("/smtp/test", h.testSMTPSettings)
 	}
 
 	return r
@@ -235,6 +266,22 @@ func (h *Handler) login(c *gin.Context) {
 
 	now := time.Now().UTC()
 	userIDHex := user.ID.Hex()
+
+	// If 2FA is enabled, issue an intermediate token instead of full tokens
+	if user.TOTPEnabled {
+		twoFAToken, _, err := h.issuer.GenerateTwoFactorToken(userIDHex, user.Email, user.Role, now)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, errResp("Failed generating 2FA token", "AUTH_500"))
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success":     true,
+			"require_2fa": true,
+			"2fa_token":   twoFAToken,
+		})
+		return
+	}
+
 	accessToken, accessExp, err := h.issuer.GenerateAccessToken(userIDHex, user.Email, user.Role, now)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errResp("Failed generating token", "AUTH_500"))
