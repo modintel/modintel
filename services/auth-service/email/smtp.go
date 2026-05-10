@@ -1,0 +1,176 @@
+// Package email provides SMTP email sending for auth-service.
+// Uses only stdlib net/smtp — no external dependencies.
+package email
+
+import (
+	"crypto/tls"
+	"fmt"
+	"net"
+	"net/smtp"
+	"strings"
+	"time"
+)
+
+// Config holds the SMTP connection parameters.
+type Config struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	From     string
+	FromName string
+	UseTLS   bool // true = implicit TLS (port 465), false = STARTTLS (port 587)
+}
+
+// IsConfigured returns true if the minimum SMTP fields are set.
+func (c Config) IsConfigured() bool {
+	return strings.TrimSpace(c.Host) != "" &&
+		strings.TrimSpace(c.From) != "" &&
+		c.Port > 0
+}
+
+// send is the internal helper that dials, authenticates, and sends one email.
+func send(cfg Config, to, subject, body string) error {
+	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+
+	fromHeader := cfg.From
+	if strings.TrimSpace(cfg.FromName) != "" {
+		fromHeader = fmt.Sprintf("%s <%s>", cfg.FromName, cfg.From)
+	}
+
+	msg := buildMessage(fromHeader, to, subject, body)
+
+	var auth smtp.Auth
+	if cfg.Username != "" {
+		auth = smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host)
+	}
+
+	if cfg.UseTLS {
+		// Implicit TLS (port 465)
+		tlsCfg := &tls.Config{ServerName: cfg.Host}
+		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", addr, tlsCfg)
+		if err != nil {
+			return fmt.Errorf("smtp tls dial: %w", err)
+		}
+		client, err := smtp.NewClient(conn, cfg.Host)
+		if err != nil {
+			return fmt.Errorf("smtp new client: %w", err)
+		}
+		defer client.Close()
+		if auth != nil {
+			if err := client.Auth(auth); err != nil {
+				return fmt.Errorf("smtp auth: %w", err)
+			}
+		}
+		return sendViaClient(client, cfg.From, to, msg)
+	}
+
+	// STARTTLS (port 587 / 25)
+	client, err := smtp.Dial(addr)
+	if err != nil {
+		return fmt.Errorf("smtp dial: %w", err)
+	}
+	defer client.Close()
+
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		tlsCfg := &tls.Config{ServerName: cfg.Host}
+		if err := client.StartTLS(tlsCfg); err != nil {
+			return fmt.Errorf("smtp starttls: %w", err)
+		}
+	}
+
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("smtp auth: %w", err)
+		}
+	}
+
+	return sendViaClient(client, cfg.From, to, msg)
+}
+
+func sendViaClient(client *smtp.Client, from, to string, msg []byte) error {
+	if err := client.Mail(from); err != nil {
+		return fmt.Errorf("smtp MAIL FROM: %w", err)
+	}
+	if err := client.Rcpt(to); err != nil {
+		return fmt.Errorf("smtp RCPT TO: %w", err)
+	}
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("smtp DATA: %w", err)
+	}
+	if _, err := w.Write(msg); err != nil {
+		return fmt.Errorf("smtp write body: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("smtp close data: %w", err)
+	}
+	return client.Quit()
+}
+
+func buildMessage(from, to, subject, body string) []byte {
+	var sb strings.Builder
+	sb.WriteString("From: " + from + "\r\n")
+	sb.WriteString("To: " + to + "\r\n")
+	sb.WriteString("Subject: " + subject + "\r\n")
+	sb.WriteString("MIME-Version: 1.0\r\n")
+	sb.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
+	sb.WriteString("Date: " + time.Now().UTC().Format(time.RFC1123Z) + "\r\n")
+	sb.WriteString("\r\n")
+	sb.WriteString(body)
+	return []byte(sb.String())
+}
+
+// ── Public send functions ─────────────────────────────────────────────────────
+
+// SendInviteEmail sends an invitation email with the accept link.
+func SendInviteEmail(cfg Config, toEmail, invitedByName, role, acceptLink string) error {
+	subject := "You've been invited to ModIntel"
+	body := fmt.Sprintf(`Hi,
+
+%s has invited you to join ModIntel as %s.
+
+Click the link below to accept your invitation and create your account:
+
+  %s
+
+This link expires in 24 hours.
+
+If you did not expect this invitation, you can safely ignore this email.
+
+— ModIntel Security Platform
+`, invitedByName, strings.Title(role), acceptLink)
+
+	return send(cfg, toEmail, subject, body)
+}
+
+// SendResetEmail sends a password reset email.
+func SendResetEmail(cfg Config, toEmail, resetLink string) error {
+	subject := "ModIntel — Password Reset Request"
+	body := fmt.Sprintf(`Hi,
+
+We received a request to reset the password for your ModIntel account.
+
+Click the link below to set a new password:
+
+  %s
+
+This link expires in 1 hour. If you did not request a password reset, you can safely ignore this email — your password will not change.
+
+— ModIntel Security Platform
+`, resetLink)
+
+	return send(cfg, toEmail, subject, body)
+}
+
+// SendTestEmail sends a test email to verify SMTP configuration.
+func SendTestEmail(cfg Config, toEmail string) error {
+	subject := "ModIntel — SMTP Test"
+	body := `This is a test email from ModIntel.
+
+If you received this, your SMTP configuration is working correctly.
+
+— ModIntel Security Platform
+`
+	return send(cfg, toEmail, subject, body)
+}
