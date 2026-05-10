@@ -844,7 +844,7 @@ func GetWhoAmI(c *gin.Context) {
 	})
 }
 
-func parseAlertTimestamp(raw string) (time.Time, bool) {
+func _parseAlertTimestamp(raw string) (time.Time, bool) {
 	layouts := []string{
 		time.RFC3339,
 		"2006-01-02 15:04:05",
@@ -940,7 +940,7 @@ func GetTrend(c *gin.Context) {
 			continue
 		}
 
-		ts, ok := parseAlertTimestamp(rawTS)
+		ts, ok := _parseAlertTimestamp(rawTS)
 		if !ok || ts.Before(start) || ts.After(now.Add(time.Minute)) {
 			continue
 		}
