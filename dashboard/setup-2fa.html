@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ModIntel - Set Up 2FA</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/signin.css">
+    <style>
+        .qr-container { text-align: center; margin: 16px 0; }
+        .qr-container img { width: 180px; height: 180px; border: 1px solid var(--border); padding: 8px; background: #fff; }
+        .manual-key { font-family: monospace; font-size: 0.85rem; background: var(--bg-panel); border: 1px solid var(--border); padding: 8px 12px; letter-spacing: 0.1em; word-break: break-all; margin: 8px 0 16px; }
+        .recovery-codes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 12px 0; }
+        .recovery-code { font-family: monospace; font-size: 0.8rem; background: var(--bg-panel); border: 1px solid var(--border); padding: 6px 10px; text-align: center; }
+        .step { display: none; }
+        .step.active { display: block; }
+        .step-indicator { display: flex; gap: 8px; margin-bottom: 20px; }
+        .step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+        .step-dot.active { background: var(--accent); }
+        .step-dot.done { background: var(--success); }
+    </style>
+</head>
+<body class="signin-page">
+    <div class="signin-container">
+        <div class="brand-section-orange">
+            <div class="brand-content">
+                <div class="brand-headline">SECURE YOUR<br>ACCOUNT<br>WITH 2FA.</div>
+                <ul class="features-list">
+                    <li class="feature-item">
+                        <div class="feature-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        </div>
+                        <span class="feature-text">Works with Google Authenticator, Authy, 1Password</span>
+                    </li>
+                    <li class="feature-item">
+                        <div class="feature-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        </div>
+                        <span class="feature-text">No SMS — works offline</span>
+                    </li>
+                </ul>
+            </div>
+            <div class="brand-footer-orange">v3.0.0 • Two-Factor Authentication</div>
+        </div>
+
+        <div class="form-section">
+            <div class="brand-logo-top">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+            </div>
+            <div class="form-wrapper">
+                <div class="step-indicator">
+                    <div class="step-dot active" id="dot-1"></div>
+                    <div class="step-dot" id="dot-2"></div>
+                    <div class="step-dot" id="dot-3"></div>
+                </div>
+
+                <div id="alert" class="signin-alert"></div>
+
+                <!-- Step 1: Show QR code -->
+                <div class="step active" id="step-1">
+                    <div class="form-header">
+                        <h2 class="form-title">Scan QR Code</h2>
+                        <p class="form-subtitle">Open your authenticator app and scan this code</p>
+                    </div>
+                    <div class="qr-container">
+                        <div id="qr-loading" style="padding:40px;color:var(--fg-muted);">Generating QR code…</div>
+                        <img id="qr-image" style="display:none;" alt="2FA QR Code">
+                    </div>
+                    <p style="font-size:0.75rem;color:var(--fg-muted);margin-bottom:4px;">Can't scan? Enter this key manually:</p>
+                    <div class="manual-key" id="manual-key">—</div>
+                    <button class="signin-btn signin-btn-primary" id="next-to-verify">I've scanned it →</button>
+                </div>
+
+                <!-- Step 2: Verify code -->
+                <div class="step" id="step-2">
+                    <div class="form-header">
+                        <h2 class="form-title">Enter Verification Code</h2>
+                        <p class="form-subtitle">Enter the 6-digit code from your authenticator app</p>
+                    </div>
+                    <form id="verify-form">
+                        <div class="signin-form-group">
+                            <label class="signin-form-label" for="totp-code">6-Digit Code</label>
+                            <input type="text" id="totp-code" class="signin-form-input" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="one-time-code" style="letter-spacing:0.3em;font-size:1.2rem;text-align:center;">
+                        </div>
+                        <div id="loading-dots" class="loading-dots" style="display:none;"><span></span><span></span><span></span></div>
+                        <button type="submit" class="signin-btn signin-btn-primary" id="verify-btn">Verify & Enable 2FA</button>
+                    </form>
+                </div>
+
+                <!-- Step 3: Recovery codes -->
+                <div class="step" id="step-3">
+                    <div class="form-header">
+                        <h2 class="form-title">Save Recovery Codes</h2>
+                        <p class="form-subtitle" style="color:var(--accent);font-weight:600;">Save these now — they will not be shown again</p>
+                    </div>
+                    <p style="font-size:0.75rem;color:var(--fg-muted);margin-bottom:8px;">Each code can only be used once to bypass 2FA if you lose your device.</p>
+                    <div class="recovery-codes" id="recovery-codes"></div>
+                    <button class="signin-btn" id="copy-codes-btn" type="button" style="margin-bottom:8px;">Copy All Codes</button>
+                    <button class="signin-btn signin-btn-primary" id="done-btn" type="button">I've saved my codes →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="js/auth.js"></script>
+    <script src="js/boot.js"></script>
+    <script src="js/setup-2fa.js"></script>
+</body>
+</html>
