@@ -34,8 +34,6 @@ type AcceptInviteRequest struct {
 	LastName  string `json:"last_name"`
 }
 
-// ── Invite rate-limit check ───────────────────────────────────────────────────
-
 const inviteRateLimitPerHour = 10
 
 // checkInviteRateLimit returns true if the admin has exceeded 10 invites/hour.
@@ -190,10 +188,13 @@ func (h *Handler) sendInvite(c *gin.Context) {
 	// Send invite email if SMTP is configured (best-effort)
 	smtpCfg, smtpErr := h.loadSMTPConfig(ctx)
 	if smtpErr == nil && smtpCfg.IsConfigured() {
-		inviterName := claims.Email
+		// Sanitize values that go into email headers/body to prevent injection
+		safeInviter := sanitizeEmailHeader(claims.Email)
+		safeRole := sanitizeEmailHeader(req.Role)
+		safeLink := sanitizeEmailHeader(acceptLink)
 		go func(cfg email.Config, to, inviter, role, link string) {
 			_ = email.SendInviteEmail(cfg, to, inviter, role, link)
-		}(smtpCfg, req.Email, inviterName, req.Role, acceptLink)
+		}(smtpCfg, req.Email, safeInviter, safeRole, safeLink)
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -228,6 +229,13 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 		return
 	}
 
+	// Validate token format to prevent NoSQL injection
+	safeToken, ok := sanitizeToken(req.Token)
+	if !ok {
+		c.JSON(http.StatusBadRequest, errResp("Invalid invitation token", "AUTH_400"))
+		return
+	}
+
 	// Validate password strength
 	if !auth.IsValidPassword(req.Password) {
 		c.JSON(http.StatusBadRequest, errResp(
@@ -244,10 +252,10 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	// Look up the invitation
+	// Look up the invitation — use safeToken (validated hex) not raw user input
 	invColl := h.db.DB.Collection("invitations")
 	var invitation models.Invitation
-	err := invColl.FindOne(ctx, bson.M{"token": req.Token}).Decode(&invitation)
+	err := invColl.FindOne(ctx, bson.M{"token": safeToken}).Decode(&invitation)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, errResp("Invalid or expired invitation token", "AUTH_400"))
 		return

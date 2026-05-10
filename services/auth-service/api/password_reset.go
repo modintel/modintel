@@ -95,9 +95,11 @@ func (h *Handler) requestPasswordReset(c *gin.Context) {
 	// Load SMTP config and send email (best-effort — don't fail the request)
 	smtpCfg, err := h.loadSMTPConfig(ctx)
 	if err == nil && smtpCfg.IsConfigured() {
+		safeAddr := sanitizeEmailHeader(req.Email)
+		safeLink := sanitizeEmailHeader(resetLink)
 		go func(cfg email.Config, addr, link string) {
 			_ = email.SendResetEmail(cfg, addr, link)
-		}(smtpCfg, req.Email, resetLink)
+		}(smtpCfg, safeAddr, safeLink)
 	}
 
 	h.logAuditEvent(auditEvent{
@@ -129,6 +131,13 @@ func (h *Handler) completePasswordReset(c *gin.Context) {
 		return
 	}
 
+	// Validate token format to prevent NoSQL injection
+	safeToken, ok := sanitizeToken(req.Token)
+	if !ok {
+		c.JSON(http.StatusBadRequest, errResp("Invalid reset token", "AUTH_400"))
+		return
+	}
+
 	// Validate new password
 	if !auth.IsValidPassword(req.NewPassword) {
 		c.JSON(http.StatusBadRequest, errResp(
@@ -147,9 +156,9 @@ func (h *Handler) completePasswordReset(c *gin.Context) {
 
 	resetColl := h.db.DB.Collection("password_resets")
 
-	// Find the reset token
+	// Find the reset token — use safeToken (validated hex) not raw user input
 	var resetDoc models.PasswordReset
-	err := resetColl.FindOne(ctx, bson.M{"token": req.Token}).Decode(&resetDoc)
+	err := resetColl.FindOne(ctx, bson.M{"token": safeToken}).Decode(&resetDoc)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, errResp("Invalid or expired reset token", "AUTH_400"))
 		return
@@ -219,12 +228,19 @@ func (h *Handler) validateResetToken(c *gin.Context) {
 		return
 	}
 
+	// Validate token format to prevent NoSQL injection
+	safeToken, ok := sanitizeToken(token)
+	if !ok {
+		c.JSON(http.StatusBadRequest, errResp("Invalid reset token", "AUTH_400"))
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
 	resetColl := h.db.DB.Collection("password_resets")
 	var resetDoc models.PasswordReset
-	err := resetColl.FindOne(ctx, bson.M{"token": token},
+	err := resetColl.FindOne(ctx, bson.M{"token": safeToken},
 		options.FindOne().SetProjection(bson.M{"used": 1, "expires_at": 1})).Decode(&resetDoc)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, errResp("Invalid or expired reset token", "AUTH_400"))
