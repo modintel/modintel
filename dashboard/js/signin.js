@@ -58,6 +58,12 @@
             const data = await response.json();
 
             if (response.ok && data.success) {
+                // Check if 2FA is required
+                if (data.require_2fa && data['2fa_token']) {
+                    sessionStorage.setItem('2fa_token', data['2fa_token']);
+                    window.location.replace('/login-2fa');
+                    return;
+                }
                 handleLoginSuccess(data.data, remember);
             } else {
                 showAlert('danger', data.error || 'Invalid credentials. Please try again.');
@@ -91,7 +97,10 @@
     function bindComingSoonLinks() {
         const forgotPasswordLink = document.getElementById('forgot-password-link');
         if (forgotPasswordLink) {
-            forgotPasswordLink.addEventListener('click', window.showComingSoon);
+            forgotPasswordLink.addEventListener('click', function (e) {
+                e.preventDefault();
+                window.location.href = '/forgot-password';
+            });
         }
 
         const requestAccessLink = document.getElementById('request-access-link');
