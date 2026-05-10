@@ -26,6 +26,11 @@ type Config struct {
 	BootstrapAdminPass  string
 	BootstrapAdminRole  string
 	BootstrapAdminName  string
+	// AppBaseURL is the externally reachable base URL used to build invite and
+	// password-reset links in outgoing emails (e.g. https://app.example.com).
+	// Using a server-side config value (not the HTTP Host header) removes the
+	// user-controlled taint source that triggers go/email-injection.
+	AppBaseURL string
 }
 
 func Load() Config {
@@ -45,6 +50,7 @@ func Load() Config {
 		BootstrapAdminPass:  getEnv("AUTH_BOOTSTRAP_ADMIN_PASSWORD", ""),
 		BootstrapAdminRole:  getEnv("AUTH_BOOTSTRAP_ADMIN_ROLE", "admin"),
 		BootstrapAdminName:  getEnv("AUTH_BOOTSTRAP_ADMIN_NAME", "ModIntel"),
+		AppBaseURL:          strings.TrimRight(getEnv("AUTH_APP_BASE_URL", ""), "/"),
 	}
 
 	cfg.RateLimitWindow = time.Minute
