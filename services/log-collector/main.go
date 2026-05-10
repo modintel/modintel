@@ -235,7 +235,7 @@ func enrichWithAI(doc *parsers.AlertDocument) bool {
 	return true
 }
 
-func enrichMiss(doc *parsers.AlertDocument) bool {
+func _enrichMiss(doc *parsers.AlertDocument) bool {
 	if isAlreadyEnriched(doc) {
 		return true
 	}
@@ -508,7 +508,7 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 			doc.Source = "ml_miss_detector"
 			doc.Status = "generated"
 			doc.TriggeredRules = matchedSigs
-			enrichMiss(doc)
+			_enrichMiss(doc)
 
 			docJSON, err := json.Marshal(doc)
 			if err != nil {
