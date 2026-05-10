@@ -3,8 +3,10 @@
 package email
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
+	"mime/quotedprintable"
 	"net"
 	"net/smtp"
 	"strings"
@@ -109,6 +111,12 @@ func sendViaClient(client *smtp.Client, from, to string, msg []byte) error {
 }
 
 func buildMessage(from, to, subject, body string) []byte {
+	// Encode body using quoted-printable to safely handle arbitrary content
+	var qpBuf bytes.Buffer
+	qpWriter := quotedprintable.NewWriter(&qpBuf)
+	_, _ = qpWriter.Write([]byte(body))
+	_ = qpWriter.Close()
+
 	var sb strings.Builder
 	// Sanitize all header values to prevent SMTP header injection
 	sb.WriteString("From: " + sanitizeSMTPHeader(from) + "\r\n")
@@ -116,9 +124,10 @@ func buildMessage(from, to, subject, body string) []byte {
 	sb.WriteString("Subject: " + sanitizeSMTPHeader(subject) + "\r\n")
 	sb.WriteString("MIME-Version: 1.0\r\n")
 	sb.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
+	sb.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 	sb.WriteString("Date: " + time.Now().UTC().Format(time.RFC1123Z) + "\r\n")
 	sb.WriteString("\r\n")
-	sb.WriteString(body)
+	sb.WriteString(qpBuf.String())
 	return []byte(sb.String())
 }
 
