@@ -305,6 +305,8 @@
     font-size: 0.7rem;
     font-weight: 600;
     color: var(--fg-muted);
+    text-align: center;
+    align-self: center;
 }
 
 .latency-bar-container {

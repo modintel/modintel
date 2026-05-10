@@ -94,8 +94,15 @@ async function loadTrainingHistory() {
     }
 }
 
+function getCurrentView() {
+    const activeBtn = document.querySelector('.panel-right-header .view-btn.active');
+    return activeBtn ? activeBtn.dataset.view : 'layer1';
+}
+
 function renderHistory(items) {
     const tbody = document.getElementById('training-history');
+    const view = getCurrentView();
+    const isLayer1 = view === 'layer1';
     if (!items.length) {
         tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--fg-muted);padding:20px;">No training history yet.</td></tr>';
         updateTrainingActions();
@@ -103,7 +110,7 @@ function renderHistory(items) {
     }
     tbody.innerHTML = items.map(item => `
         <tr>
-            <td><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;" ${item.active ? 'disabled' : ''}>${item.version}</td>
+            <td><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;" ${item.active || isLayer1 ? 'disabled' : ''}>${item.version}</td>
             <td>${item.model_type}</td>
             <td>${item.dataset}</td>
             <td>${(item.precision * 100).toFixed(2)}%</td>
@@ -116,9 +123,9 @@ function renderHistory(items) {
                     : `<button class="btn btn-sm deploy-btn" data-version="${item.version}">Deploy</button>`}
             </td>
             <td>
-                ${!item.active
+                ${!item.active && !isLayer1
                     ? `<button class="btn btn-sm btn-danger delete-model-btn" data-version="${item.version}">Delete</button>`
-                    : ''}
+                    : `<button class="btn btn-sm btn-danger" disabled style="opacity:0.35;cursor:not-allowed;">Delete</button>`}
             </td>
         </tr>
     `).join('');
@@ -129,12 +136,6 @@ function renderHistory(items) {
 
     document.querySelectorAll('.delete-model-btn').forEach(btn => {
         btn.addEventListener('click', () => deleteModel(btn.dataset.version));
-    });
-
-    document.querySelectorAll('.training-checkbox').forEach(cb => {
-        cb.addEventListener('change', () => {
-            toggleTrainingSelection(cb.dataset.version, cb.checked);
-        });
     });
 
     updateSelectAllTraining();
@@ -165,6 +166,11 @@ function updateSelectAllTraining() {
 
 function updateTrainingActions() {
     const actions = document.getElementById('training-actions');
+    const isLayer1 = getCurrentView() === 'layer1';
+    if (isLayer1) {
+        actions.style.display = 'none';
+        return;
+    }
     actions.style.display = selectedTrainingVersions.size > 0 ? 'block' : 'none';
 }
 

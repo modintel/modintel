@@ -109,6 +109,7 @@ async function updateLogs(append = false) {
             const rules = formatRules(alert.triggered_rules);
 
             const aiScoreVal = alert.ai_score;
+            const mlScoreVal = alert.ml_score;
             const aiScore = aiScoreVal !== null && aiScoreVal !== undefined
                 ? `<span class="ai-score">${(aiScoreVal * 100).toFixed(1)}%</span>`
                 : '-';
@@ -119,8 +120,14 @@ async function updateLogs(append = false) {
                 ? `${alert.ai_confidence.toFixed(0)}%`
                 : '-';
 
-            const scoreDisplay = isMiss && aiScoreVal !== null && aiScoreVal !== undefined
-                ? `<span class="ai-score">*${(aiScoreVal * 100).toFixed(1)}%</span>`
+            let scoreValue;
+            if (isMiss) {
+                scoreValue = (mlScoreVal !== null && mlScoreVal !== undefined) ? mlScoreVal : aiScoreVal;
+            } else {
+                scoreValue = alert.anomaly_score;
+            }
+            const scoreDisplay = isMiss && scoreValue !== null && scoreValue !== undefined
+                ? `<span class="ai-score">*${(scoreValue * 100).toFixed(1)}%</span>`
                 : `<span class="anomaly-badge">${alert.anomaly_score}</span>`;
 
             row.innerHTML = `
@@ -177,6 +184,18 @@ function startSSE() {
     sseClient = new SSEClient('/api/events/stream', {
         onAlert: function (alert) {
             if (isInitialLoad) return;
+            const tbody = document.getElementById('logs-body');
+            if (alert.alert_key) {
+                if (tbody.querySelector('tr[data-alert-key="' + alert.alert_key.replace(/"/g, '') + '"]')) return;
+            } else {
+                const ts = alert.timestamp || '';
+                const uri = alert.uri || '';
+                const existing = Array.from(tbody.querySelectorAll('tr')).find(row => {
+                    const cells = row.querySelectorAll('td');
+                    return cells.length > 2 && cells[0].textContent === new Date(ts).toLocaleTimeString() && cells[2].textContent === uri;
+                });
+                if (existing) return;
+            }
             prependAlertRow(alert);
         },
         onAlertUpdate: function (update) {
@@ -257,14 +276,21 @@ function prependAlertRow(alert) {
     const isMiss = source === 'ml_miss_detector';
     const rules = formatRules(alert.triggered_rules);
     const aiScoreVal = alert.ai_score;
+    const mlScoreVal = alert.ml_score;
     const aiScore = aiScoreVal !== null && aiScoreVal !== undefined
         ? '<span class="ai-score">' + (aiScoreVal * 100).toFixed(1) + '%</span>' : '-';
     const aiPriority = alert.ai_priority
         ? '<span class="priority-' + alert.ai_priority.toLowerCase() + '">' + alert.ai_priority + '</span>' : '-';
     const aiConf = alert.ai_confidence !== null && alert.ai_confidence !== undefined
         ? alert.ai_confidence.toFixed(0) + '%' : '-';
-    const scoreDisplay = isMiss && aiScoreVal !== null && aiScoreVal !== undefined
-        ? '<span class="ai-score">*' + (aiScoreVal * 100).toFixed(1) + '%</span>'
+    let scoreValue;
+    if (isMiss) {
+        scoreValue = (mlScoreVal !== null && mlScoreVal !== undefined) ? mlScoreVal : aiScoreVal;
+    } else {
+        scoreValue = alert.anomaly_score;
+    }
+    const scoreDisplay = isMiss && scoreValue !== null && scoreValue !== undefined
+        ? '<span class="ai-score">*' + (scoreValue * 100).toFixed(1) + '%</span>'
         : '<span class="anomaly-badge">' + alert.anomaly_score + '</span>';
 
     const row = document.createElement('tr');
@@ -289,12 +315,11 @@ function updateAlertRow(update) {
     var cells = row.querySelectorAll('td');
     if (cells.length < 8) return;
 
-    var scoreVal = update.ai_score;
     var confVal = update.ai_confidence;
     var prioVal = update.ai_priority;
 
-    cells[5].innerHTML = scoreVal !== null && scoreVal !== undefined
-        ? '<span class="ai-score">' + (scoreVal * 100).toFixed(1) + '%</span>' : '-';
+    cells[5].innerHTML = update.ai_score !== null && update.ai_score !== undefined
+        ? '<span class="ai-score">' + (update.ai_score * 100).toFixed(1) + '%</span>' : '-';
 
     cells[6].textContent = confVal !== null && confVal !== undefined
         ? confVal.toFixed(0) + '%' : '-';

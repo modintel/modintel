@@ -149,18 +149,18 @@
                         <svg id="request-rate-chart" viewBox="0 0 300 80" preserveAspectRatio="none">
                             <defs>
                                 <linearGradient id="request-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                                    <stop offset="0%" style="stop-color:#ff570a;stop-opacity:0.3" />
+                                    <stop offset="0%" style="stop-color:#ff570a;stop-opacity:0.28" />
                                     <stop offset="100%" style="stop-color:#ff570a;stop-opacity:0" />
                                 </linearGradient>
                                 <linearGradient id="inference-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                                    <stop offset="0%" style="stop-color:#2563eb;stop-opacity:0.28" />
+                                    <stop offset="0%" style="stop-color:#2563eb;stop-opacity:0.3" />
                                     <stop offset="100%" style="stop-color:#2563eb;stop-opacity:0" />
                                 </linearGradient>
                             </defs>
-                            <polyline id="inference-line" fill="none" stroke="#2563eb" stroke-width="1" points="" />
-                            <path id="inference-area" fill="url(#inference-gradient)" stroke="none" d="" />
                             <polyline id="request-line" fill="none" stroke="#ff570a" stroke-width="1" points="" />
                             <path id="request-area" fill="url(#request-gradient)" stroke="none" d="" />
+                            <polyline id="inference-line" fill="none" stroke="#2563eb" stroke-width="1" points="" />
+                            <path id="inference-area" fill="url(#inference-gradient)" stroke="none" d="" />
                         </svg>
                     </div>
                     <div id="request-labels" class="chart-labels"></div>
