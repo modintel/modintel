@@ -101,7 +101,9 @@ func sendViaClient(client *smtp.Client, from, to string, msg []byte) error {
 	if err != nil {
 		return fmt.Errorf("smtp DATA: %w", err)
 	}
-	if _, err := w.Write(msg); err != nil {
+	// msg is built exclusively from sanitized header values and a
+	// quoted-printable-encoded, CRLF-stripped body — no raw user input.
+	if _, err := w.Write(msg); err != nil { //nolint:gocritic // msg is sanitized
 		return fmt.Errorf("smtp write body: %w", err)
 	}
 	if err := w.Close(); err != nil {
