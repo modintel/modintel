@@ -3,6 +3,11 @@
 }
 
 :8080 {
+	log {
+		output file /var/log/caddy/waf-access.json
+		format json
+	}
+
 	header {
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
@@ -21,7 +26,7 @@
 		include /opt/coraza/overrides/*.conf
 	}
 
-	reverse_proxy juice-shop:3000 {
+	reverse_proxy waf-blocker:8086 {
 		trusted_proxies private_ranges
 	}
 }
