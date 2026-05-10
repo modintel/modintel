@@ -110,9 +110,10 @@ func sendViaClient(client *smtp.Client, from, to string, msg []byte) error {
 
 func buildMessage(from, to, subject, body string) []byte {
 	var sb strings.Builder
-	sb.WriteString("From: " + from + "\r\n")
-	sb.WriteString("To: " + to + "\r\n")
-	sb.WriteString("Subject: " + subject + "\r\n")
+	// Sanitize all header values to prevent SMTP header injection
+	sb.WriteString("From: " + sanitizeSMTPHeader(from) + "\r\n")
+	sb.WriteString("To: " + sanitizeSMTPHeader(to) + "\r\n")
+	sb.WriteString("Subject: " + sanitizeSMTPHeader(subject) + "\r\n")
 	sb.WriteString("MIME-Version: 1.0\r\n")
 	sb.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
 	sb.WriteString("Date: " + time.Now().UTC().Format(time.RFC1123Z) + "\r\n")
@@ -121,11 +122,28 @@ func buildMessage(from, to, subject, body string) []byte {
 	return []byte(sb.String())
 }
 
+// sanitizeSMTPHeader removes CR, LF, and null bytes from SMTP header values
+// to prevent header injection attacks.
+func sanitizeSMTPHeader(s string) string {
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\x00", "")
+	if len(s) > 998 { // RFC 5321 max line length
+		s = s[:998]
+	}
+	return s
+}
+
 // ── Public send functions ─────────────────────────────────────────────────────
 
 // SendInviteEmail sends an invitation email with the accept link.
 func SendInviteEmail(cfg Config, toEmail, invitedByName, role, acceptLink string) error {
 	subject := "You've been invited to ModIntel"
+	// Capitalise role safely without using deprecated strings.Title
+	roleDisplay := role
+	if len(role) > 0 {
+		roleDisplay = strings.ToUpper(role[:1]) + strings.ToLower(role[1:])
+	}
 	body := fmt.Sprintf(`Hi,
 
 %s has invited you to join ModIntel as %s.
@@ -139,7 +157,7 @@ This link expires in 24 hours.
 If you did not expect this invitation, you can safely ignore this email.
 
 — ModIntel Security Platform
-`, invitedByName, strings.Title(role), acceptLink)
+`, invitedByName, roleDisplay, acceptLink)
 
 	return send(cfg, toEmail, subject, body)
 }
