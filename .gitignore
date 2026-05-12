@@ -16,6 +16,8 @@ raw_log.json
 .DS_Store
 venv/
 .venv/
+.venv*/
+.venv*
 .pytest_cache/
 *.exe
 
@@ -37,3 +39,5 @@ concurrency.md
 rules.md
 agents.md
 invite.md
+
+.venv
