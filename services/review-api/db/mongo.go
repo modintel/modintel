@@ -58,3 +58,44 @@ func Connect() {
 func GetCollection(databaseName, collectionName string) *mongo.Collection {
 	return Client.Database(databaseName).Collection(collectionName)
 }
+
+func InitRuleIndexes() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	rulesColl := GetCollection("modintel", "waf_rules")
+
+	indexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "id", Value: 1},
+			},
+			Options: options.Index().
+				SetUnique(true).
+				SetName("idx_rule_id"),
+		},
+		{
+			Keys: bson.D{
+				{Key: "type", Value: 1},
+				{Key: "category", Value: 1},
+			},
+			Options: options.Index().
+				SetName("idx_type_category"),
+		},
+		{
+			Keys: bson.D{
+				{Key: "enabled", Value: 1},
+			},
+			Options: options.Index().
+				SetName("idx_enabled"),
+		},
+	}
+
+	_, err := rulesColl.Indexes().CreateMany(ctx, indexes)
+	if err != nil {
+		log.Printf("Failed creating waf_rules indexes: %v", err)
+		return
+	}
+
+	log.Println("Created indexes for waf_rules collection")
+}

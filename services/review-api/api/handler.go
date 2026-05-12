@@ -116,45 +116,8 @@ func (s *requestWindowStats) totals(window time.Duration, now time.Time) (uint64
 	return requests, errors
 }
 
-type WAFRule struct {
-	ID          string    `json:"id" bson:"id"`
-	Category    string    `json:"category" bson:"category"`
-	Description string    `json:"description" bson:"description"`
-	Enabled     bool      `json:"enabled" bson:"enabled"`
-	UpdatedAt   time.Time `json:"updated_at,omitempty" bson:"updated_at,omitempty"`
-}
-
 type toggleRuleRequest struct {
 	Enabled *bool `json:"enabled"`
-}
-
-var defaultWAFRules = []WAFRule{
-	{ID: "990001", Category: "LFI", Description: "Custom LFI Protection: etc/passwd access denied", Enabled: true},
-	{ID: "990002", Category: "LFI", Description: "Custom LFI Protection: etc/shadow access denied", Enabled: true},
-	{ID: "990003", Category: "LFI", Description: "Custom LFI Protection: Windows System32 access denied", Enabled: true},
-	{ID: "990004", Category: "CMDi", Description: "Custom CMDi Protection: Backtick operator detected", Enabled: true},
-	{ID: "990005", Category: "RCE", Description: "Custom Log4Shell Protection: JNDI in User-Agent", Enabled: true},
-	{ID: "990006", Category: "Protocol", Description: "Custom Protocol Protection: CRLF Injection detected", Enabled: true},
-	{ID: "990007", Category: "XXE", Description: "Custom XXE Protection: DTD/Entity detected in body", Enabled: true},
-	{ID: "990008", Category: "NoSQLi", Description: "Custom NoSQLi Protection: MongoDB operator detected", Enabled: true},
-	{ID: "990009", Category: "NoSQLi", Description: "Custom NoSQLi Protection: URI based NoSQLi detected", Enabled: true},
-	{ID: "990010", Category: "NoSQLi", Description: "Custom NoSQLi Protection: $where operator detected", Enabled: true},
-	{ID: "990011", Category: "SSTI", Description: "Custom SSTI Protection: Handlebars Template markers detected", Enabled: true},
-	{ID: "990012", Category: "SSTI", Description: "Custom SSTI Protection: EL/JEXL Template markers detected", Enabled: true},
-	{ID: "990020", Category: "SQLi", Description: "Custom SQLi Protection: SQL keyword detected", Enabled: true},
-	{ID: "990021", Category: "SQLi", Description: "Custom SQLi Protection: SQL keyword in URI detected", Enabled: true},
-	{ID: "990022", Category: "SQLi", Description: "Custom SQLi Protection: SQL phrase detected", Enabled: true},
-	{ID: "990023", Category: "SQLi", Description: "Custom SQLi Protection: OR/AND 1=1 detected", Enabled: true},
-	{ID: "990024", Category: "SQLi", Description: "Custom SQLi Protection: Time-based SQL injection detected", Enabled: true},
-	{ID: "990030", Category: "XSS", Description: "Custom XSS Protection: HTML tag detected", Enabled: true},
-	{ID: "990031", Category: "XSS", Description: "Custom XSS Protection: Event handler detected", Enabled: true},
-	{ID: "990032", Category: "XSS", Description: "Custom XSS Protection: javascript: URI detected", Enabled: true},
-	{ID: "990033", Category: "XSS", Description: "Custom XSS Protection: JS function detected", Enabled: true},
-	{ID: "990040", Category: "CMDi", Description: "Custom CMDi Protection: Pipe command detected", Enabled: true},
-	{ID: "990041", Category: "CMDi", Description: "Custom CMDi Protection: Command injection chars detected", Enabled: true},
-	{ID: "990042", Category: "CMDi", Description: "Custom CMDi Protection: Shell command in URI", Enabled: true},
-	{ID: "990050", Category: "SSRF", Description: "Custom SSRF Protection: URL scheme detected", Enabled: true},
-	{ID: "990051", Category: "SSRF", Description: "Custom SSRF Protection: Localhost/internal IP detected", Enabled: true},
 }
 
 func SetupRouter() *gin.Engine {
@@ -185,6 +148,19 @@ func SetupRouter() *gin.Engine {
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	r.GET("/api/events/stream", SSEAuth(jwtSecret), SSEStreamHandler)
 	r.GET("/api/whoami", AuthMiddleware(jwtSecret), GetWhoAmI)
+
+	// Proxy auth requests to auth-service
+	authProxy := r.Group("/api/v1/auth")
+	{
+		authProxy.POST("/login", ProxyToAuthService)
+		authProxy.POST("/refresh", ProxyToAuthService)
+		authProxy.POST("/logout", ProxyToAuthService)
+		authProxy.GET("/sessions", ProxyToAuthService)
+		authProxy.POST("/sessions/revoke", ProxyToAuthService)
+		authProxy.POST("/sessions/revoke-all", ProxyToAuthService)
+		authProxy.GET("/me", ProxyToAuthService)
+		authProxy.PATCH("/profile", ProxyToAuthService)
+	}
 
 	api := r.Group("/api")
 	api.Use(AuthMiddleware(jwtSecret))
@@ -450,54 +426,85 @@ func requestTracker() gin.HandlerFunc {
 }
 
 func GetRules(c *gin.Context) {
+	// Parse query parameters
+	ruleType := strings.TrimSpace(c.Query("type"))        // "crs" or "custom"
+	category := strings.TrimSpace(c.Query("category"))    // e.g., "SQLi", "XSS"
+	search := strings.TrimSpace(c.Query("search"))        // search in ID or description
+	paranoiaStr := c.Query("paranoia_level")              // filter by PL (CRS only)
+	
 	params, err := parseOffsetParams(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
 	ruleColl := db.GetCollection("modintel", "waf_rules")
 
-	rules := make([]WAFRule, 0, len(defaultWAFRules))
-	rules = append(rules, defaultWAFRules...)
+	// Build filter
+	filter := bson.M{"archived": bson.M{"$ne": true}} // Exclude archived rules
 
-	cursor, err := ruleColl.Find(ctx, bson.M{})
-	if err == nil {
-		defer cursor.Close(ctx)
-		for cursor.Next(ctx) {
-			var override WAFRule
-			if decodeErr := cursor.Decode(&override); decodeErr != nil {
-				continue
-			}
-			for i := range rules {
-				if rules[i].ID == override.ID {
-					rules[i].Enabled = override.Enabled
-					rules[i].UpdatedAt = override.UpdatedAt
-					break
-				}
-			}
+	if ruleType != "" {
+		if ruleType != "crs" && ruleType != "custom" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "type must be 'crs' or 'custom'"})
+			return
+		}
+		filter["type"] = ruleType
+	}
+
+	if category != "" {
+		filter["category"] = category
+	}
+
+	if search != "" {
+		// Search in ID or description (case-insensitive)
+		filter["$or"] = []bson.M{
+			{"id": bson.M{"$regex": search, "$options": "i"}},
+			{"description": bson.M{"$regex": search, "$options": "i"}},
 		}
 	}
 
-	totalCount := int64(len(rules))
+	if paranoiaStr != "" {
+		pl, err := strconv.Atoi(paranoiaStr)
+		if err == nil && pl >= 1 && pl <= 4 {
+			filter["paranoia_level"] = pl
+		}
+	}
+
+	// Get total count
+	totalCount, err := ruleColl.CountDocuments(ctx, filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count rules"})
+		return
+	}
+
+	// Calculate pagination
 	totalPages := int((totalCount + int64(params.Limit) - 1) / int64(params.Limit))
 	skip := (params.Page - 1) * params.Limit
 
-	start := skip
-	end := skip + params.Limit
-	if start > len(rules) {
-		start = len(rules)
+	// Query with pagination
+	opts := options.Find().
+		SetSort(bson.D{{Key: "type", Value: 1}, {Key: "id", Value: 1}}). // Sort: CRS first, then by ID
+		SetSkip(int64(skip)).
+		SetLimit(int64(params.Limit))
+
+	cursor, err := ruleColl.Find(ctx, filter, opts)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch rules"})
+		return
 	}
-	if end > len(rules) {
-		end = len(rules)
+	defer cursor.Close(ctx)
+
+	rules := make([]db.WAFRule, 0)
+	if err := cursor.All(ctx, &rules); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode rules"})
+		return
 	}
-	paginatedRules := rules[start:end]
 
 	response := OffsetResponse{
-		Data:       paginatedRules,
+		Data:       rules,
 		Page:       params.Page,
 		PageSize:   params.Limit,
 		TotalCount: totalCount,
@@ -521,19 +528,25 @@ func UpdateRuleStatus(c *gin.Context) {
 		return
 	}
 
-	known := false
-	for _, rule := range defaultWAFRules {
-		if rule.ID == ruleID {
-			known = true
-			break
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	// Check if rule exists in MongoDB
+	ruleColl := db.GetCollection("modintel", "waf_rules")
+	var existingRule db.WAFRule
+	err := ruleColl.FindOne(ctx, bson.M{"id": ruleID}).Decode(&existingRule)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "rule not found")
+			c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+			return
 		}
-	}
-	if !known {
-		LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "rule not found")
-		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "database error")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
 		return
 	}
 
+	// Parse request
 	var req toggleRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "invalid request payload")
@@ -546,15 +559,18 @@ func UpdateRuleStatus(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-	defer cancel()
+	// CRS rules: only allow toggle (no metadata edits in this endpoint)
+	// Custom rules: allow toggle (metadata edits would be in a separate endpoint)
+	if existingRule.Type == "crs" {
+		// CRS rules are read-only except for enabled toggle
+		log.Printf("Toggling CRS rule %s to enabled=%v", ruleID, *req.Enabled)
+	}
 
-	ruleColl := db.GetCollection("modintel", "waf_rules")
-	_, err := ruleColl.UpdateOne(
+	// Update rule status
+	_, err = ruleColl.UpdateOne(
 		ctx,
 		bson.M{"id": ruleID},
 		bson.M{"$set": bson.M{"enabled": *req.Enabled, "updated_at": time.Now().UTC()}},
-		options.Update().SetUpsert(true),
 	)
 	if err != nil {
 		LogAction(c, "rule_toggle", "rule", ruleID, map[string]interface{}{"enabled": *req.Enabled}, "failure", "failed updating rule status")
@@ -562,6 +578,7 @@ func UpdateRuleStatus(c *gin.Context) {
 		return
 	}
 
+	// Sync WAF overrides
 	if err := syncManagedWAFOverrides(ctx); err != nil {
 		log.Printf("failed syncing managed overrides: %v", err)
 		LogAction(c, "rule_toggle", "rule", ruleID, map[string]interface{}{"enabled": *req.Enabled}, "failure", "failed syncing waf overrides")
@@ -573,8 +590,8 @@ func UpdateRuleStatus(c *gin.Context) {
 	if *req.Enabled {
 		action = "rule_enable"
 	}
-	LogAction(c, action, "rule", ruleID, map[string]interface{}{"enabled": *req.Enabled}, "success", "")
-	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID, "enabled": *req.Enabled})
+	LogAction(c, action, "rule", ruleID, map[string]interface{}{"enabled": *req.Enabled, "type": existingRule.Type}, "success", "")
+	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID, "enabled": *req.Enabled, "type": existingRule.Type})
 }
 
 func getWAFOverridesFilePath() string {
@@ -2694,4 +2711,57 @@ func MergeDatasets(c *gin.Context) {
 		"samples":    totalSamples,
 		"attack_pct": mergedAttackPct,
 	})
+}
+
+
+// ProxyToAuthService forwards requests to the auth-service
+func ProxyToAuthService(c *gin.Context) {
+	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
+	if authServiceURL == "" {
+		authServiceURL = "http://auth-service:8084"
+	}
+
+	// Build target URL
+	targetURL := authServiceURL + c.Request.URL.Path
+	if c.Request.URL.RawQuery != "" {
+		targetURL += "?" + c.Request.URL.RawQuery
+	}
+
+	// Create proxy request
+	proxyReq, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, targetURL, c.Request.Body)
+	if err != nil {
+		log.Printf("failed creating proxy request: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to proxy request"})
+		return
+	}
+
+	// Copy headers
+	for key, values := range c.Request.Header {
+		for _, value := range values {
+			proxyReq.Header.Add(key, value)
+		}
+	}
+
+	// Forward request to auth-service
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		log.Printf("failed proxying to auth-service: %v", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "authentication service unavailable"})
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy response headers (including Set-Cookie)
+	for key, values := range resp.Header {
+		for _, value := range values {
+			c.Writer.Header().Add(key, value)
+		}
+	}
+
+	// Copy response status and body
+	c.Status(resp.StatusCode)
+	if _, err := io.Copy(c.Writer, resp.Body); err != nil {
+		log.Printf("failed copying response body: %v", err)
+	}
 }
