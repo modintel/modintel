@@ -75,11 +75,10 @@
                 <div class="header-left-group">
                     <div
                         style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
-                        Security Signatures</div>
+                        Security Signatures <span id="rule-count" style="font-weight: 400; color: var(--fg-muted);"></span></div>
                     <div class="rules-tabs">
-                        <button class="rules-tab active" data-type="crs">CRS</button>
-                        <button class="rules-tab" data-type="custom">Custom</button>
-                        <button class="rules-tab" data-type="regex">Regex</button>
+                        <button class="rules-tab" data-type="crs">CRS Rules</button>
+                        <button class="rules-tab active" data-type="custom">Custom Rules</button>
                     </div>
                 </div>
                 <div class="restart-notice-wrap">
@@ -87,14 +86,45 @@
                     <button class="btn btn-secondary restart-btn" id="restart-waf-btn" type="button">Restart WAF</button>
                 </div>
             </div>
+            <div class="rules-filters" style="padding: 1rem; border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center;">
+                <input type="text" id="rule-search" placeholder="Search by ID or description..." style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg);">
+                <select id="category-filter" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg);">
+                    <option value="">All Categories</option>
+                    <option value="SQLi">SQLi</option>
+                    <option value="XSS">XSS</option>
+                    <option value="LFI">LFI</option>
+                    <option value="RFI">RFI</option>
+                    <option value="RCE">RCE</option>
+                    <option value="CMDi">CMDi</option>
+                    <option value="CMDI">CMDI</option>
+                    <option value="NoSQLi">NoSQLi</option>
+                    <option value="NOSQLI">NOSQLI</option>
+                    <option value="SSTI">SSTI</option>
+                    <option value="SSRF">SSRF</option>
+                    <option value="XXE">XXE</option>
+                    <option value="Protocol">Protocol</option>
+                    <option value="PROTOCOL">PROTOCOL</option>
+                    <option value="Scanner">Scanner</option>
+                    <option value="SCANNER">SCANNER</option>
+                    <option value="Generic">Generic</option>
+                </select>
+                <select id="paranoia-filter" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg); display: none;">
+                    <option value="">All Paranoia Levels</option>
+                    <option value="1">PL1 - Basic</option>
+                    <option value="2">PL2 - Moderate</option>
+                    <option value="3">PL3 - High</option>
+                    <option value="4">PL4 - Extreme</option>
+                </select>
+            </div>
             <div class="log-scroll">
                 <table class="rules-table">
                     <thead>
                         <tr>
-                            <th style="width: 15%;">Rule ID</th>
-                            <th>Classification</th>
-                            <th style="width: 50%;">Description</th>
-                            <th style="width: 22%;">Status</th>
+                            <th style="width: 12%;">Rule ID</th>
+                            <th style="width: 10%;">Type</th>
+                            <th style="width: 15%;">Category</th>
+                            <th style="width: 45%;">Description</th>
+                            <th style="width: 18%;">Status</th>
                         </tr>
                     </thead>
                     <tbody id="rules-tbody">

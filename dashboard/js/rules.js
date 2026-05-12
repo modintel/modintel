@@ -1,212 +1,15 @@
 (function () {
     'use strict';
 
-    const ruleNotes = {
-        "913100": {
-            purpose: "Detects common scanner and automation fingerprints in requests.",
-            triggers: "Suspicious scanner user-agents, probing patterns, and known recon signatures.",
-            impact: "Can block pentest tools and noisy recon traffic quickly.",
-            analyst: "Verify source IP and request frequency before relaxing; disabling increases exposure to discovery scans."
-        },
-        "930100": {
-            purpose: "Protects against path traversal attempts targeting local files.",
-            triggers: "../, encoded traversal payloads, and unsafe file path fragments.",
-            impact: "Stops attempts to read system files or app secrets.",
-            analyst: "If false positives occur, inspect endpoint file handling logic before editing the rule."
-        },
-        "931100": {
-            purpose: "Detects remote file inclusion style payloads.",
-            triggers: "External file references in parameters where local-only values are expected.",
-            impact: "Prevents attackers from forcing remote script/resource loading.",
-            analyst: "Allow only trusted domains or strict URL formats at app layer instead of disabling broadly."
-        },
-        "932100": {
-            purpose: "Detects command execution payloads and shell syntax abuse.",
-            triggers: "Command separators, shell operators, and execution-like patterns.",
-            impact: "Reduces RCE risk through input-level blocking.",
-            analyst: "Review whether endpoint intentionally accepts shell-like syntax before tuning."
-        },
-        "932105": {
-            purpose: "Focused protection for Unix command injection variants.",
-            triggers: "Unix-specific command chaining and invocation tokens.",
-            impact: "Catches command abuse missed by generic filters.",
-            analyst: "Prefer targeted allow-list exceptions per route if needed."
-        },
-        "932115": {
-            purpose: "Catches common Unix command keywords used in exploit strings.",
-            triggers: "Payloads containing command names and suspicious shell composition.",
-            impact: "Improves early stop rate for command injection probes.",
-            analyst: "Check request context and whether user input legitimately contains command text."
-        },
-        "933100": {
-            purpose: "Detects PHP injection and executable PHP payload characteristics.",
-            triggers: "PHP function patterns, code fragments, and injection tokens.",
-            impact: "Protects PHP execution surfaces and templating paths.",
-            analyst: "If disabled, ensure backend sanitization and strict validation are enforced."
-        },
-        "933160": {
-            purpose: "Detects PHP file inclusion attempts and related patterns.",
-            triggers: "Inclusion keywords and path payloads aimed at dynamic include behavior.",
-            impact: "Blocks attempts to load attacker-controlled files.",
-            analyst: "Review include/require usage in app code before changing rule behavior."
-        },
-        "934110": {
-            purpose: "Generic language/runtime injection detection (Node/Ruby style vectors).",
-            triggers: "Template/expression payloads and runtime-specific exploit syntax.",
-            impact: "Broadly protects mixed-language stacks.",
-            analyst: "Tune carefully because broad signatures can hit legitimate advanced query inputs."
-        },
-        "934130": {
-            purpose: "Detects NoSQL and non-traditional injection payload patterns.",
-            triggers: "Operators and structures commonly used in NoSQL injection attempts.",
-            impact: "Helps protect Mongo-like query paths.",
-            analyst: "Validate server-side query construction safety before weakening this rule."
-        },
-        "941100": {
-            purpose: "Primary XSS detection using libinjection heuristics.",
-            triggers: "Script-like payload structure and known XSS token sequences.",
-            impact: "High-value XSS coverage with low overhead.",
-            analyst: "Usually keep enabled; add narrow exceptions if business input truly needs markup."
-        },
-        "941110": {
-            purpose: "XSS category filter for additional script injection patterns.",
-            triggers: "Encoded/obfuscated tags and script execution vectors.",
-            impact: "Catches variants not matched by a single detector.",
-            analyst: "Check encoding context in payload and output rendering path."
-        },
-        "941160": {
-            purpose: "Detects HTML injection via NoScript-style checker patterns.",
-            triggers: "Injected HTML elements and unsafe tag structures.",
-            impact: "Prevents content injection that can evolve into XSS.",
-            analyst: "Review endpoints that accept rich text and enforce sanitization profiles."
-        },
-        "941170": {
-            purpose: "Detects attribute-level XSS payloads.",
-            triggers: "Event handlers, javascript: URLs, and unsafe attribute injections.",
-            impact: "Stops common DOM/event-based XSS vectors.",
-            analyst: "Inspect whether UI input is reflected into HTML attributes without escaping."
-        },
-        "941210": {
-            purpose: "IE/XSS filter-related attack signature coverage.",
-            triggers: "Legacy browser-oriented XSS payload forms.",
-            impact: "Extra defensive depth for compatibility-heavy environments.",
-            analyst: "Safe to keep on unless strong evidence of benign legacy payload conflicts."
-        },
-        "942100": {
-            purpose: "Core SQL injection detection signature set.",
-            triggers: "SQL operators, union/select patterns, tautologies, and injection syntax.",
-            impact: "Primary SQLi barrier across request inputs.",
-            analyst: "Only relax with endpoint-level allow-lists and prepared statements verified in code."
-        },
-        "942151": {
-            purpose: "Detects GROUP BY based SQLi techniques.",
-            triggers: "GROUP BY payload manipulation and aggregation abuse patterns.",
-            impact: "Improves detection of advanced SQLi probing.",
-            analyst: "Review analytics/search endpoints that legitimately use SQL-like text in inputs."
-        },
-        "942160": {
-            purpose: "Detects time-based SQLi via sleep/delay functions.",
-            triggers: "SLEEP() and timing payload constructs.",
-            impact: "Stops blind SQLi enumeration tactics.",
-            analyst: "Investigate any hits immediately; these are often high-confidence attack probes."
-        },
-        "942190": {
-            purpose: "Detects BENCHMARK-based SQLi timing attacks.",
-            triggers: "BENCHMARK() function and related heavy-operation injection patterns.",
-            impact: "Protects against resource abuse and blind extraction attempts.",
-            analyst: "Treat repeated hits as hostile recon or exploitation attempts."
-        },
-        "942270": {
-            purpose: "Detects SQL tautology logic injection.",
-            triggers: "OR/AND truthy expression chains (e.g., 1=1 style payloads).",
-            impact: "Blocks common authentication bypass attempts.",
-            analyst: "Rarely safe to disable globally; prefer route-specific tuning only."
-        },
-        "942350": {
-            purpose: "Covers time-based blind SQLi patterns.",
-            triggers: "Conditional delay constructs and blind extraction patterns.",
-            impact: "Improves resilience to low-noise SQLi attacks.",
-            analyst: "Pair with DB query audit logs when investigating alerts."
-        },
-        "942360": {
-            purpose: "Detects stacked query SQL injection attempts.",
-            triggers: "Statement separators and multi-query payload structures.",
-            impact: "Prevents chained SQL command execution.",
-            analyst: "Check DB driver behavior; stacked queries are high risk in many engines."
-        },
-        "949110": {
-            purpose: "Inbound anomaly threshold enforcement and blocking decision.",
-            triggers: "Total anomaly score exceeds configured inbound threshold.",
-            impact: "Acts as final gate for high-risk requests.",
-            analyst: "Tuning this affects overall strictness; adjust with care and Monitor FP/FN rates."
-        },
-        "990001": {
-            purpose: "Protocol compliance sanity checks for malformed requests.",
-            triggers: "Header/protocol combinations that violate expected HTTP patterns.",
-            impact: "Blocks malformed traffic used in evasions.",
-            analyst: "Useful baseline rule; disable only for proven client compatibility issues."
-        },
-        "990002": {
-            purpose: "Host header validation and compliance checks.",
-            triggers: "Invalid, missing, or suspicious Host header values.",
-            impact: "Mitigates host-header based attacks and routing abuse.",
-            analyst: "Coordinate with proxy and virtual-host config before editing."
-        },
-        "990003": {
-            purpose: "Content-Length header consistency validation.",
-            triggers: "Mismatched or malformed length declarations.",
-            impact: "Helps prevent request smuggling and parser confusion.",
-            analyst: "Do not relax unless upstream clients are known and trusted."
-        },
-        "990004": {
-            purpose: "Transfer/content encoding compliance checks.",
-            triggers: "Unsupported or malformed encoding combinations.",
-            impact: "Reduces evasive payload delivery via encoding tricks.",
-            analyst: "Validate proxy/app decoder behavior when investigating hits."
-        },
-        "990006": {
-            purpose: "Protocol-level guardrail for abnormal POST/body characteristics.",
-            triggers: "Suspicious post size or malformed body metadata.",
-            impact: "Limits abuse through malformed large body traffic.",
-            analyst: "If false positives happen, align body limits across edge and backend."
-        },
-        "990008": {
-            purpose: "Range header and request range compliance checks.",
-            triggers: "Malformed/abusive range usage patterns.",
-            impact: "Mitigates range abuse and some DoS-style probes.",
-            analyst: "Check CDN/proxy behavior before adjusting to avoid cache inconsistencies."
-        },
-        "990009": {
-            purpose: "TE/transfer-encoding header validation.",
-            triggers: "Conflicting or malformed TE header combinations.",
-            impact: "Helps defend against request smuggling vectors.",
-            analyst: "Keep strict unless legacy intermediaries require exceptions."
-        },
-        "990011": {
-            purpose: "Detects empty or invalid host header conditions.",
-            triggers: "Missing/empty Host header in contexts where it is required.",
-            impact: "Blocks malformed and potentially evasive requests.",
-            analyst: "Investigate client stack before allowing exceptions."
-        },
-        "990012": {
-            purpose: "HTTP method case/compliance enforcement.",
-            triggers: "Method formatting/casing anomalies.",
-            impact: "Normalizes protocol handling and blocks parser edge-case probes.",
-            analyst: "Adjust only if you have clients producing nonstandard but safe methods."
-        },
-        "990030": {
-            purpose: "Custom XSS protection for direct HTML tag injection.",
-            triggers: "Raw HTML/script-like tags in input fields and query payloads.",
-            impact: "Adds immediate block coverage for obvious reflected/stored XSS attempts.",
-            analyst: "For rich-text features, use sanitization + scoped exceptions instead of global disable."
-        }
-    };
-
     const PENDING_RESTART_KEY = 'rules_pending_restart';
     let hasPendingRestart = localStorage.getItem(PENDING_RESTART_KEY) === '1';
     let currentPage = 1;
     let totalPages = 1;
     const pageSize = 50;
+    let currentType = 'custom'; // Start with custom rules
+    let currentCategory = '';
+    let currentSearch = '';
+    let currentParanoiaLevel = ''; // For CRS rules filtering
 
     function applyRuleDeepLink() {
         const params = new URLSearchParams(window.location.search);
@@ -224,26 +27,36 @@
         setTimeout(() => row.classList.remove('highlight-row'), 4000);
     }
 
-    function createDetailsRow(ruleId) {
-        const note = ruleNotes[ruleId] || {
-            purpose: 'No analyst note defined for this rule yet.',
-            triggers: 'Review Coraza/CRS rule docs and local logs.',
-            impact: 'Depends on endpoint usage and traffic profile.',
-            analyst: 'Validate false-positive risk before changing status.'
-        };
+    function createDetailsRow(rule) {
         const detailsRow = document.createElement('tr');
         detailsRow.className = 'rule-details-row';
-        detailsRow.id = `rule-${ruleId}-details`;
-        detailsRow.innerHTML = `
-            <td colspan="4" class="rule-details-cell">
-                <div class="rule-details">
-                    <div class="rule-detail-item"><b>What This Rule Does</b><span>${note.purpose}</span></div>
-                    <div class="rule-detail-item"><b>How It Is Triggered</b><span>${note.triggers}</span></div>
-                    <div class="rule-detail-item"><b>Security Impact</b><span>${note.impact}</span></div>
-                    <div class="rule-detail-item"><b>Analyst Guidance Before Editing</b><span>${note.analyst}</span></div>
-                </div>
-            </td>
-        `;
+        detailsRow.id = `rule-${rule.id}-details`;
+        
+        let detailsHTML = '<td colspan="5" class="rule-details-cell"><div class="rule-details">';
+        
+        // Show different details based on rule type
+        if (rule.type === 'crs') {
+            detailsHTML += `
+                <div class="rule-detail-item"><b>Type</b><span>OWASP CRS Rule</span></div>
+                <div class="rule-detail-item"><b>Severity</b><span>${rule.severity || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Phase</b><span>${rule.phase || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Paranoia Level</b><span>${rule.paranoia_level || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Source</b><span>${rule.source || 'owasp-crs'}</span></div>
+                <div class="rule-detail-item"><b>Note</b><span class="text-muted">CRS rules are read-only. Only enable/disable is allowed.</span></div>
+            `;
+        } else {
+            detailsHTML += `
+                <div class="rule-detail-item"><b>Type</b><span>Custom Rule</span></div>
+                <div class="rule-detail-item"><b>Severity</b><span>${rule.severity || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Phase</b><span>${rule.phase || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Source</b><span>${rule.source || 'modintel-custom'}</span></div>
+                <div class="rule-detail-item"><b>Created</b><span>${rule.created_at ? new Date(rule.created_at).toLocaleString() : 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Updated</b><span>${rule.updated_at ? new Date(rule.updated_at).toLocaleString() : 'N/A'}</span></div>
+            `;
+        }
+        
+        detailsHTML += '</div></td>';
+        detailsRow.innerHTML = detailsHTML;
         return detailsRow;
     }
 
@@ -275,19 +88,19 @@
         btn.classList.toggle('pending-restart', hasPendingRestart);
     }
 
-    function attachRuleRowBehavior(row) {
+    function attachRuleRowBehavior(row, rule) {
         row.classList.add('rule-row');
         const firstCell = row.querySelector('td');
         if (firstCell && !firstCell.querySelector('.rule-id-wrap')) {
             const current = firstCell.innerHTML;
             firstCell.innerHTML = `<span class="rule-id-wrap"><span class="rule-toggle">&#8250;</span>${current}</span>`;
         }
-        row.addEventListener('click', () => toggleRuleDetails(row));
+        row.addEventListener('click', () => toggleRuleDetails(row, rule));
         const actionBtn = row.querySelector('.rule-toggle-btn');
         if (actionBtn) {
             actionBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
-                toggleRuleStatus(row.id.replace('rule-', ''), row);
+                toggleRuleStatus(rule.id, row);
             });
         }
     }
@@ -295,10 +108,19 @@
     function buildRuleRow(rule) {
         const row = document.createElement('tr');
         row.id = `rule-${rule.id}`;
+        
+        // Add type indicator class
+        if (rule.type === 'crs') {
+            row.classList.add('crs-rule');
+        }
 
         const idCell = document.createElement('td');
         idCell.className = 'rule-id';
         idCell.textContent = String(rule.id || '');
+
+        const typeCell = document.createElement('td');
+        typeCell.textContent = rule.type === 'crs' ? 'CRS' : 'Custom';
+        typeCell.className = 'rule-type';
 
         const categoryCell = document.createElement('td');
         categoryCell.textContent = String(rule.category || 'Uncategorized');
@@ -324,6 +146,7 @@
         statusCell.appendChild(statusWrap);
 
         row.appendChild(idCell);
+        row.appendChild(typeCell);
         row.appendChild(categoryCell);
         row.appendChild(descCell);
         row.appendChild(statusCell);
@@ -336,10 +159,25 @@
         if (!tbody) {
             return;
         }
-        tbody.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5">Loading...</td></tr>';
 
         try {
-            const response = await apiFetch(`/api/rules?page=${page}&limit=${pageSize}`);
+            // Build query string
+            let queryParams = `page=${page}&limit=${pageSize}`;
+            if (currentType) {
+                queryParams += `&type=${currentType}`;
+            }
+            if (currentCategory) {
+                queryParams += `&category=${encodeURIComponent(currentCategory)}`;
+            }
+            if (currentSearch) {
+                queryParams += `&search=${encodeURIComponent(currentSearch)}`;
+            }
+            if (currentParanoiaLevel && currentType === 'crs') {
+                queryParams += `&paranoia_level=${currentParanoiaLevel}`;
+            }
+
+            const response = await apiFetch(`/api/rules?${queryParams}`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
@@ -362,23 +200,31 @@
             
             if (rules.length === 0) {
                 const row = document.createElement('tr');
-                row.innerHTML = '<td colspan="4">No rules returned by API.</td>';
+                row.innerHTML = '<td colspan="5">No rules found.</td>';
                 tbody.appendChild(row);
             } else {
                 rules.forEach((rule) => {
                     const row = buildRuleRow(rule);
                     tbody.appendChild(row);
-                    attachRuleRowBehavior(row);
+                    attachRuleRowBehavior(row, rule);
                 });
             }
             
             renderPaginationControls();
+            updateRuleCount(payload.total_count || rules.length);
         } catch (error) {
             console.error('Failed to load rules from API:', error);
-            tbody.innerHTML = '<td colspan="4">Failed to load rules from API.</td>';
+            tbody.innerHTML = '<td colspan="5">Failed to load rules from API.</td>';
         }
 
         applyRuleDeepLink();
+    }
+
+    function updateRuleCount(count) {
+        const countEl = document.getElementById('rule-count');
+        if (countEl) {
+            countEl.textContent = `${count} rule${count !== 1 ? 's' : ''}`;
+        }
     }
 
     function renderPaginationControls() {
@@ -415,12 +261,12 @@
         container.appendChild(nextBtn);
     }
 
-    function toggleRuleDetails(row) {
+    function toggleRuleDetails(row, rule) {
         const ruleId = row.id.replace('rule-', '');
         const detailsId = `rule-${ruleId}-details`;
         let detailsRow = document.getElementById(detailsId);
         if (!detailsRow) {
-            detailsRow = createDetailsRow(ruleId);
+            detailsRow = createDetailsRow(rule);
             row.insertAdjacentElement('afterend', detailsRow);
         }
         const isOpen = detailsRow.classList.contains('open');
@@ -479,19 +325,99 @@
             if (!response.ok) {
                 if (response.status === 403) {
                     showModal('Permission Denied', 'You need admin privileges to toggle rules.', 'error');
+                } else if (response.status === 404) {
+                    showModal('Rule Not Found', 'This rule does not exist in the database.', 'error');
                 }
                 return;
             }
             setRuleRowUI(row, nextEnabled);
             hasPendingRestart = true;
             updateRestartButtonState();
-        } catch (_) {
+        } catch (err) {
+            console.error('Toggle error:', err);
+            showModal('Error', 'Failed to toggle rule status.', 'error');
         }
     };
 
     window.saveRule = function () {
         showModal('Not implemented', 'Custom rule creation UI is not wired yet. Use API-backed managed overrides for now.');
     };
+
+    // Tab switching
+    function setupTabs() {
+        const tabs = document.querySelectorAll('.rules-tab');
+        const paranoiaFilter = document.getElementById('paranoia-filter');
+        
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Update active tab
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Update current type and reload
+                const type = tab.getAttribute('data-type');
+                if (type === 'regex') {
+                    // Regex tab not implemented yet
+                    showModal('Not Implemented', 'Regex rules section coming soon.');
+                    return;
+                }
+                currentType = type;
+                currentPage = 1;
+                
+                // Show/hide paranoia filter based on tab
+                if (paranoiaFilter) {
+                    if (type === 'crs') {
+                        paranoiaFilter.style.display = 'block';
+                    } else {
+                        paranoiaFilter.style.display = 'none';
+                        currentParanoiaLevel = ''; // Reset when switching away from CRS
+                    }
+                }
+                
+                loadRules(1);
+            });
+        });
+    }
+
+    // Search functionality
+    function setupSearch() {
+        const searchInput = document.getElementById('rule-search');
+        if (searchInput) {
+            let searchTimeout;
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    currentSearch = e.target.value.trim();
+                    currentPage = 1;
+                    loadRules(1);
+                }, 300);
+            });
+        }
+    }
+
+    // Category filter
+    function setupCategoryFilter() {
+        const categorySelect = document.getElementById('category-filter');
+        if (categorySelect) {
+            categorySelect.addEventListener('change', (e) => {
+                currentCategory = e.target.value;
+                currentPage = 1;
+                loadRules(1);
+            });
+        }
+    }
+
+    // Paranoia level filter (CRS only)
+    function setupParanoiaFilter() {
+        const paranoiaSelect = document.getElementById('paranoia-filter');
+        if (paranoiaSelect) {
+            paranoiaSelect.addEventListener('change', (e) => {
+                currentParanoiaLevel = e.target.value;
+                currentPage = 1;
+                loadRules(1);
+            });
+        }
+    }
 
     const saveRuleBtn = document.getElementById('save-rule-btn');
     if (saveRuleBtn) {
@@ -508,6 +434,10 @@
         restartWafBtn.addEventListener('click', window.restartWAF);
     }
 
+    setupTabs();
+    setupSearch();
+    setupCategoryFilter();
+    setupParanoiaFilter();
     loadRules();
     updateRestartButtonState();
 })();

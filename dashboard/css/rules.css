@@ -274,3 +274,53 @@ td {
     background: var(--accent);
     color: white;
 }
+
+/* CRS rule indicator */
+.crs-rule {
+    background: rgba(255, 87, 10, 0.02);
+}
+
+.crs-rule:hover {
+    background: rgba(255, 87, 10, 0.05);
+}
+
+.rule-type {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--fg-subtle);
+}
+
+/* Filters section */
+.rules-filters {
+    background: var(--bg-panel);
+}
+
+.rules-filters input,
+.rules-filters select {
+    font-size: 0.8rem;
+}
+
+.rules-filters input:focus,
+.rules-filters select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* Text muted for notes */
+.text-muted {
+    color: var(--fg-muted) !important;
+    font-style: italic;
+}
+
+/* Pagination improvements */
+#pagination-controls button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#pagination-controls button:not(:disabled):hover {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
