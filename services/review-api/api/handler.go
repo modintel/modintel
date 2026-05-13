@@ -116,8 +116,12 @@ func (s *requestWindowStats) totals(window time.Duration, now time.Time) (uint64
 	return requests, errors
 }
 
-type toggleRuleRequest struct {
-	Enabled *bool `json:"enabled"`
+type updateRuleRequest struct {
+	Enabled     *bool  `json:"enabled"`
+	Category    string `json:"category"`
+	Description string `json:"description"`
+	Severity    string `json:"severity"`
+	Phase       int    `json:"phase"`
 }
 
 func SetupRouter() *gin.Engine {
@@ -149,7 +153,7 @@ func SetupRouter() *gin.Engine {
 	r.GET("/api/events/stream", SSEAuth(jwtSecret), SSEStreamHandler)
 	r.GET("/api/whoami", AuthMiddleware(jwtSecret), GetWhoAmI)
 
-	// Proxy auth requests to auth-service
+	
 	authProxy := r.Group("/api/v1/auth")
 	{
 		authProxy.POST("/login", ProxyToAuthService)
@@ -168,6 +172,9 @@ func SetupRouter() *gin.Engine {
 	{
 		api.GET("/rules", RequireRoles("admin", "analyst", "viewer"), GetRules)
 		api.PUT("/rules/:id", RequireRoles("admin"), UpdateRuleStatus)
+		api.POST("/rules", RequireRoles("admin"), CreateRule)
+		api.DELETE("/rules/:id", RequireRoles("admin"), DeleteRule)
+		api.GET("/rules/regex", RequireRoles("admin", "analyst", "viewer"), GetRegexRules)
 		api.GET("/alerts", RequireRoles("admin", "analyst", "viewer"), GetAlerts)
 		api.GET("/alerts/review", RequireRoles("admin", "analyst"), GetReviewAlerts)
 		api.GET("/admin/audit-logs", RequireRoles("admin"), func(c *gin.Context) {
@@ -426,11 +433,11 @@ func requestTracker() gin.HandlerFunc {
 }
 
 func GetRules(c *gin.Context) {
-	// Parse query parameters
-	ruleType := strings.TrimSpace(c.Query("type"))        // "crs" or "custom"
-	category := strings.TrimSpace(c.Query("category"))    // e.g., "SQLi", "XSS"
-	search := strings.TrimSpace(c.Query("search"))        // search in ID or description
-	paranoiaStr := c.Query("paranoia_level")              // filter by PL (CRS only)
+	
+	ruleType := strings.TrimSpace(c.Query("type"))        
+	category := strings.TrimSpace(c.Query("category"))    
+	search := strings.TrimSpace(c.Query("search"))        
+	paranoiaStr := c.Query("paranoia_level")              
 	
 	params, err := parseOffsetParams(c)
 	if err != nil {
@@ -443,8 +450,8 @@ func GetRules(c *gin.Context) {
 
 	ruleColl := db.GetCollection("modintel", "waf_rules")
 
-	// Build filter
-	filter := bson.M{"archived": bson.M{"$ne": true}} // Exclude archived rules
+	
+	filter := bson.M{"archived": bson.M{"$ne": true}} 
 
 	if ruleType != "" {
 		if ruleType != "crs" && ruleType != "custom" {
@@ -455,14 +462,18 @@ func GetRules(c *gin.Context) {
 	}
 
 	if category != "" {
+		if strings.HasPrefix(category, "$") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid category"})
+			return
+		}
 		filter["category"] = category
 	}
 
 	if search != "" {
-		// Search in ID or description (case-insensitive)
+		escaped := regexp.QuoteMeta(search)
 		filter["$or"] = []bson.M{
-			{"id": bson.M{"$regex": search, "$options": "i"}},
-			{"description": bson.M{"$regex": search, "$options": "i"}},
+			{"id": bson.M{"$regex": escaped, "$options": "i"}},
+			{"description": bson.M{"$regex": escaped, "$options": "i"}},
 		}
 	}
 
@@ -473,20 +484,20 @@ func GetRules(c *gin.Context) {
 		}
 	}
 
-	// Get total count
+	
 	totalCount, err := ruleColl.CountDocuments(ctx, filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count rules"})
 		return
 	}
 
-	// Calculate pagination
+	
 	totalPages := int((totalCount + int64(params.Limit) - 1) / int64(params.Limit))
 	skip := (params.Page - 1) * params.Limit
 
-	// Query with pagination
+	
 	opts := options.Find().
-		SetSort(bson.D{{Key: "type", Value: 1}, {Key: "id", Value: 1}}). // Sort: CRS first, then by ID
+		SetSort(bson.D{{Key: "type", Value: 1}, {Key: "id", Value: 1}}). 
 		SetSkip(int64(skip)).
 		SetLimit(int64(params.Limit))
 
@@ -514,16 +525,69 @@ func GetRules(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+func GetRegexRules(c *gin.Context) {
+	signaturesPath := os.Getenv("MODINTEL_SIGNATURES_FILE")
+	if signaturesPath == "" {
+		signaturesPath = "/app/signatures/modintel_regex.signatures"
+	}
+
+	data, err := os.ReadFile(signaturesPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read signatures file"})
+		return
+	}
+
+	var signatures []map[string]interface{}
+	if err := json.Unmarshal(data, &signatures); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse signatures"})
+		return
+	}
+
+	type RegexCategory struct {
+		Name     string `json:"name"`
+		Category string `json:"category"`
+		Severity string `json:"severity"`
+		Patterns int    `json:"patterns"`
+	}
+
+	categories := make(map[string]RegexCategory)
+	for _, sig := range signatures {
+		cat := sig["category"].(string)
+		patternCount := 0
+		if p, ok := sig["patterns"].([]interface{}); ok {
+			patternCount = len(p)
+		}
+		if existing, ok := categories[cat]; ok {
+			existing.Patterns += patternCount
+			categories[cat] = existing
+		} else {
+			categories[cat] = RegexCategory{
+				Name:     sig["name"].(string),
+				Category: cat,
+				Severity: sig["severity"].(string),
+				Patterns: patternCount,
+			}
+		}
+	}
+
+	result := make([]RegexCategory, 0, len(categories))
+	for _, v := range categories {
+		result = append(result, v)
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 func UpdateRuleStatus(c *gin.Context) {
 	ruleID := strings.TrimSpace(c.Param("id"))
 	if ruleID == "" {
-		LogAction(c, "rule_toggle", "rule", "", nil, "failure", "rule id is required")
+		LogAction(c, "rule_update", "rule", "", nil, "failure", "rule id is required")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "rule id is required"})
 		return
 	}
 
 	if !ruleIDPattern.MatchString(ruleID) {
-		LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "invalid rule id format")
+		LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "invalid rule id format")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid rule id format"})
 		return
 	}
@@ -531,67 +595,220 @@ func UpdateRuleStatus(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	// Check if rule exists in MongoDB
 	ruleColl := db.GetCollection("modintel", "waf_rules")
 	var existingRule db.WAFRule
 	err := ruleColl.FindOne(ctx, bson.M{"id": ruleID}).Decode(&existingRule)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "rule not found")
+			LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "rule not found")
 			c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
 			return
 		}
-		LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "database error")
+		LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "database error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
 		return
 	}
 
-	// Parse request
-	var req toggleRuleRequest
+	var req updateRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "invalid request payload")
+		LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "invalid request payload")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
 		return
 	}
-	if req.Enabled == nil {
-		LogAction(c, "rule_toggle", "rule", ruleID, nil, "failure", "enabled is required")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled is required"})
+
+	hasToggle := req.Enabled != nil
+	hasMetadata := req.Category != "" || req.Description != "" || req.Severity != "" || req.Phase != 0
+
+	if !hasToggle && !hasMetadata {
+		LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "no fields to update")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no fields to update"})
 		return
 	}
 
-	// CRS rules: only allow toggle (no metadata edits in this endpoint)
-	// Custom rules: allow toggle (metadata edits would be in a separate endpoint)
-	if existingRule.Type == "crs" {
-		// CRS rules are read-only except for enabled toggle
-		log.Printf("Toggling CRS rule %s to enabled=%v", ruleID, *req.Enabled)
+	setFields := bson.M{"updated_at": time.Now().UTC()}
+
+	if hasToggle {
+		setFields["enabled"] = *req.Enabled
 	}
 
-	// Update rule status
+	if hasMetadata {
+		if existingRule.Type != "custom" {
+			LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "cannot edit CRS rule metadata")
+			c.JSON(http.StatusForbidden, gin.H{"error": "cannot edit CRS rule metadata"})
+			return
+		}
+		if req.Category != "" {
+			if strings.HasPrefix(req.Category, "$") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid category"})
+				return
+			}
+			setFields["category"] = req.Category
+		}
+		if req.Description != "" {
+			setFields["description"] = req.Description
+		}
+		if req.Severity != "" {
+			validSeverities := map[string]bool{"CRITICAL": true, "HIGH": true, "MEDIUM": true, "LOW": true}
+			if !validSeverities[strings.ToUpper(req.Severity)] {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "severity must be CRITICAL, HIGH, MEDIUM, or LOW"})
+				return
+			}
+			setFields["severity"] = strings.ToUpper(req.Severity)
+		}
+		if req.Phase != 0 {
+			if req.Phase < 1 || req.Phase > 4 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "phase must be 1-4"})
+				return
+			}
+			setFields["phase"] = req.Phase
+		}
+	}
+
 	_, err = ruleColl.UpdateOne(
 		ctx,
 		bson.M{"id": ruleID},
-		bson.M{"$set": bson.M{"enabled": *req.Enabled, "updated_at": time.Now().UTC()}},
+		bson.M{"$set": setFields},
 	)
 	if err != nil {
-		LogAction(c, "rule_toggle", "rule", ruleID, map[string]interface{}{"enabled": *req.Enabled}, "failure", "failed updating rule status")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed updating rule status"})
+		LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "failed updating rule")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed updating rule"})
 		return
 	}
 
-	// Sync WAF overrides
-	if err := syncManagedWAFOverrides(ctx); err != nil {
-		log.Printf("failed syncing managed overrides: %v", err)
-		LogAction(c, "rule_toggle", "rule", ruleID, map[string]interface{}{"enabled": *req.Enabled}, "failure", "failed syncing waf overrides")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed syncing waf overrides"})
+	if hasToggle {
+		if err := syncManagedWAFOverrides(ctx); err != nil {
+			log.Printf("failed syncing managed overrides: %v", err)
+			LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "failed syncing waf overrides")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed syncing waf overrides"})
+			return
+		}
+	}
+
+	LogAction(c, "rule_update", "rule", ruleID, map[string]interface{}{"enabled": req.Enabled, "type": existingRule.Type}, "success", "")
+	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID, "type": existingRule.Type})
+}
+
+func DeleteRule(c *gin.Context) {
+	ruleID := strings.TrimSpace(c.Param("id"))
+	if ruleID == "" {
+		LogAction(c, "rule_delete", "rule", "", nil, "failure", "rule id is required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rule id is required"})
 		return
 	}
 
-	action := "rule_disable"
-	if *req.Enabled {
-		action = "rule_enable"
+	if !ruleIDPattern.MatchString(ruleID) {
+		LogAction(c, "rule_delete", "rule", ruleID, nil, "failure", "invalid rule id format")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid rule id format"})
+		return
 	}
-	LogAction(c, action, "rule", ruleID, map[string]interface{}{"enabled": *req.Enabled, "type": existingRule.Type}, "success", "")
-	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID, "enabled": *req.Enabled, "type": existingRule.Type})
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	ruleColl := db.GetCollection("modintel", "waf_rules")
+	var existingRule db.WAFRule
+	err := ruleColl.FindOne(ctx, bson.M{"id": ruleID}).Decode(&existingRule)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			LogAction(c, "rule_delete", "rule", ruleID, nil, "failure", "rule not found")
+			c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+			return
+		}
+		LogAction(c, "rule_delete", "rule", ruleID, nil, "failure", "database error")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+
+	if existingRule.Type != "custom" {
+		LogAction(c, "rule_delete", "rule", ruleID, nil, "failure", "cannot delete CRS rules")
+		c.JSON(http.StatusForbidden, gin.H{"error": "cannot delete CRS rules"})
+		return
+	}
+
+	_, err = ruleColl.DeleteOne(ctx, bson.M{"id": ruleID})
+	if err != nil {
+		LogAction(c, "rule_delete", "rule", ruleID, nil, "failure", "failed deleting rule")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed deleting rule"})
+		return
+	}
+
+	LogAction(c, "rule_delete", "rule", ruleID, nil, "success", "")
+	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID})
+}
+
+type createRuleRequest struct {
+	ID          string `json:"id" bson:"id"`
+	Type        string `json:"type" bson:"type"`
+	Category    string `json:"category" bson:"category"`
+	Description string `json:"description" bson:"description"`
+	Severity    string `json:"severity" bson:"severity"`
+	Phase       int    `json:"phase" bson:"phase"`
+	Source      string `json:"source" bson:"source"`
+	Syntax      string `json:"syntax" bson:"-"`
+}
+
+func CreateRule(c *gin.Context) {
+	var req createRuleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
+		return
+	}
+
+	if req.ID == "" || req.Category == "" || req.Description == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id, category, and description are required"})
+		return
+	}
+
+	if !ruleIDPattern.MatchString(req.ID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id must be numeric"})
+		return
+	}
+
+	if strings.HasPrefix(req.Category, "$") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid category"})
+		return
+	}
+
+	validSeverities := map[string]bool{"CRITICAL": true, "HIGH": true, "MEDIUM": true, "LOW": true}
+	if req.Severity != "" && !validSeverities[strings.ToUpper(req.Severity)] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "severity must be CRITICAL, HIGH, MEDIUM, or LOW"})
+		return
+	}
+
+	if req.Phase < 1 || req.Phase > 4 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "phase must be 1-4"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	ruleColl := db.GetCollection("modintel", "waf_rules")
+	now := time.Now().UTC()
+
+	rule := db.WAFRule{
+		ID:          req.ID,
+		Type:        "custom",
+		Category:    req.Category,
+		Description: req.Description,
+		Severity:    strings.ToUpper(req.Severity),
+		Phase:       req.Phase,
+		Source:      "modintel-custom",
+		Enabled:     true,
+		Archived:    false,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	_, err := ruleColl.InsertOne(ctx, rule)
+	if err != nil {
+		log.Printf("Failed to create rule: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create rule"})
+		return
+	}
+
+	LogAction(c, "rule_create", "rule", req.ID, map[string]interface{}{"category": req.Category}, "success", "")
+	c.JSON(http.StatusCreated, gin.H{"success": true, "id": req.ID})
 }
 
 func getWAFOverridesFilePath() string {
@@ -2714,20 +2931,20 @@ func MergeDatasets(c *gin.Context) {
 }
 
 
-// ProxyToAuthService forwards requests to the auth-service
+
 func ProxyToAuthService(c *gin.Context) {
 	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
 	if authServiceURL == "" {
 		authServiceURL = "http://auth-service:8084"
 	}
 
-	// Build target URL
+	
 	targetURL := authServiceURL + c.Request.URL.Path
 	if c.Request.URL.RawQuery != "" {
 		targetURL += "?" + c.Request.URL.RawQuery
 	}
 
-	// Create proxy request
+	
 	proxyReq, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, targetURL, c.Request.Body)
 	if err != nil {
 		log.Printf("failed creating proxy request: %v", err)
@@ -2735,14 +2952,14 @@ func ProxyToAuthService(c *gin.Context) {
 		return
 	}
 
-	// Copy headers
+	
 	for key, values := range c.Request.Header {
 		for _, value := range values {
 			proxyReq.Header.Add(key, value)
 		}
 	}
 
-	// Forward request to auth-service
+	
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(proxyReq)
 	if err != nil {
@@ -2752,14 +2969,14 @@ func ProxyToAuthService(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	// Copy response headers (including Set-Cookie)
+	
 	for key, values := range resp.Header {
 		for _, value := range values {
 			c.Writer.Header().Add(key, value)
 		}
 	}
 
-	// Copy response status and body
+	
 	c.Status(resp.StatusCode)
 	if _, err := io.Copy(c.Writer, resp.Body); err != nil {
 		log.Printf("failed copying response body: %v", err)
