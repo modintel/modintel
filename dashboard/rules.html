@@ -37,7 +37,11 @@
             <h1>Rule Intelligence</h1>
             <p>Active security signatures currently enforced by the ModIntel engine.</p>
 
-            <div class="rule-editor">
+            <div class="rule-mode-toggle">
+                <button class="rule-mode-btn active" data-mode="write">Write</button>
+                <button class="rule-mode-btn" data-mode="edit">Edit</button>
+            </div>
+            <div class="rule-editor" id="write-rule-section">
                 <h3>Write Custom Rule</h3>
                 <div class="form-group">
                     <label>Rule ID</label>
@@ -69,16 +73,61 @@
                     <button class="btn btn-secondary" id="clear-rule-btn" type="button">Clear</button>
                 </div>
             </div>
+            <div class="rule-editor" id="edit-rule-section" style="display:none;">
+                <h3>Edit Custom Rule <span id="edit-rule-id-display" style="color:#ff570a;font-weight:600;"></span></h3>
+                <div class="form-group">
+                    <label>Category</label>
+                    <select id="edit-rule-category">
+                        <option value="SQLi">SQL Injection</option>
+                        <option value="XSS">XSS Attack</option>
+                        <option value="RCE">RCE Attack</option>
+                        <option value="LFI">Path Traversal</option>
+                        <option value="RFI">RFI Attack</option>
+                        <option value="Protocol">Protocol</option>
+                        <option value="Custom">Custom</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" id="edit-rule-desc" placeholder="Brief description of the rule">
+                </div>
+                <div class="form-group">
+                    <label>Severity</label>
+                    <select id="edit-rule-severity">
+                        <option value="CRITICAL">CRITICAL</option>
+                        <option value="HIGH">HIGH</option>
+                        <option value="MEDIUM">MEDIUM</option>
+                        <option value="LOW">LOW</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Phase</label>
+                    <select id="edit-rule-phase">
+                        <option value="1">Phase 1 - Request Headers</option>
+                        <option value="2">Phase 2 - Request Body</option>
+                        <option value="3">Phase 3 - Response Headers</option>
+                        <option value="4">Phase 4 - Response Body</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-primary" id="save-edit-btn" type="button">Save Changes</button>
+                    <button class="btn btn-secondary" id="cancel-edit-btn" type="button">Cancel</button>
+                </div>
+            </div>
         </div>
         <div class="panel-right" style="overflow: hidden;">
             <div class="panel-right-header">
                 <div class="header-left-group">
                     <div
                         style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
-                        Security Signatures <span id="rule-count" style="font-weight: 400; color: var(--fg-muted);"></span></div>
-                    <div class="rules-tabs">
-                        <button class="rules-tab" data-type="crs">CRS Rules</button>
-                        <button class="rules-tab active" data-type="custom">Custom Rules</button>
+                        Security Signatures</div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <div class="rules-tabs">
+<button class="rules-tab active" data-type="crs">CRS Rules</button>
+                        <button class="rules-tab" data-type="custom">Custom Rules</button>
+                        <button class="rules-tab" data-type="regex">Regex Signatures</button>
+                        </div>
+                        <span id="rule-count" style="color: #ff570a; font-weight: 600; white-space: nowrap;"></span>
                     </div>
                 </div>
                 <div class="restart-notice-wrap">
@@ -96,16 +145,12 @@
                     <option value="RFI">RFI</option>
                     <option value="RCE">RCE</option>
                     <option value="CMDi">CMDi</option>
-                    <option value="CMDI">CMDI</option>
                     <option value="NoSQLi">NoSQLi</option>
-                    <option value="NOSQLI">NOSQLI</option>
                     <option value="SSTI">SSTI</option>
                     <option value="SSRF">SSRF</option>
                     <option value="XXE">XXE</option>
                     <option value="Protocol">Protocol</option>
-                    <option value="PROTOCOL">PROTOCOL</option>
                     <option value="Scanner">Scanner</option>
-                    <option value="SCANNER">SCANNER</option>
                     <option value="Generic">Generic</option>
                 </select>
                 <select id="paranoia-filter" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg); display: none;">
@@ -118,13 +163,12 @@
             </div>
             <div class="log-scroll">
                 <table class="rules-table">
-                    <thead>
+<thead>
                         <tr>
-                            <th style="width: 12%;">Rule ID</th>
-                            <th style="width: 10%;">Type</th>
-                            <th style="width: 15%;">Category</th>
-                            <th style="width: 45%;">Description</th>
-                            <th style="width: 18%;">Status</th>
+                            <th style="width: 16%;">Rule ID</th>
+                            <th style="width: 16%;">Category</th>
+                            <th style="width: 30%;">Description</th>
+                            <th style="width: 20%;">Status</th>
                         </tr>
                     </thead>
                     <tbody id="rules-tbody">
