@@ -597,4 +597,50 @@ thead th:first-child[data-tooltip]::after {
     vertical-align: middle;
 }
 
+.uri-cell {
+    position: relative;
+    cursor: pointer;
+    overflow: visible;
+    max-width: 200px;
+    font-family: monospace;
+    font-size: 0.82rem;
+}
+
+.uri-cell > span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.uri-cell::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: calc(100% + 3px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-panel);
+    border: 0.8px solid var(--border);
+    color: var(--accent);
+    font-size: 0.82rem;
+    font-weight: 400;
+    line-height: 1.5;
+    white-space: nowrap;
+    padding: 6px 10px;
+    border-radius: 4px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 9999;
+    letter-spacing: 0;
+    text-transform: none;
+    font-style: normal;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.uri-cell:hover::after {
+    opacity: 1;
+}
+
 

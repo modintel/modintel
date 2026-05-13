@@ -40,18 +40,24 @@ var GEO_COLORS = [
 function detectVector(rule) {
     if (!rule) return { key: "other", label: "Other" };
     var code = Number(rule);
+    if (code >= 900000 && code < 910000) return { key: "protocol", label: "Protocol" };
+    if (code >= 910000 && code < 913000) return { key: "protocol", label: "Protocol" };
     if (code >= 913000 && code < 914000) return { key: "scanner", label: "Scanner" };
-    if (code >= 920000 && code < 922000) return { key: "protocol", label: "Protocol" };
+    if (code >= 914000 && code < 920000) return { key: "protocol", label: "Protocol" };
+    if (code >= 920000 && code < 930000) return { key: "protocol", label: "Protocol" };
     if (code >= 930000 && code < 931000) return { key: "lfi", label: "LFI/Traversal" };
     if (code >= 931000 && code < 932000) return { key: "rfi", label: "RFI Attack" };
     if (code >= 932000 && code < 933000) return { key: "cmdi", label: "CMD Injection" };
     if (code >= 933000 && code < 934000) return { key: "php", label: "PHP Attack" };
-    if (code >= 934000 && code < 935000) return { key: "nosql", label: "NoSQL Injection" };
+    if (code >= 934000 && code < 936000) return { key: "nosql", label: "NoSQL Injection" };
+    if (code >= 936000 && code < 941000) return { key: "protocol", label: "Protocol" };
     if (code >= 941000 && code < 942000) return { key: "xss", label: "XSS" };
     if (code >= 942000 && code < 943000) return { key: "sqli", label: "SQL Injection" };
     if (code >= 943000 && code < 944000) return { key: "session", label: "Session Fix.." };
+    if (code >= 944000 && code < 949000) return { key: "ssrf", label: "SSRF/XXE" };
     if (code >= 949000 && code < 950000) return { key: "anomaly", label: "Anomaly" };
-    if (code >= 990000 && code < 991000) return { key: "custom", label: "Custom Rule" };
+    if (code >= 950000 && code < 990000) return { key: "anomaly", label: "Anomaly" };
+    if (code >= 990000 && code < 1000000) return { key: "custom", label: "Custom Rule" };
     return { key: "other", label: "Other" };
 }
 

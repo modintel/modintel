@@ -133,7 +133,7 @@ async function updateLogs(append = false) {
             row.innerHTML = `
                 <td style="color:var(--fg-muted);">${new Date(ts).toLocaleTimeString()}</td>
                 <td>${alert.client_ip}</td>
-                <td style="font-family:monospace;font-size:0.75rem;">${alert.uri}</td>
+                <td class="uri-cell" data-tooltip="${alert.uri}"><span>${alert.uri}</span></td>
                 <td style="text-align: center;">${scoreDisplay}</td>
                 <td style="text-align: center;">${rules}</td>
                 <td style="text-align: center;">${aiScore}</td>
@@ -297,7 +297,7 @@ function prependAlertRow(alert) {
     if (alert.alert_key) row.dataset.alertKey = alert.alert_key;
     row.innerHTML = '<td style="color:var(--fg-muted);">' + tsFormatted + '</td>' +
         '<td>' + alert.client_ip + '</td>' +
-        '<td style="font-family:monospace;font-size:0.75rem;">' + alert.uri + '</td>' +
+        '<td class="uri-cell" data-tooltip="' + alert.uri + '"><span>' + alert.uri + '</span></td>' +
         '<td style="text-align: center;">' + scoreDisplay + '</td>' +
         '<td style="text-align: center;">' + rules + '</td>' +
         '<td style="text-align: center;">' + aiScore + '</td>' +
@@ -377,7 +377,7 @@ async function updateLogsNewOnly() {
             row.innerHTML = `
                 <td style="color:var(--fg-muted);">${tsFormatted}</td>
                 <td>${alert.client_ip}</td>
-                <td style="font-family:monospace;font-size:0.75rem;">${alert.uri}</td>
+                <td class="uri-cell" data-tooltip="${alert.uri}"><span>${alert.uri}</span></td>
                 <td style="text-align: center;">${scoreDisplay}</td>
                 <td style="text-align: center;">${rules}</td>
                 <td style="text-align: center;">${aiScore}</td>
