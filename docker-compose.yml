@@ -40,6 +40,7 @@ services:
       - ./proxy-waf/overrides:/opt/coraza/overrides
       - modintel_waf-logs:/var/log/coraza
       - modintel_caddy_logs:/var/log/caddy
+      - modintel_crs-rules:/opt/coraza/owasp-crs/rules:ro
     environment:
       - BACKEND=juice-shop:3000
       - CORAZA_AUDIT_LOG=/var/log/coraza/audit.json
@@ -109,8 +110,11 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./proxy-waf/overrides:/waf-overrides
+      - ./proxy-waf/custom_rules.conf:/waf-overrides/custom_rules.conf:ro
       - .:/project:rw
       - ./dashboard:/srv/dashboard:ro
+      - modintel_crs-rules:/crs-rules:ro
+      - ./services/log-collector/signatures:/app/signatures:ro
     environment:
       - MONGO_URI=${MONGO_URI}
       - JWT_SECRET=${JWT_SECRET}
@@ -119,6 +123,8 @@ services:
       - BACKEND_TARGET=${BACKEND_TARGET}
       - INFERENCE_ENGINE_URL=${INFERENCE_ENGINE_URL}
       - WAF_OVERRIDES_FILE=/waf-overrides/managed-overrides.conf
+      - CUSTOM_RULES_PATH=/waf-overrides/custom_rules.conf
+      - CRS_RULES_PATH=/crs-rules
     networks:
       - modintel-net
     restart: always
@@ -193,3 +199,5 @@ volumes:
     name: modintel_mongo_data
   modintel_caddy_logs:
     name: modintel_caddy_logs
+  modintel_crs-rules:
+    name: modintel_crs-rules

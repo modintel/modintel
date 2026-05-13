@@ -23,6 +23,8 @@ var statsMu sync.Mutex
 
 func main() {
 	db.Connect()
+	db.SeedWAFRules()
+  db.InitRuleIndexes()
 	api.InitAuditIndexes()
 	api.InitHub()
 
