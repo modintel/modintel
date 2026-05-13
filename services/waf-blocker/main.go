@@ -200,6 +200,19 @@ type Blocker struct {
 	proxy          *httputil.ReverseProxy
 	client         *http.Client
 	traffic        *trafficStats
+	thresholdMu    sync.RWMutex
+}
+
+func (b *Blocker) SetThreshold(t float64) {
+	b.thresholdMu.Lock()
+	defer b.thresholdMu.Unlock()
+	b.blockThreshold = t
+}
+
+func (b *Blocker) GetThreshold() float64 {
+	b.thresholdMu.RLock()
+	defer b.thresholdMu.RUnlock()
+	return b.blockThreshold
 }
 
 func NewBlocker(prefilter *Prefilter, inferenceURL, backendURL, reportURL string, blockThreshold float64) *Blocker {
@@ -347,8 +360,8 @@ func (b *Blocker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if probability >= b.blockThreshold {
-		log.Printf("BLOCKED %s %s (p=%.4f >= %.2f)", r.Method, r.URL.RequestURI(), probability, b.blockThreshold)
+	if probability >= b.GetThreshold() {
+		log.Printf("BLOCKED %s %s (p=%.4f >= %.2f)", r.Method, r.URL.RequestURI(), probability, b.GetThreshold())
 		b.traffic.record(time.Now(), true)
 		go b.reportBlock(r, matched, probability, string(bodyBytes))
 		w.Header().Set("Content-Type", "application/json")
@@ -362,7 +375,7 @@ func (b *Blocker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("ALLOWED %s %s (p=%.4f < %.2f)", r.Method, r.URL.RequestURI(), probability, b.blockThreshold)
+	log.Printf("ALLOWED %s %s (p=%.4f < %.2f)", r.Method, r.URL.RequestURI(), probability, b.GetThreshold())
 	b.traffic.record(time.Now(), false)
 	b.proxy.ServeHTTP(w, r)
 }
@@ -382,6 +395,31 @@ func (b *Blocker) handleTraffic(w http.ResponseWriter, r *http.Request) {
 func (b *Blocker) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (b *Blocker) handleThreshold(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Threshold float64 `json:"threshold"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Threshold < 0.85 || req.Threshold > 1.0 {
+		http.Error(w, "Threshold must be between 0.85 and 1.0", http.StatusBadRequest)
+		return
+	}
+	b.SetThreshold(req.Threshold)
+	log.Printf("Threshold updated to %.2f", req.Threshold)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "ok",
+		"threshold": b.GetThreshold(),
+	})
 }
 
 func env(key, fallback string) string {
@@ -415,6 +453,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/waf/traffic", blocker.handleTraffic)
+	mux.HandleFunc("/api/waf/threshold", blocker.handleThreshold)
 	mux.HandleFunc("/health", blocker.handleHealth)
 	mux.Handle("/", blocker)
 
