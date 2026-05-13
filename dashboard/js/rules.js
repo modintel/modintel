@@ -1,15 +1,27 @@
 (function () {
     'use strict';
 
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     const PENDING_RESTART_KEY = 'rules_pending_restart';
     let hasPendingRestart = localStorage.getItem(PENDING_RESTART_KEY) === '1';
     let currentPage = 1;
     let totalPages = 1;
     const pageSize = 50;
-    let currentType = 'custom'; // Start with custom rules
+    let currentType = 'crs';
     let currentCategory = '';
     let currentSearch = '';
-    let currentParanoiaLevel = ''; // For CRS rules filtering
+    let currentParanoiaLevel = '';
+    let editingRuleId = null;
+    let currentMode = 'write';
 
     function applyRuleDeepLink() {
         const params = new URLSearchParams(window.location.search);
@@ -32,26 +44,29 @@
         detailsRow.className = 'rule-details-row';
         detailsRow.id = `rule-${rule.id}-details`;
         
-        let detailsHTML = '<td colspan="5" class="rule-details-cell"><div class="rule-details">';
+        let detailsHTML = '<td colspan="4" class="rule-details-cell"><div class="rule-details">';
         
-        // Show different details based on rule type
         if (rule.type === 'crs') {
             detailsHTML += `
                 <div class="rule-detail-item"><b>Type</b><span>OWASP CRS Rule</span></div>
-                <div class="rule-detail-item"><b>Severity</b><span>${rule.severity || 'N/A'}</span></div>
-                <div class="rule-detail-item"><b>Phase</b><span>${rule.phase || 'N/A'}</span></div>
-                <div class="rule-detail-item"><b>Paranoia Level</b><span>${rule.paranoia_level || 'N/A'}</span></div>
-                <div class="rule-detail-item"><b>Source</b><span>${rule.source || 'owasp-crs'}</span></div>
+                <div class="rule-detail-item"><b>Severity</b><span>${escapeHtml(rule.severity) || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Phase</b><span>${escapeHtml(rule.phase) || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Paranoia Level</b><span>${escapeHtml(rule.paranoia_level) || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Source</b><span>${escapeHtml(rule.source) || 'owasp-crs'}</span></div>
                 <div class="rule-detail-item"><b>Note</b><span class="text-muted">CRS rules are read-only. Only enable/disable is allowed.</span></div>
             `;
         } else {
+            const source = rule.source || 'modintel-custom';
             detailsHTML += `
                 <div class="rule-detail-item"><b>Type</b><span>Custom Rule</span></div>
-                <div class="rule-detail-item"><b>Severity</b><span>${rule.severity || 'N/A'}</span></div>
-                <div class="rule-detail-item"><b>Phase</b><span>${rule.phase || 'N/A'}</span></div>
-                <div class="rule-detail-item"><b>Source</b><span>${rule.source || 'modintel-custom'}</span></div>
-                <div class="rule-detail-item"><b>Created</b><span>${rule.created_at ? new Date(rule.created_at).toLocaleString() : 'N/A'}</span></div>
-                <div class="rule-detail-item"><b>Updated</b><span>${rule.updated_at ? new Date(rule.updated_at).toLocaleString() : 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Severity</b><span>${escapeHtml(rule.severity) || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Phase</b><span>${escapeHtml(rule.phase) || 'N/A'}</span></div>
+                <div class="rule-detail-item" style="display:flex;align-items:flex-start;gap:0.5rem;">
+                    <div><b>Source</b><span>${escapeHtml(source)}</span></div>
+                    <button class="btn-delete-rule" data-rule-id="${escapeHtml(rule.id)}" style="margin-left:auto;">Delete</button>
+                </div>
+                <div class="rule-detail-item"><b>Created</b><span>${rule.created_at ? escapeHtml(new Date(rule.created_at).toLocaleString()) : 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Updated</b><span>${rule.updated_at ? escapeHtml(new Date(rule.updated_at).toLocaleString()) : 'N/A'}</span></div>
             `;
         }
         
@@ -95,7 +110,12 @@
             const current = firstCell.innerHTML;
             firstCell.innerHTML = `<span class="rule-id-wrap"><span class="rule-toggle">&#8250;</span>${current}</span>`;
         }
-        row.addEventListener('click', () => toggleRuleDetails(row, rule));
+        row.addEventListener('click', () => {
+            toggleRuleDetails(row, rule);
+            if (rule.type === 'custom') {
+                populateEditForm(rule);
+            }
+        });
         const actionBtn = row.querySelector('.rule-toggle-btn');
         if (actionBtn) {
             actionBtn.addEventListener('click', (event) => {
@@ -109,7 +129,6 @@
         const row = document.createElement('tr');
         row.id = `rule-${rule.id}`;
         
-        // Add type indicator class
         if (rule.type === 'crs') {
             row.classList.add('crs-rule');
         }
@@ -117,10 +136,6 @@
         const idCell = document.createElement('td');
         idCell.className = 'rule-id';
         idCell.textContent = String(rule.id || '');
-
-        const typeCell = document.createElement('td');
-        typeCell.textContent = rule.type === 'crs' ? 'CRS' : 'Custom';
-        typeCell.className = 'rule-type';
 
         const categoryCell = document.createElement('td');
         categoryCell.textContent = String(rule.category || 'Uncategorized');
@@ -146,7 +161,6 @@
         statusCell.appendChild(statusWrap);
 
         row.appendChild(idCell);
-        row.appendChild(typeCell);
         row.appendChild(categoryCell);
         row.appendChild(descCell);
         row.appendChild(statusCell);
@@ -159,10 +173,9 @@
         if (!tbody) {
             return;
         }
-        tbody.innerHTML = '<tr><td colspan="5">Loading...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
 
         try {
-            // Build query string
             let queryParams = `page=${page}&limit=${pageSize}`;
             if (currentType) {
                 queryParams += `&type=${currentType}`;
@@ -200,7 +213,7 @@
             
             if (rules.length === 0) {
                 const row = document.createElement('tr');
-                row.innerHTML = '<td colspan="5">No rules found.</td>';
+                row.innerHTML = '<td colspan="4">No rules found.</td>';
                 tbody.appendChild(row);
             } else {
                 rules.forEach((rule) => {
@@ -214,7 +227,7 @@
             updateRuleCount(payload.total_count || rules.length);
         } catch (error) {
             console.error('Failed to load rules from API:', error);
-            tbody.innerHTML = '<td colspan="5">Failed to load rules from API.</td>';
+            tbody.innerHTML = '<td colspan="4">Failed to load rules from API.</td>';
         }
 
         applyRuleDeepLink();
@@ -227,38 +240,68 @@
         }
     }
 
+    async function loadRegexRules() {
+        const tbody = document.getElementById('rules-tbody');
+        if (!tbody) return;
+
+        currentPage = 1;
+        totalPages = 1;
+        const pagination = document.getElementById('pagination-controls');
+        if (pagination) pagination.innerHTML = '';
+        
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center">Loading regex signatures...</td></tr>';
+        
+        try {
+            const response = await apiFetch('/api/rules/regex');
+            if (!response.ok) throw new Error('Failed to load');
+            const data = await response.json();
+            
+            if (!Array.isArray(data) || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4">No regex signatures found.</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = '';
+            data.forEach(cat => {
+                const row = document.createElement('tr');
+                row.className = 'rule-row';
+                row.innerHTML = `
+                    <td><span class="rule-id-wrap"><span class="rule-toggle">&#8250;</span>${cat.category}</span></td>
+                    <td>${cat.severity.toUpperCase()}</td>
+                    <td>${cat.name}</td>
+                    <td><span class="rule-status enabled">${cat.patterns} patterns</span></td>
+                `;
+                row.style.cursor = 'default';
+                tbody.appendChild(row);
+            });
+            
+            const total = data.reduce((sum, c) => sum + c.patterns, 0);
+            updateRuleCount(total);
+        } catch (err) {
+            console.error('Failed to load regex rules:', err);
+            tbody.innerHTML = '<tr><td colspan="4">Failed to load regex signatures.</td></tr>';
+        }
+    }
+
     function renderPaginationControls() {
         const container = document.getElementById('pagination-controls');
         if (!container) return;
 
-        container.innerHTML = '';
-
         if (totalPages <= 1) {
-            container.style.display = 'none';
+            container.innerHTML = '';
             return;
         }
 
-        container.style.display = 'flex';
+        container.innerHTML = `
+            <div class="pagination" style="display:flex;align-items:center;justify-content:center;gap:10px;padding:15px;">
+                <button class="btn btn-secondary" id="prev-page-btn" ${currentPage <= 1 ? 'disabled' : ''}>Previous</button>
+                <span style="color:#f97316;font-size:0.875rem;">Page ${currentPage} of ${totalPages}</span>
+                <button class="btn btn-secondary" id="next-page-btn" ${currentPage >= totalPages ? 'disabled' : ''}>Next</button>
+            </div>
+        `;
 
-        const prevBtn = document.createElement('button');
-        prevBtn.textContent = 'Previous';
-        prevBtn.className = 'btn btn-secondary';
-        prevBtn.disabled = currentPage === 1;
-        prevBtn.addEventListener('click', () => loadRules(currentPage - 1));
-        container.appendChild(prevBtn);
-
-        const pageInfo = document.createElement('span');
-        pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
-        pageInfo.style.margin = '0 1rem';
-        pageInfo.style.alignSelf = 'center';
-        container.appendChild(pageInfo);
-
-        const nextBtn = document.createElement('button');
-        nextBtn.textContent = 'Next';
-        nextBtn.className = 'btn btn-secondary';
-        nextBtn.disabled = currentPage === totalPages;
-        nextBtn.addEventListener('click', () => loadRules(currentPage + 1));
-        container.appendChild(nextBtn);
+        document.getElementById('prev-page-btn')?.addEventListener('click', () => loadRules(currentPage - 1));
+        document.getElementById('next-page-btn')?.addEventListener('click', () => loadRules(currentPage + 1));
     }
 
     function toggleRuleDetails(row, rule) {
@@ -268,6 +311,13 @@
         if (!detailsRow) {
             detailsRow = createDetailsRow(rule);
             row.insertAdjacentElement('afterend', detailsRow);
+            const deleteBtn = detailsRow.querySelector('.btn-delete-rule');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.deleteRule(deleteBtn.dataset.ruleId);
+                });
+            }
         }
         const isOpen = detailsRow.classList.contains('open');
         detailsRow.classList.toggle('open', !isOpen);
@@ -339,38 +389,134 @@
         }
     };
 
-    window.saveRule = function () {
-        showModal('Not implemented', 'Custom rule creation UI is not wired yet. Use API-backed managed overrides for now.');
+    window.saveRule = async function () {
+        const id = document.getElementById('rule-id').value.trim();
+        const category = document.getElementById('rule-category').value;
+        const desc = document.getElementById('rule-desc').value.trim();
+        const syntax = document.getElementById('rule-syntax').value.trim();
+        
+        if (!id || !desc) {
+            showModal('Error', 'Rule ID and Description are required.', 'error');
+            return;
+        }
+        
+        try {
+            const resp = await apiFetch('/api/rules', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id, category, description: desc, severity: 'MEDIUM', phase: 2})
+            });
+            if (!resp.ok) throw new Error('Failed');
+            showModal('Success', 'Rule created. Toggle to enable.');
+            document.getElementById('clear-rule-btn').click();
+            loadRules(1);
+        } catch (e) {
+            showModal('Error', 'Failed to create rule.', 'error');
+        }
+};
+
+    function populateEditForm(rule) {
+        document.getElementById('edit-rule-id-display').textContent = `#${rule.id}`;
+        document.getElementById('edit-rule-category').value = rule.category || 'Custom';
+        document.getElementById('edit-rule-desc').value = rule.description || '';
+        document.getElementById('edit-rule-severity').value = rule.severity || 'MEDIUM';
+        document.getElementById('edit-rule-phase').value = String(rule.phase || 2);
+        editingRuleId = rule.id;
+        switchMode('edit');
+    }
+
+    function switchMode(mode) {
+        currentMode = mode;
+        document.querySelectorAll('.rule-mode-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === mode);
+        });
+        document.getElementById('write-rule-section').style.display = mode === 'write' ? 'block' : 'none';
+        document.getElementById('edit-rule-section').style.display = mode === 'edit' ? 'block' : 'none';
+    }
+
+    window.saveEditRule = async function () {
+        if (!editingRuleId) {
+            showModal('Error', 'No rule selected for editing.', 'error');
+            return;
+        }
+        const category = document.getElementById('edit-rule-category').value;
+        const description = document.getElementById('edit-rule-desc').value.trim();
+        const severity = document.getElementById('edit-rule-severity').value;
+        const phase = parseInt(document.getElementById('edit-rule-phase').value, 10);
+
+        if (!description) {
+            showModal('Error', 'Description is required.', 'error');
+            return;
+        }
+
+        try {
+            const resp = await apiFetch(`/api/rules/${editingRuleId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category, description, severity, phase })
+            });
+            if (!resp.ok) throw new Error('Failed to update rule');
+            showModal('Success', 'Rule updated successfully.');
+            switchMode('write');
+            loadRules(currentPage);
+        } catch (e) {
+            showModal('Error', 'Failed to update rule.', 'error');
+        }
     };
 
-    // Tab switching
+    window.deleteRule = async function (ruleId) {
+        if (!ruleId) return;
+        showConfirm(
+            'Delete Rule',
+            `Are you sure you want to delete rule #${ruleId}? This cannot be undone.`,
+            async () => {
+                try {
+                    const resp = await apiFetch(`/api/rules/${ruleId}`, {
+                        method: 'DELETE'
+                    });
+                    if (!resp.ok) {
+                        if (resp.status === 403) {
+                            showModal('Permission Denied', 'Cannot delete CRS rules.', 'error');
+                        } else {
+                            showModal('Error', 'Failed to delete rule.', 'error');
+                        }
+                        return;
+                    }
+                    showModal('Deleted', `Rule #${ruleId} has been deleted.`);
+                    if (editingRuleId === ruleId) {
+                        switchMode('write');
+                    }
+                    loadRules(currentPage);
+                } catch (e) {
+                    showModal('Error', 'Failed to delete rule.', 'error');
+                }
+            }
+        );
+    };
+
     function setupTabs() {
         const tabs = document.querySelectorAll('.rules-tab');
         const paranoiaFilter = document.getElementById('paranoia-filter');
         
         tabs.forEach(tab => {
             tab.addEventListener('click', () => {
-                // Update active tab
                 tabs.forEach(t => t.classList.remove('active'));
                 tab.classList.add('active');
                 
-                // Update current type and reload
                 const type = tab.getAttribute('data-type');
                 if (type === 'regex') {
-                    // Regex tab not implemented yet
-                    showModal('Not Implemented', 'Regex rules section coming soon.');
+                    loadRegexRules();
                     return;
                 }
                 currentType = type;
                 currentPage = 1;
                 
-                // Show/hide paranoia filter based on tab
                 if (paranoiaFilter) {
                     if (type === 'crs') {
                         paranoiaFilter.style.display = 'block';
                     } else {
                         paranoiaFilter.style.display = 'none';
-                        currentParanoiaLevel = ''; // Reset when switching away from CRS
+                        currentParanoiaLevel = '';
                     }
                 }
                 
@@ -379,7 +525,6 @@
         });
     }
 
-    // Search functionality
     function setupSearch() {
         const searchInput = document.getElementById('rule-search');
         if (searchInput) {
@@ -395,7 +540,6 @@
         }
     }
 
-    // Category filter
     function setupCategoryFilter() {
         const categorySelect = document.getElementById('category-filter');
         if (categorySelect) {
@@ -407,7 +551,6 @@
         }
     }
 
-    // Paranoia level filter (CRS only)
     function setupParanoiaFilter() {
         const paranoiaSelect = document.getElementById('paranoia-filter');
         if (paranoiaSelect) {
@@ -419,6 +562,10 @@
         }
     }
 
+    document.querySelectorAll('.rule-mode-btn').forEach(btn => {
+        btn.addEventListener('click', () => switchMode(btn.dataset.mode));
+    });
+
     const saveRuleBtn = document.getElementById('save-rule-btn');
     if (saveRuleBtn) {
         saveRuleBtn.addEventListener('click', window.saveRule);
@@ -427,6 +574,19 @@
     const clearRuleBtn = document.getElementById('clear-rule-btn');
     if (clearRuleBtn) {
         clearRuleBtn.addEventListener('click', window.clearRuleForm);
+    }
+
+    const saveEditBtn = document.getElementById('save-edit-btn');
+    if (saveEditBtn) {
+        saveEditBtn.addEventListener('click', window.saveEditRule);
+    }
+
+    const cancelEditBtn = document.getElementById('cancel-edit-btn');
+    if (cancelEditBtn) {
+        cancelEditBtn.addEventListener('click', () => {
+            switchMode('write');
+            editingRuleId = null;
+        });
     }
 
     const restartWafBtn = document.getElementById('restart-waf-btn');
@@ -438,6 +598,10 @@
     setupSearch();
     setupCategoryFilter();
     setupParanoiaFilter();
+    const paranoiaFilter = document.getElementById('paranoia-filter');
+    if (paranoiaFilter && currentType === 'crs') {
+        paranoiaFilter.style.display = 'block';
+    }
     loadRules();
     updateRestartButtonState();
 })();
