@@ -77,7 +77,7 @@ func isInternalIP(ip string) bool {
 	if err != nil {
 		return false
 	}
-	networks := []string{"172.20.0.0/16", "10.0.0.0/8", "192.168.0.0/16"}
+	networks := []string{"172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"}
 	for _, cidr := range networks {
 		prefix, err := netip.ParsePrefix(cidr)
 		if err != nil {
@@ -353,6 +353,10 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 			continue
 		}
 
+		if strings.Contains(doc.URI, "/socket.io/") {
+			continue
+		}
+
 		alertKey := uniqueAlertKey(doc)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -479,6 +483,10 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 		api.RecordWAFRequest(ts, wafBlocked)
 
 		if isInternalIP(doc.ClientIP) {
+			continue
+		}
+
+		if strings.Contains(doc.URI, "/socket.io/") {
 			continue
 		}
 

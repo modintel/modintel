@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -271,6 +272,8 @@ func SetupRouter() *gin.Engine {
 		api.GET("/config", RequireRoles("admin", "analyst", "viewer"), GetConfig)
 		api.GET("/waf/paranoia", RequireRoles("admin"), GetWAFParanoia)
 		api.PUT("/waf/paranoia", RequireRoles("admin"), UpdateWAFParanoia)
+		api.GET("/waf/layer2/threshold", RequireRoles("admin"), GetLayer2Threshold)
+		api.PUT("/waf/layer2/threshold", RequireRoles("admin"), UpdateLayer2Threshold)
 		api.GET("/monitor/health", RequireRoles("admin", "analyst", "viewer"), GetmonitorHealth)
 		api.GET("/monitor/metrics", RequireRoles("admin", "analyst", "viewer"), GetmonitorMetrics)
 		api.POST("/admin/audit/log", RequireRoles("admin"), IngestAuditLog)
@@ -889,10 +892,11 @@ func GetConfig(c *gin.Context) {
 }
 
 type WAFParanoiaConfig struct {
-	Paranoia         int    `json:"paranoia"`
-	BlockingParanoia int    `json:"blocking_paranoia"`
-	AnomalyInbound   int    `json:"anomaly_inbound"`
-	RuleEngine       string `json:"rule_engine"`
+	Paranoia             int     `json:"paranoia"`
+	BlockingParanoia     int     `json:"blocking_paranoia"`
+	AnomalyInbound       int     `json:"anomaly_inbound"`
+	RuleEngine           string  `json:"rule_engine"`
+	Layer2BlockThreshold float64 `json:"layer2_block_threshold"`
 }
 
 func GetWAFParanoia(c *gin.Context) {
@@ -973,18 +977,89 @@ func UpdateWAFParanoia(c *gin.Context) {
 		}
 	}()
 
-	LogAction(c, "waf_paranoia_update", "system", "waf", map[string]interface{}{"paranoia": cfg.Paranoia, "blocking_paranoia": cfg.BlockingParanoia, "anomaly_inbound": cfg.AnomalyInbound, "rule_engine": cfg.RuleEngine}, "success", "")
+	LogAction(c, "waf_paranoia_update", "system", "waf", map[string]interface{}{"paranoia": cfg.Paranoia, "blocking_paranoia": cfg.BlockingParanoia, "anomaly_inbound": cfg.AnomalyInbound, "rule_engine": cfg.RuleEngine, "layer2_block_threshold": cfg.Layer2BlockThreshold}, "success", "")
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": cfg})
 }
 
+func GetLayer2Threshold(c *gin.Context) {
+	cfg := readParanoiaConfig()
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
+		"layer2_block_threshold": cfg.Layer2BlockThreshold,
+	}})
+}
+
+type UpdateLayer2ThresholdRequest struct {
+	Layer2BlockThreshold *float64 `json:"layer2_block_threshold"`
+}
+
+func UpdateLayer2Threshold(c *gin.Context) {
+	var req UpdateLayer2ThresholdRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		LogAction(c, "waf_layer2_threshold_update", "system", "waf", nil, "failure", "invalid request body")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if req.Layer2BlockThreshold == nil {
+		LogAction(c, "waf_layer2_threshold_update", "system", "waf", nil, "failure", "missing layer2_block_threshold")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "layer2_block_threshold is required"})
+		return
+	}
+
+	threshold := *req.Layer2BlockThreshold
+	if threshold < 0.85 || threshold > 1.0 {
+		LogAction(c, "waf_layer2_threshold_update", "system", "waf", map[string]interface{}{"layer2_block_threshold": threshold}, "failure", "layer2_block_threshold must be between 0.85 and 1.0")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "layer2_block_threshold must be between 0.85 and 1.0"})
+		return
+	}
+
+	cfg := readParanoiaConfig()
+	cfg.Layer2BlockThreshold = threshold
+
+	if err := writeParanoiaConfig(cfg); err != nil {
+		LogAction(c, "waf_layer2_threshold_update", "system", "waf", nil, "failure", "failed to save config")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save config"})
+		return
+	}
+
+	go notifyWafBlockerThresholdUpdate(threshold)
+
+	LogAction(c, "waf_layer2_threshold_update", "system", "waf", map[string]interface{}{"layer2_block_threshold": threshold}, "success", "")
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
+		"layer2_block_threshold": cfg.Layer2BlockThreshold,
+	}})
+}
+
+func notifyWafBlockerThresholdUpdate(threshold float64) {
+	url := "http://waf-blocker:8086/api/waf/threshold"
+	body := map[string]float64{"threshold": threshold}
+	data, err := json.Marshal(body)
+	if err != nil {
+		log.Printf("failed to marshal threshold update: %v", err)
+		return
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(data))
+	if err != nil {
+		log.Printf("failed to notify waf-blocker of threshold update: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("waf-blocker returned status %d for threshold update", resp.StatusCode)
+	}
+}
+
 func readParanoiaConfig() WAFParanoiaConfig {
-	cfg := WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On"}
+	cfg := WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On", Layer2BlockThreshold: 0.85}
 	data, err := os.ReadFile(wafConfigPath)
 	if err != nil {
 		return cfg
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On"}
+		return WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On", Layer2BlockThreshold: 0.85}
 	}
 	if cfg.Paranoia < 1 {
 		cfg.Paranoia = 4
@@ -997,6 +1072,12 @@ func readParanoiaConfig() WAFParanoiaConfig {
 	}
 	if cfg.RuleEngine == "" {
 		cfg.RuleEngine = "On"
+	}
+	if cfg.Layer2BlockThreshold < 0.01 {
+		cfg.Layer2BlockThreshold = 0.85
+	}
+	if cfg.Layer2BlockThreshold > 1.0 {
+		cfg.Layer2BlockThreshold = 1.0
 	}
 	return cfg
 }
