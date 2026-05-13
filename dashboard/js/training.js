@@ -125,9 +125,9 @@ function renderHistory(items) {
             <td><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;">${item.version}</td>
             <td>${item.model_type}</td>
             <td>${item.dataset}</td>
-            <td>${item.precision}%</td>
-            <td>${item.recall}%</td>
-            <td style="color:var(--accent);">${item.fpr}%</td>
+            <td>${(item.precision).toFixed(2)}%</td>
+            <td>${(item.recall).toFixed(2)}%</td>
+            <td style="color:var(--accent);">${(item.fpr).toFixed(2)}%</td>
             <td>${new Date(item.trained_at).toLocaleDateString()}</td>
             <td>
                 ${item.active
@@ -300,19 +300,19 @@ function updateEvalMetrics(item) {
     metrics.innerHTML = `
         <div class="metric">
             <div class="metric-label">Precision</div>
-            <div class="metric-value">${item.precision}%</div>
+            <div class="metric-value">${(item.precision).toFixed(2)}%</div>
         </div>
         <div class="metric">
             <div class="metric-label">Recall</div>
-            <div class="metric-value">${item.recall}%</div>
+            <div class="metric-value">${(item.recall).toFixed(2)}%</div>
         </div>
         <div class="metric">
             <div class="metric-label">FPR</div>
-            <div class="metric-value" style="color:var(--accent);">${item.fpr}%</div>
+            <div class="metric-value" style="color:var(--accent);">${(item.fpr).toFixed(2)}%</div>
         </div>
         <div class="metric">
             <div class="metric-label">F1</div>
-            <div class="metric-value">${item.f1_score}%</div>
+            <div class="metric-value">${(item.f1_score).toFixed(2)}%</div>
         </div>
     `;
 }
