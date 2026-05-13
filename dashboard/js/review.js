@@ -173,9 +173,7 @@ async function submitReview(id, humanLabel) {
 
             const row = document.getElementById(`review-row-${id}`);
             if (row) {
-                // Remove reviewed classes
                 row.classList.remove('reviewed', 'review-row-tp', 'review-row-fp');
-                // Update action cell to pending state
                 const actionCell = row.querySelector('.action-cell');
                 if (actionCell) {
                     actionCell.innerHTML = `<button class="btn btn-true btn-sm btn-tp" data-id="${id}" title="True Positive">

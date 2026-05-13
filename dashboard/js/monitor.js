@@ -85,9 +85,13 @@ function addChartHoverDots(svgId, values, width, height, padding, unit, dotClass
         circle.style.cursor = 'pointer';
 
         circle.addEventListener('mouseenter', function () {
-            const waf = Number.isFinite(_seriesRequestData[i]) ? _seriesRequestData[i].toFixed(1) : '0.0';
-            const inf = Number.isFinite(_seriesInferenceData[i]) ? _seriesInferenceData[i].toFixed(1) : '0.0';
-            tooltip.innerHTML = '<div style="line-height:1.6">WAF: ' + waf + ' req/min<br>Inference: ' + inf + ' inf/min</div>';
+            if (dotClass === 'error-dot') {
+                tooltip.innerHTML = '<div style="line-height:1.6">' + val.toFixed(1) + ' ' + unit + '</div>';
+            } else {
+                const waf = Number.isFinite(_seriesRequestData[i]) ? _seriesRequestData[i].toFixed(1) : '0.0';
+                const inf = Number.isFinite(_seriesInferenceData[i]) ? _seriesInferenceData[i].toFixed(1) : '0.0';
+                tooltip.innerHTML = '<div style="line-height:1.6">WAF: ' + waf + ' req/min<br>Inference: ' + inf + ' inf/min</div>';
+            }
             tooltip.style.display = 'block';
         });
 
