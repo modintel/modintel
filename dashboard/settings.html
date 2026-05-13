@@ -58,7 +58,7 @@
                 <div class="paranoia-header">
                     <h3>WAF Paranoia</h3>
                     <div class="paranoia-toggle">
-                        <span class="toggle-label">Blocking</span>
+                        <span class="toggle-label">Layer-1 Blocking</span>
                         <label class="toggle-switch">
                             <input type="checkbox" id="rule-engine-enabled" checked>
                             <span class="toggle-slider"></span>
@@ -100,7 +100,16 @@
                         <button class="btn btn-sm" data-preset="1">P1 — Minimal</button>
                     </div>
                 </div>
-                <div class="form-actions">
+                <div class="layer2-row">
+                    <div class="layer2-threshold-group">
+                        <div class="layer2-label-row">
+                            <label>Layer-2 Block Threshold</label>
+                            <span id="layer2-threshold-val">85%</span>
+                        </div>
+                        <div class="layer2-slider-group">
+                            <input type="range" id="layer2-threshold" min="85" max="100" value="85">
+                        </div>
+                    </div>
                     <button class="btn btn-primary" id="paranoia-save-btn">Save & Restart WAF</button>
                 </div>
             </div>

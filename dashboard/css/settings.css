@@ -385,7 +385,7 @@
 
 .toggle-label {
     font-size: 0.75rem;
-    color: var(--fg-subtle);
+    color: var(--fg);
     font-weight: 500;
 }
 
@@ -578,6 +578,98 @@
 #waf-paranoia .form-actions {
     display: flex;
     justify-content: flex-end;
+}
+
+.layer2-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.layer2-threshold-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 0 0 auto;
+    width: 55%;
+}
+
+.layer2-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.layer2-threshold-group label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--fg);
+}
+
+.layer2-slider-group {
+    display: flex;
+    align-items: center;
+}
+
+.layer2-slider-group input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 160px;
+    height: 4px;
+    background: rgba(255, 87, 10, 0.25);
+    border-radius: 999px;
+    outline: none;
+    cursor: pointer;
+}
+
+.layer2-slider-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ff570a;
+    border: 2px solid #fff;
+    cursor: pointer;
+    margin-top: -4px;
+    box-shadow: 0 0 0 1px rgba(255, 87, 10, 0.35);
+    transition: transform 0.15s;
+}
+
+.layer2-slider-group input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.layer2-slider-group input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ff570a;
+    border: 2px solid #fff;
+    cursor: pointer;
+    box-shadow: 0 0 0 1px rgba(255, 87, 10, 0.35);
+}
+
+.layer2-slider-group input[type="range"]::-moz-range-track {
+    height: 4px;
+    background: rgba(255, 87, 10, 0.25);
+    border-radius: 999px;
+}
+
+.layer2-slider-group input[type="range"]:focus {
+    outline: none;
+}
+
+#layer2-threshold-val {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #ff570a;
+    min-width: 36px;
+    text-align: right;
 }
 
 .sessions-users-grid {
