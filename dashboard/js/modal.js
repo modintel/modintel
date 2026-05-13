@@ -1,35 +1,36 @@
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function showModal(title, message, type = 'info') {
     let modal = document.getElementById('app-modal');
     if (!modal) {
         modal = document.createElement('div');
         modal.id = 'app-modal';
         modal.className = 'modal';
-        modal.innerHTML = `
-            <div class="modal-backdrop"></div>
-            <div class="modal-content">
-                <h3 id="modal-title"></h3>
-                <p id="modal-message"></p>
-                <div class="modal-actions">
-                    <button class="btn btn-primary" id="modal-close">OK</button>
-                </div>
-            </div>
-        `;
         document.body.appendChild(modal);
     }
 
-    const titleEl = document.getElementById('modal-title');
-    const messageEl = document.getElementById('modal-message');
-    const closeBtn = document.getElementById('modal-close');
-
-    titleEl.textContent = title;
-    messageEl.textContent = message;
-
-    titleEl.className = type === 'error' ? 'modal-title-error' : '';
-    closeBtn.className = type === 'error' ? 'btn btn-danger' : 'btn btn-primary';
+    modal.innerHTML = `
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <h3 class="${type === 'error' ? 'modal-title-error' : ''}">${escapeHtml(title)}</h3>
+            <p>${escapeHtml(message)}</p>
+            <div class="modal-actions">
+                <button class="btn ${type === 'error' ? 'btn-danger' : 'btn-primary'}" id="modal-close-btn">OK</button>
+            </div>
+        </div>
+    `;
 
     modal.classList.add('open');
 
-    closeBtn.onclick = () => modal.classList.remove('open');
+    document.getElementById('modal-close-btn').onclick = () => modal.classList.remove('open');
     modal.querySelector('.modal-backdrop').onclick = () => modal.classList.remove('open');
 }
 
@@ -45,8 +46,8 @@ function showConfirm(title, message, onConfirm, onCancel) {
     modal.innerHTML = `
         <div class="modal-backdrop"></div>
         <div class="modal-content">
-            <h3>${title}</h3>
-            <p>${message}</p>
+            <h3>${escapeHtml(title)}</h3>
+            <p>${escapeHtml(message)}</p>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
                 <button class="btn btn-primary" id="modal-confirm">Confirm</button>
@@ -86,7 +87,7 @@ function showPrompt(title, message, defaultValue, onConfirm, onCancel) {
         <div class="modal-content">
             <h3 id="modal-title"></h3>
             <p id="modal-message"></p>
-            <input type="text" id="modal-input" class="modal-input" value="${defaultValue || ''}" />
+            <input type="text" id="modal-input" class="modal-input" value="${escapeHtml(defaultValue) || ''}" />
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
                 <button class="btn btn-primary" id="modal-confirm">OK</button>
@@ -99,7 +100,7 @@ function showPrompt(title, message, defaultValue, onConfirm, onCancel) {
     const inputEl = document.getElementById('modal-input');
 
     titleEl.textContent = title;
-    messageEl.innerHTML = message;
+    messageEl.textContent = message;
 
     modal.classList.add('open');
 
