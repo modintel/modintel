@@ -140,3 +140,29 @@ input[type="checkbox"] {
     position: relative;
     top: 2px;
 }
+
+.process-dataset-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+}
+
+.process-circle {
+    flex-shrink: 0;
+}
+
+.process-fill {
+    transition: stroke-dashoffset 2s ease-in-out;
+}
+
+.process-dataset-btn:hover {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+}
+
+.process-dataset-btn.is-processing {
+    color: #ff570a;
+    border-color: rgba(255, 87, 10, 0.3);
+}
