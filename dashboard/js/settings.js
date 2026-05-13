@@ -10,7 +10,7 @@ async function loadProfile() {
         }
         const payload = await res.json();
         const user = payload?.data;
-        currentUser = user; // Store current user
+        currentUser = user;
         if (user) {
             const displayNameEl = document.getElementById('display-name');
             const emailEl = document.getElementById('email');
@@ -401,6 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadProfile();
         loadSessions();
         loadParanoiaConfig();
+        loadLayer2Threshold();
         scrollToParanoia();
 
         const user = getUser();
@@ -446,12 +447,29 @@ async function loadParanoiaConfig() {
         if (toggle) {
             toggle.checked = data.rule_engine === 'On';
             if (!toggle.hasAttribute('data-listener-added')) {
-                toggle.addEventListener('change', () => {
-                    updateParanoiaInputsState();
-                    saveParanoiaConfig();
+                toggle.addEventListener('change', (e) => {
+                    const isOn = e.target.checked;
+                    showConfirm(
+                        'Layer 1 Blocking',
+                        isOn ? 'Enable WAF blocking? Matching requests will be blocked.' : 'Disable WAF blocking? Suspicious requests will only be detected, not blocked.',
+                        () => {
+                            updateParanoiaInputsState();
+                            saveParanoiaConfig();
+                        },
+                        () => {
+                            e.target.checked = !isOn;
+                            updateParanoiaInputsState();
+                        }
+                    );
                 });
                 toggle.setAttribute('data-listener-added', 'true');
             }
+        }
+        if (data.layer2_block_threshold !== undefined) {
+            const slider = document.getElementById('layer2-threshold');
+            const val = document.getElementById('layer2-threshold-val');
+            if (slider) slider.value = Math.round(data.layer2_block_threshold * 100);
+            if (val) val.textContent = Math.round(data.layer2_block_threshold * 100) + '%';
         }
         updateParanoiaInputsState();
         highlightActivePreset();
@@ -488,12 +506,17 @@ function updateParanoiaInputsState() {
     }
 }
 
+let _savingParanoia = false;
+
 async function saveParanoiaConfig() {
+    if (_savingParanoia) return;
+    _savingParanoia = true;
     const paranoia = parseInt(document.getElementById('paranoia-level').value, 10);
     const blocking = parseInt(document.getElementById('blocking-paranoia').value, 10);
     const anomaly = parseInt(document.getElementById('anomaly-inbound').value, 10);
     const toggle = document.getElementById('rule-engine-enabled');
     const ruleEngine = toggle && toggle.checked ? 'On' : 'DetectionOnly';
+    const layer2Threshold = parseInt(document.getElementById('layer2-threshold').value, 10) / 100;
 
     try {
         const res = await apiFetch('/api/waf/paranoia', {
@@ -514,6 +537,14 @@ async function saveParanoiaConfig() {
         showModal('WAF Updated', `Paranoia level set to ${payload.data.paranoia}. WAF restarting...`);
     } catch (e) {
         showModal('Error', e.message || 'Failed to save WAF config.', 'error');
+    }
+
+    try {
+        await saveLayer2Threshold();
+    } catch (e) {
+        console.error('Failed to update layer2 threshold', e);
+    } finally {
+        _savingParanoia = false;
     }
 }
 
@@ -599,4 +630,59 @@ if (layer2Toggle) {
             saveLayer2Config(false);
         }
     });
+}
+
+const layer2ThresholdSlider = document.getElementById('layer2-threshold');
+const layer2ThresholdVal = document.getElementById('layer2-threshold-val');
+if (layer2ThresholdSlider && layer2ThresholdVal) {
+    layer2ThresholdSlider.addEventListener('input', function () {
+        layer2ThresholdVal.textContent = this.value + '%';
+    });
+    layer2ThresholdSlider.addEventListener('change', function () {
+        layer2ThresholdVal.textContent = this.value + '%';
+        saveLayer2Threshold(true);
+    });
+}
+
+async function loadLayer2Threshold() {
+    try {
+        const res = await apiFetch('/api/waf/layer2/threshold');
+        if (!res.ok) return;
+        const payload = await res.json();
+        const threshold = payload?.data?.layer2_block_threshold;
+        if (threshold !== undefined) {
+            const val = Math.round(threshold * 100);
+            if (layer2ThresholdSlider) layer2ThresholdSlider.value = val;
+            if (layer2ThresholdVal) layer2ThresholdVal.textContent = val + '%';
+        }
+    } catch (e) {
+        console.error('Failed to load layer2 threshold', e);
+    }
+}
+
+async function saveLayer2Threshold(silent) {
+    const slider = document.getElementById('layer2-threshold');
+    if (!slider) return;
+    const threshold = parseInt(slider.value, 10) / 100;
+
+    try {
+        const res = await apiFetch('/api/waf/layer2/threshold', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ layer2_block_threshold: threshold })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${res.status}`);
+        }
+        if (!silent) {
+            showModal('Layer-2 Threshold Updated', `Block threshold set to ${Math.round(threshold * 100)}%.`);
+        }
+    } catch (e) {
+        if (!silent) {
+            showModal('Error', e.message || 'Failed to update layer2 threshold.', 'error');
+        } else {
+            console.error('Failed to save layer2 threshold', e);
+        }
+    }
 }
