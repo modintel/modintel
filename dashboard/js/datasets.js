@@ -123,7 +123,7 @@ async function loadDatasetSources() {
 function renderDatasets(items) {
     const tbody = document.getElementById('datasets-list');
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--fg-muted);padding:20px;">No datasets yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--fg-muted);padding:20px;">No datasets yet.</td></tr>';
         return;
     }
     tbody.innerHTML = items.map(d => `
@@ -133,6 +133,15 @@ function renderDatasets(items) {
             <td>${d.samples || 0}</td>
             <td>${d.attack_pct || 0}%</td>
             <td>${d.created_at ? new Date(d.created_at).toLocaleDateString() : '—'}</td>
+            <td>
+                <button class="btn btn-sm process-dataset-btn" data-id="${d._id}">
+                    <svg class="process-circle" viewBox="0 0 20 20" width="14" height="14">
+                        <circle cx="10" cy="10" r="8" fill="none" stroke="var(--border)" stroke-width="2.5"/>
+                        <circle class="process-fill" cx="10" cy="10" r="8" fill="none" stroke="#ff570a" stroke-width="2.5" stroke-dasharray="50.27" stroke-dashoffset="50.27" stroke-linecap="round" transform="rotate(-90 10 10)"/>
+                    </svg>
+                    Process
+                </button>
+            </td>
             <td><button class="btn btn-sm btn-danger delete-dataset-btn" data-id="${d._id}">Delete</button></td>
         </tr>
     `).join('');
@@ -145,6 +154,10 @@ function renderDatasets(items) {
         cb.addEventListener('change', () => {
             toggleDatasetSelection(cb.dataset.id, cb.checked);
         });
+    });
+
+    document.querySelectorAll('.process-dataset-btn').forEach(btn => {
+        btn.addEventListener('click', () => processDataset(btn));
     });
 }
 
@@ -250,6 +263,23 @@ async function deleteDataset(id) {
             }
         }
     );
+}
+
+function processDataset(btn) {
+    const fill = btn.querySelector('.process-fill');
+    if (!fill || fill.classList.contains('processing')) return;
+
+    btn.disabled = true;
+    btn.classList.add('is-processing');
+    fill.classList.add('processing');
+    fill.style.strokeDashoffset = '0';
+
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.classList.remove('is-processing');
+        fill.classList.remove('processing');
+        fill.style.strokeDashoffset = '50.27';
+    }, 2000);
 }
 
 const generateDatasetBtn = document.getElementById('generate-dataset-btn');
