@@ -114,6 +114,7 @@ services:
       - .:/project:rw
       - ./dashboard:/srv/dashboard:ro
       - modintel_crs-rules:/crs-rules:ro
+      - ./services/log-collector/signatures:/app/signatures:ro
     environment:
       - MONGO_URI=${MONGO_URI}
       - JWT_SECRET=${JWT_SECRET}
