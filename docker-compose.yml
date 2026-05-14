@@ -167,6 +167,15 @@ services:
     restart: always
     user: root
 
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    networks:
+      - modintel-net
+    restart: always
+
   auth-service:
     build: ./services/auth-service
     ports:
@@ -184,6 +193,7 @@ services:
       - AUTH_BOOTSTRAP_ADMIN_PASSWORD=${AUTH_BOOTSTRAP_ADMIN_PASSWORD}
       - AUTH_BOOTSTRAP_ADMIN_ROLE=${AUTH_BOOTSTRAP_ADMIN_ROLE}
       - AUTH_BOOTSTRAP_ADMIN_NAME=${AUTH_BOOTSTRAP_ADMIN_NAME}
+      - AUTH_APP_BASE_URL=http://localhost:3000
     networks:
       - modintel-net
     restart: always
