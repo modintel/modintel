@@ -265,6 +265,16 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 		return
 	}
 
+	// Validate first_name and last_name
+	if len(req.FirstName) < 1 {
+		c.JSON(http.StatusBadRequest, errResp("First name is required", "AUTH_400"))
+		return
+	}
+	if len(req.LastName) < 1 {
+		c.JSON(http.StatusBadRequest, errResp("Last name is required", "AUTH_400"))
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
@@ -281,38 +291,55 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 	cleanToken := string(decToken)
 
 	invColl := h.db.DB.Collection("invitations")
-	var invitation models.Invitation
-	err := invColl.FindOne(ctx, bson.D{{Key: "token", Value: cleanToken}}).Decode(&invitation)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errResp("Invalid or expired invitation token", "AUTH_400"))
-		return
-	}
 
-	// Validate status and expiry
-	if invitation.Status != models.InvitationStatusPending {
-		c.JSON(http.StatusBadRequest, errResp("This invitation has already been used", "AUTH_400"))
-		return
+	// Atomic claim: update status to "accepted" only if currently "pending" and not expired.
+	// This prevents race conditions where two concurrent requests claim the same invitation.
+	var claimed struct {
+		ID        primitive.ObjectID `bson:"_id"`
+		Email     string             `bson:"email"`
+		Role      string             `bson:"role"`
+		InvitedBy string             `bson:"invited_by"`
 	}
-	if time.Now().UTC().After(invitation.ExpiresAt) {
-		// Mark as expired
-		_, _ = invColl.UpdateOne(ctx, bson.M{"_id": invitation.ID},
-			bson.M{"$set": bson.M{"status": models.InvitationStatusExpired}})
-		c.JSON(http.StatusBadRequest, errResp("This invitation has expired", "AUTH_400"))
+	err := invColl.FindOneAndUpdate(ctx,
+		bson.D{
+			{Key: "token", Value: cleanToken},
+			{Key: "status", Value: models.InvitationStatusPending},
+			{Key: "expires_at", Value: bson.D{{Key: "$gt", Value: time.Now().UTC()}}},
+		},
+		bson.M{"$set": bson.M{"status": models.InvitationStatusAccepted}},
+		options.FindOneAndUpdate().SetProjection(bson.M{"email": 1, "role": 1, "invited_by": 1}),
+	).Decode(&claimed)
+	if err != nil {
+		// Distinguish expired vs already-used
+		var expired struct {
+			ExpiresAt time.Time `bson:"expires_at"`
+		}
+		if findErr := invColl.FindOne(ctx,
+			bson.D{{Key: "token", Value: cleanToken}},
+			options.FindOne().SetProjection(bson.M{"expires_at": 1}),
+		).Decode(&expired); findErr == nil && time.Now().UTC().After(expired.ExpiresAt) {
+			c.JSON(http.StatusBadRequest, errResp("This invitation has expired", "AUTH_400"))
+			return
+		}
+		c.JSON(http.StatusBadRequest, errResp("Invalid or already used invitation", "AUTH_400"))
 		return
 	}
 
 	// Hash password
 	hash, err := auth.HashPassword(req.Password, h.cfg.BcryptCost)
 	if err != nil {
+		// Reset invitation back to pending so the token remains usable
+		_, _ = invColl.UpdateOne(ctx, bson.M{"_id": claimed.ID},
+			bson.M{"$set": bson.M{"status": models.InvitationStatusPending}})
 		c.JSON(http.StatusInternalServerError, errResp("Failed hashing password", "AUTH_500"))
 		return
 	}
 
 	now := time.Now().UTC()
 	insert := bson.M{
-		"email":          invitation.Email,
+		"email":          claimed.Email,
 		"password_hash":  hash,
-		"role":           invitation.Role,
+		"role":           claimed.Role,
 		"first_name":     req.FirstName,
 		"last_name":      req.LastName,
 		"is_active":      true,
@@ -324,15 +351,14 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 
 	res, err := h.users.InsertOne(ctx, insert)
 	if err != nil {
+		// Reset invitation back to pending so the token remains usable
+		_, _ = invColl.UpdateOne(ctx, bson.M{"_id": claimed.ID},
+			bson.M{"$set": bson.M{"status": models.InvitationStatusPending}})
 		c.JSON(http.StatusConflict, errResp("A user with this email already exists", "AUTH_409"))
 		return
 	}
 
 	userID := res.InsertedID.(primitive.ObjectID)
-
-	// Mark invitation as accepted
-	_, _ = invColl.UpdateOne(ctx, bson.M{"_id": invitation.ID},
-		bson.M{"$set": bson.M{"status": models.InvitationStatusAccepted}})
 
 	// Fetch the created user for the response
 	var user models.User
@@ -343,12 +369,12 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 		Action:       "invite_accept",
 		Outcome:      "success",
 		UserID:       userID.Hex(),
-		UserEmail:    invitation.Email,
-		UserRole:     invitation.Role,
+		UserEmail:    claimed.Email,
+		UserRole:     claimed.Role,
 		ResourceType: "invitation",
-		ResourceID:   invitation.ID.Hex(),
+		ResourceID:   claimed.ID.Hex(),
 		Details: map[string]interface{}{
-			"invited_by": invitation.InvitedBy,
+			"invited_by": claimed.InvitedBy,
 		},
 		ClientIP:  c.ClientIP(),
 		UserAgent: c.Request.UserAgent(),
@@ -359,8 +385,8 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 		"message": "Account created successfully. You can now sign in.",
 		"data": gin.H{
 			"id":    userID.Hex(),
-			"email": invitation.Email,
-			"role":  invitation.Role,
+			"email": claimed.Email,
+			"role":  claimed.Role,
 		},
 	})
 }
