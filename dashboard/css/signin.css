@@ -288,9 +288,15 @@ body.signin-page::before {
 }
 
 .signin-alert-success {
-    background: rgba(22, 163, 74, 0.05);
-    border-color: rgba(22, 163, 74, 0.3);
-    color: var(--success);
+    background: rgba(255, 87, 10, 0.05);
+    border-color: rgba(255, 87, 10, 0.3);
+    color: var(--accent);
+}
+
+.signin-alert-info {
+    background: rgba(255, 87, 10, 0.06);
+    border-color: rgba(255, 87, 10, 0.25);
+    color: var(--fg);
 }
 
 .loading-dots {

@@ -20,17 +20,27 @@ function showModal(title, message, type = 'info') {
     modal.innerHTML = `
         <div class="modal-backdrop"></div>
         <div class="modal-content">
-            <h3 class="${type === 'error' ? 'modal-title-error' : ''}">${escapeHtml(title)}</h3>
-            <p>${escapeHtml(message)}</p>
+            <h3 id="modal-title"></h3>
+            <p id="modal-message"></p>
             <div class="modal-actions">
-                <button class="btn ${type === 'error' ? 'btn-danger' : 'btn-primary'}" id="modal-close-btn">OK</button>
+                <button class="btn btn-primary" id="modal-close">OK</button>
             </div>
         </div>
     `;
 
+    const titleEl = document.getElementById('modal-title');
+    const messageEl = document.getElementById('modal-message');
+    const closeBtn = document.getElementById('modal-close');
+
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+
+    titleEl.className = type === 'error' ? 'modal-title-error' : '';
+    closeBtn.className = type === 'error' ? 'btn btn-danger' : 'btn btn-primary';
+
     modal.classList.add('open');
 
-    document.getElementById('modal-close-btn').onclick = () => modal.classList.remove('open');
+    document.getElementById('modal-close').onclick = () => modal.classList.remove('open');
     modal.querySelector('.modal-backdrop').onclick = () => modal.classList.remove('open');
 }
 

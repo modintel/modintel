@@ -37,8 +37,8 @@
             <h1>Settings</h1>
             <p>Configure system preferences and user settings.</p>
 
-            <div class="section">
-                <h3>User Profile</h3>
+            <details class="section">
+                <summary class="collapsible-summary"><span class="collapsible-caret">&#9654;</span><h3>User Profile</h3></summary>
                 <div class="form-group">
                     <label>Display Name</label>
                     <input type="text" id="display-name" placeholder="Loading..." readonly>
@@ -52,19 +52,19 @@
                     <button class="btn btn-primary" id="save-profile-btn" type="button" style="display: none;">Save Changes</button>
                     <button class="btn btn-ghost" id="cancel-profile-btn" type="button" style="display: none;">Cancel</button>
                 </div>
-            </div>
+            </details>
 
-            <div class="section" id="section-2fa">
-                <h3>Two-Factor Authentication</h3>
+            <details class="section" id="section-2fa">
+                <summary class="collapsible-summary"><span class="collapsible-caret">&#9654;</span><h3>Two-Factor Authentication</h3></summary>
                 <p id="twofa-status-text">Loading 2FA status…</p>
                 <div class="form-actions" id="twofa-actions">
                     <button class="btn btn-primary" id="setup-2fa-btn" type="button" style="display:none;">Set Up 2FA</button>
                     <button class="btn btn-danger" id="disable-2fa-btn" type="button" style="display:none;">Disable 2FA</button>
                 </div>
-            </div>
+            </details>
 
-            <div class="section" id="section-smtp" style="display:none;">
-                <h3>Email Configuration</h3>
+            <details class="section" id="section-smtp" style="display:none;">
+                <summary class="collapsible-summary"><span class="collapsible-caret">&#9654;</span><h3>Email Configuration</h3></summary>
                 <p>Configure SMTP to send invitation and password reset emails.</p>
                 <div class="form-group">
                     <label>SMTP Host</label>
@@ -91,14 +91,14 @@
                     <input type="text" id="smtp-from-name" placeholder="ModIntel Security">
                 </div>
                 <div class="form-group" style="display:flex;align-items:center;gap:8px;">
-                    <input type="checkbox" id="smtp-use-tls" style="width:auto;">
+                    <input type="checkbox" id="smtp-use-tls" style="width:auto;accent-color:var(--accent);">
                     <label for="smtp-use-tls" style="margin:0;">Use implicit TLS (port 465)</label>
                 </div>
                 <div class="form-actions">
                     <button class="btn btn-primary" id="smtp-save-btn" type="button">Save SMTP Settings</button>
                     <button class="btn btn-secondary" id="smtp-test-btn" type="button">Send Test Email</button>
                 </div>
-            </div>
+            </details>
 
             <div class="section" id="waf-paranoia">                <div class="paranoia-header">
                     <h3>WAF Paranoia</h3>
