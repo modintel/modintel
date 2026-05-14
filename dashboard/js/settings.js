@@ -428,9 +428,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const usersPanel = document.getElementById('users-panel');
             if (usersPanel) usersPanel.style.display = 'flex';
             loadUsers();
-            // Show SMTP section for admins
+            // Show SMTP section for admins (starts collapsed)
             const smtpSection = document.getElementById('section-smtp');
-            if (smtpSection) { smtpSection.style.display = 'block'; loadSMTPSettings(); }
+            if (smtpSection) { smtpSection.style.removeProperty('display'); loadSMTPSettings(); }
         }
     }
 });
@@ -448,7 +448,7 @@ async function load2FAStatus() {
         if (!statusText) return;
         if (data.totp_enabled) {
             statusText.textContent = '2FA is enabled on your account.';
-            statusText.style.color = 'var(--success)';
+            statusText.style.color = 'var(--accent)';
             if (setupBtn) setupBtn.style.display = 'none';
             if (disableBtn) disableBtn.style.display = 'inline-flex';
         } else {

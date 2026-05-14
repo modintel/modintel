@@ -113,6 +113,38 @@
     transform: translateX(18px);
 }
 
+.collapsible-summary {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+    list-style: none;
+}
+
+.collapsible-summary::-webkit-details-marker { display: none; }
+.collapsible-summary::marker { display: none; content: ''; }
+
+.collapsible-summary h3 {
+    margin: 0;
+}
+
+.collapsible-caret {
+    font-size: 0.65rem;
+    color: var(--fg-subtle);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+details[open] .collapsible-caret {
+    transform: rotate(90deg);
+}
+
+details.section > summary + * {
+    margin-top: 12px;
+}
+
 .account-section {
     display: flex;
     align-items: stretch;

@@ -91,7 +91,7 @@
 
     window.showComingSoon = function(e) {
         if (e) e.preventDefault();
-        showAlert('danger', 'Feature coming soon. Please use email sign in.');
+        showAlert('info', 'ModIntel is a private platform. Please contact your administrator to request an account.');
     };
 
     function bindComingSoonLinks() {
@@ -124,6 +124,18 @@
     }
 
     async function init() {
+        // Redirect first-time admin to setup if no users exist
+        try {
+            const statusRes = await fetch('/api/v1/auth/status');
+            if (statusRes.ok) {
+                const statusData = await statusRes.json();
+                if (statusData.has_users === false) {
+                    window.location.replace('/setup');
+                    return;
+                }
+            }
+        } catch (_) {}
+
         await checkExistingAuth();
 
         if (signinForm) {
