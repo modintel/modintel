@@ -170,6 +170,28 @@ func sanitizeSMTPHeader(s string) string {
 	return s
 }
 
+// ── Retry helper ───────────────────────────────────────────────────────────────
+
+const maxSMTPRetries = 3
+
+// sendWithRetry wraps send with exponential backoff (500ms, 1s, 2s).
+func sendWithRetry(cfg Config, to, subject, body string) error {
+	backoff := 500 * time.Millisecond
+	var lastErr error
+	for attempt := 0; attempt <= maxSMTPRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(backoff)
+			backoff *= 2
+		}
+		if err := send(cfg, to, subject, body); err != nil {
+			lastErr = err
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("smtp: failed after %d retries: %w", maxSMTPRetries, lastErr)
+}
+
 // ── Public send functions ─────────────────────────────────────────────────────
 
 // SendInviteEmail sends an invitation email with the accept link.
@@ -195,7 +217,7 @@ If you did not expect this invitation, you can safely ignore this email.
 — ModIntel Security Platform
 `, invitedByName, roleDisplay, acceptLink)
 
-	return send(cfg, toEmail, subject, body)
+	return sendWithRetry(cfg, toEmail, subject, body)
 }
 
 // SendResetEmail sends a password reset email.
@@ -214,7 +236,7 @@ This link expires in 1 hour. If you did not request a password reset, you can sa
 — ModIntel Security Platform
 `, resetLink)
 
-	return send(cfg, toEmail, subject, body)
+	return sendWithRetry(cfg, toEmail, subject, body)
 }
 
 // SendTestEmail sends a test email to verify SMTP configuration.
@@ -226,5 +248,5 @@ If you received this, your SMTP configuration is working correctly.
 
 — ModIntel Security Platform
 `
-	return send(cfg, toEmail, subject, body)
+	return sendWithRetry(cfg, toEmail, subject, body)
 }
