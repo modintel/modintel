@@ -384,7 +384,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveParanoiaBtn = document.getElementById('paranoia-save-btn');
     if (saveParanoiaBtn) saveParanoiaBtn.addEventListener('click', saveParanoiaConfig);
 
-    // 2FA buttons
     const setup2faBtn = document.getElementById('setup-2fa-btn');
     if (setup2faBtn) setup2faBtn.addEventListener('click', () => window.location.href = '/setup-2fa');
 
@@ -408,7 +407,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // SMTP buttons
     const smtpSaveBtn = document.getElementById('smtp-save-btn');
     if (smtpSaveBtn) smtpSaveBtn.addEventListener('click', saveSMTPSettings);
 
@@ -428,14 +426,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const usersPanel = document.getElementById('users-panel');
             if (usersPanel) usersPanel.style.display = 'flex';
             loadUsers();
-            // Show SMTP section for admins (starts collapsed)
             const smtpSection = document.getElementById('section-smtp');
             if (smtpSection) { smtpSection.style.removeProperty('display'); loadSMTPSettings(); }
         }
     }
 });
 
-// ── 2FA ───────────────────────────────────────────────────────────────────────
 
 async function load2FAStatus() {
     try {
@@ -460,7 +456,6 @@ async function load2FAStatus() {
     } catch (_) {}
 }
 
-// ── SMTP ──────────────────────────────────────────────────────────────────────
 
 async function loadSMTPSettings() {
     try {

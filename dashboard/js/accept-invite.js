@@ -19,7 +19,6 @@
         submitBtn.textContent = loading ? 'Creating account…' : 'Create Account';
     }
 
-    // No token in URL — show error immediately
     if (!token) {
         form.style.display = 'none';
         document.getElementById('page-title').textContent = 'Invalid Invitation';

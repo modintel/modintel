@@ -114,19 +114,15 @@ func SetupRouter(cfg config.Config, database *db.Database) *gin.Engine {
 		users.DELETE(":id", h.requireRoles("admin"), h.deactivateUser)
 	}
 
-	// Public accept-invite endpoint
 	authGroup.POST("/accept-invite", h.acceptInvite)
 
-	// Password reset (public)
 	authGroup.POST("/reset-password/request", h.requestPasswordReset)
 	authGroup.POST("/reset-password/complete", h.completePasswordReset)
 	authGroup.GET("/reset-password/validate", h.validateResetToken)
 
-	// 2FA public endpoints (use intermediate token, not access token)
 	authGroup.POST("/2fa/login", h.twoFALogin)
 	authGroup.POST("/2fa/recover", h.twoFARecover)
 
-	// 2FA authenticated endpoints
 	twoFAGroup := authGroup.Group("/2fa", h.authMiddleware())
 	{
 		twoFAGroup.GET("/status", h.twoFAStatus)
@@ -135,7 +131,6 @@ func SetupRouter(cfg config.Config, database *db.Database) *gin.Engine {
 		twoFAGroup.POST("/disable", h.twoFADisable)
 	}
 
-	// Settings (admin only)
 	settingsGroup := v1.Group("/settings", h.authMiddleware(), h.requireRoles("admin"))
 	{
 		settingsGroup.GET("/smtp", h.getSMTPSettings)
@@ -267,7 +262,6 @@ func (h *Handler) login(c *gin.Context) {
 	now := time.Now().UTC()
 	userIDHex := user.ID.Hex()
 
-	// If 2FA is enabled, issue an intermediate token instead of full tokens
 	if user.TOTPEnabled {
 		twoFAToken, _, err := h.issuer.GenerateTwoFactorToken(userIDHex, user.Email, user.Role, now)
 		if err != nil {

@@ -9,9 +9,6 @@ import (
 	"io"
 )
 
-// EncryptString encrypts plaintext using AES-256-GCM with the given key.
-// The key must be exactly 32 bytes (use the first 32 bytes of JWT_SECRET).
-// Returns a hex-encoded ciphertext (nonce + ciphertext).
 func EncryptString(plaintext, key string) (string, error) {
 	keyBytes := normaliseKey(key)
 
@@ -34,7 +31,6 @@ func EncryptString(plaintext, key string) (string, error) {
 	return hex.EncodeToString(ciphertext), nil
 }
 
-// DecryptString decrypts a hex-encoded ciphertext produced by EncryptString.
 func DecryptString(ciphertextHex, key string) (string, error) {
 	keyBytes := normaliseKey(key)
 
@@ -67,7 +63,6 @@ func DecryptString(ciphertextHex, key string) (string, error) {
 	return string(plaintext), nil
 }
 
-// normaliseKey pads or truncates the key to exactly 32 bytes for AES-256.
 func normaliseKey(key string) []byte {
 	b := make([]byte, 32)
 	copy(b, []byte(key))

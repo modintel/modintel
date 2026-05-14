@@ -19,11 +19,10 @@ type User struct {
 	CreatedAt     time.Time          `bson:"created_at"              json:"created_at"`
 	UpdatedAt     time.Time          `bson:"updated_at"              json:"updated_at"`
 
-	// TOTP / 2FA fields
 	TOTPSecret        string     `bson:"totp_secret,omitempty"         json:"-"`
 	TOTPEnabled       bool       `bson:"totp_enabled"                  json:"totp_enabled"`
 	TOTPVerifiedAt    *time.Time `bson:"totp_verified_at,omitempty"    json:"totp_verified_at,omitempty"`
-	TOTPRecoveryCodes []string   `bson:"totp_recovery_codes,omitempty" json:"-"` // stored hashed
+	TOTPRecoveryCodes []string   `bson:"totp_recovery_codes,omitempty" json:"-"`
 }
 
 type RefreshToken struct {

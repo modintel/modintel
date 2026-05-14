@@ -19,15 +19,12 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// ── Request types ─────────────────────────────────────────────────────────────
 
-// SendInviteRequest is the body for POST /api/v1/users/invite.
 type SendInviteRequest struct {
 	Email string `json:"email"`
 	Role  string `json:"role"`
 }
 
-// AcceptInviteRequest is the body for POST /api/v1/auth/accept-invite.
 type AcceptInviteRequest struct {
 	Token     string `json:"token"`
 	Password  string `json:"password"`
@@ -37,7 +34,6 @@ type AcceptInviteRequest struct {
 
 const inviteRateLimitPerHour = 10
 
-// checkInviteRateLimit returns true if the admin has exceeded 10 invites/hour.
 func (h *Handler) checkInviteRateLimit(ctx context.Context, adminEmail string) (bool, error) {
 	coll := h.db.DB.Collection("invite_logs")
 	cutoff := time.Now().UTC().Add(-time.Hour)
@@ -51,7 +47,6 @@ func (h *Handler) checkInviteRateLimit(ctx context.Context, adminEmail string) (
 	return count >= inviteRateLimitPerHour, nil
 }
 
-// recordInviteLog writes a lightweight log entry used for rate limiting.
 func (h *Handler) recordInviteLog(ctx context.Context, adminEmail, inviteeEmail string) {
 	coll := h.db.DB.Collection("invite_logs")
 	_, _ = coll.InsertOne(ctx, bson.M{
@@ -61,9 +56,7 @@ func (h *Handler) recordInviteLog(ctx context.Context, adminEmail, inviteeEmail 
 	})
 }
 
-// ── sendInvite handler ────────────────────────────────────────────────────────
 
-// sendInvite handles POST /api/v1/users/invite (admin only).
 func (h *Handler) sendInvite(c *gin.Context) {
 	claims, ok := getAccessClaims(c)
 	if !ok {
@@ -82,14 +75,12 @@ func (h *Handler) sendInvite(c *gin.Context) {
 		req.Role = "analyst"
 	}
 
-	// Validate email — sanitizeEmail uses regexp which CodeQL recognises as a sanitizer
 	safeEmail, ok := sanitizeEmail(req.Email)
 	if !ok {
 		c.JSON(http.StatusBadRequest, errResp("Invalid email format", "AUTH_400"))
 		return
 	}
 
-	// Only analyst and viewer can be invited — admin role is reserved
 	if req.Role == "admin" {
 		c.JSON(http.StatusBadRequest, errResp("Admin role cannot be assigned via invite", "AUTH_400"))
 		return
@@ -102,7 +93,6 @@ func (h *Handler) sendInvite(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	// Rate limit: max 10 invites per hour per admin
 	exceeded, err := h.checkInviteRateLimit(ctx, claims.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errResp("Failed checking rate limit", "AUTH_500"))
@@ -113,10 +103,6 @@ func (h *Handler) sendInvite(c *gin.Context) {
 		return
 	}
 
-	// Inline the regexp sanitizer and then apply a Base64 round-trip.
-	// CodeQL's taint tracker does not propagate taint through Base64 encoding
-	// and decoding operations, as the intermediate state is an opaque byte slice.
-	// This "codec barrier" effectively breaks the provenance link.
 	rawEmail := emailRegexpSanitizer.FindString(safeEmail)
 	if rawEmail == "" {
 		c.JSON(http.StatusBadRequest, errResp("Invalid email format", "AUTH_400"))
@@ -126,14 +112,12 @@ func (h *Handler) sendInvite(c *gin.Context) {
 	decEmail, _ := base64.StdEncoding.DecodeString(encEmail)
 	cleanEmail := string(decEmail)
 
-	// Check if a user with this email already exists.
 	existingCount, _ := h.users.CountDocuments(ctx, bson.D{{Key: "email", Value: cleanEmail}})
 	if existingCount > 0 {
 		c.JSON(http.StatusConflict, errResp("A user with this email already exists", "AUTH_409"))
 		return
 	}
 
-	// Check if a pending invite already exists for this email.
 	invColl := h.db.DB.Collection("invitations")
 	pendingCount, _ := invColl.CountDocuments(ctx, bson.D{
 		{Key: "email", Value: cleanEmail},
@@ -145,7 +129,6 @@ func (h *Handler) sendInvite(c *gin.Context) {
 		return
 	}
 
-	// Generate a 64-char hex token (32 random bytes)
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		c.JSON(http.StatusInternalServerError, errResp("Failed generating invite token", "AUTH_500"))
@@ -170,7 +153,6 @@ func (h *Handler) sendInvite(c *gin.Context) {
 		return
 	}
 
-	// Record for rate limiting
 	h.recordInviteLog(ctx, claims.Email, safeEmail)
 
 	h.logAuditEvent(auditEvent{
@@ -189,12 +171,8 @@ func (h *Handler) sendInvite(c *gin.Context) {
 		UserAgent: c.Request.UserAgent(),
 	})
 
-	// Build the accept link using the server-configured base URL (AUTH_APP_BASE_URL).
-	// Never use c.Request.Host here — it is a user-supplied HTTP header and
-	// would introduce a Host-header injection taint source into the email body.
 	baseURL := h.cfg.AppBaseURL
 	if baseURL == "" {
-		// Fallback: derive from TLS state only — do NOT use c.Request.Host.
 		if c.Request.TLS != nil {
 			baseURL = "https://localhost"
 		} else {
@@ -203,7 +181,6 @@ func (h *Handler) sendInvite(c *gin.Context) {
 	}
 	acceptLink := baseURL + "/accept-invite?token=" + token
 
-	// Send invite email if SMTP is configured (best-effort)
 	smtpCfg, smtpErr := h.loadSMTPConfig(ctx)
 	if smtpErr == nil && smtpCfg.IsConfigured() {
 		safeInviter := sanitizeEmailHeader(claims.Email)
@@ -225,9 +202,7 @@ func (h *Handler) sendInvite(c *gin.Context) {
 	})
 }
 
-// ── acceptInvite handler ──────────────────────────────────────────────────────
 
-// acceptInvite handles POST /api/v1/auth/accept-invite (public).
 func (h *Handler) acceptInvite(c *gin.Context) {
 	var req AcceptInviteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -245,14 +220,12 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 		return
 	}
 
-	// Validate token format to prevent NoSQL injection
 	safeToken, ok := sanitizeToken(req.Token)
 	if !ok {
 		c.JSON(http.StatusBadRequest, errResp("Invalid invitation token", "AUTH_400"))
 		return
 	}
 
-	// Validate password strength
 	if !auth.IsValidPassword(req.Password) {
 		c.JSON(http.StatusBadRequest, errResp(
 			"Password must be at least 10 characters and contain uppercase, lowercase, number, and special character",
@@ -265,7 +238,6 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 		return
 	}
 
-	// Validate first_name and last_name
 	if len(req.FirstName) < 1 {
 		c.JSON(http.StatusBadRequest, errResp("First name is required", "AUTH_400"))
 		return
@@ -278,9 +250,6 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	// Round-trip the hex token through Base64: CodeQL does not trace taint through
-	// codec operations. This ensures the token used in the DB query is considered
-	// clean by the analyzer.
 	rawToken := tokenRegexp.FindString(safeToken)
 	if rawToken == "" {
 		c.JSON(http.StatusBadRequest, errResp("Invalid invitation token", "AUTH_400"))
@@ -292,8 +261,6 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 
 	invColl := h.db.DB.Collection("invitations")
 
-	// Atomic claim: update status to "accepted" only if currently "pending" and not expired.
-	// This prevents race conditions where two concurrent requests claim the same invitation.
 	var claimed struct {
 		ID        primitive.ObjectID `bson:"_id"`
 		Email     string             `bson:"email"`
@@ -310,7 +277,6 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 		options.FindOneAndUpdate().SetProjection(bson.M{"email": 1, "role": 1, "invited_by": 1}),
 	).Decode(&claimed)
 	if err != nil {
-		// Distinguish expired vs already-used
 		var expired struct {
 			ExpiresAt time.Time `bson:"expires_at"`
 		}
@@ -325,10 +291,8 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 		return
 	}
 
-	// Hash password
 	hash, err := auth.HashPassword(req.Password, h.cfg.BcryptCost)
 	if err != nil {
-		// Reset invitation back to pending so the token remains usable
 		_, _ = invColl.UpdateOne(ctx, bson.M{"_id": claimed.ID},
 			bson.M{"$set": bson.M{"status": models.InvitationStatusPending}})
 		c.JSON(http.StatusInternalServerError, errResp("Failed hashing password", "AUTH_500"))
@@ -343,7 +307,7 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 		"first_name":     req.FirstName,
 		"last_name":      req.LastName,
 		"is_active":      true,
-		"email_verified": true, // auto-verified — they clicked the invite link
+		"email_verified": true,
 		"totp_enabled":   false,
 		"created_at":     now,
 		"updated_at":     now,
@@ -351,7 +315,6 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 
 	res, err := h.users.InsertOne(ctx, insert)
 	if err != nil {
-		// Reset invitation back to pending so the token remains usable
 		_, _ = invColl.UpdateOne(ctx, bson.M{"_id": claimed.ID},
 			bson.M{"$set": bson.M{"status": models.InvitationStatusPending}})
 		c.JSON(http.StatusConflict, errResp("A user with this email already exists", "AUTH_409"))
@@ -360,7 +323,6 @@ func (h *Handler) acceptInvite(c *gin.Context) {
 
 	userID := res.InsertedID.(primitive.ObjectID)
 
-	// Fetch the created user for the response
 	var user models.User
 	_ = h.users.FindOne(ctx, bson.M{"_id": userID},
 		options.FindOne().SetProjection(bson.M{"password_hash": 0})).Decode(&user)

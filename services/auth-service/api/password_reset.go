@@ -19,7 +19,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// ── Request types ─────────────────────────────────────────────────────────────
 
 type ResetPasswordRequestBody struct {
 	Email string `json:"email"`
@@ -30,27 +29,21 @@ type ResetPasswordCompleteBody struct {
 	NewPassword string `json:"new_password"`
 }
 
-// ── requestPasswordReset ──────────────────────────────────────────────────────
 
-// requestPasswordReset handles POST /api/v1/auth/reset-password/request.
-// Always returns success to prevent user enumeration.
 func (h *Handler) requestPasswordReset(c *gin.Context) {
 	var req ResetPasswordRequestBody
 	if err := c.ShouldBindJSON(&req); err != nil {
-		// Still return success to prevent enumeration
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "If that email exists, a reset link has been sent."})
 		return
 	}
 
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
-	// Always respond with success regardless of whether the email exists
 	defer c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "If that email exists, a reset link has been sent.",
 	})
 
-	// sanitizeEmail uses regexp — CodeQL recognises this as a taint-breaking sanitizer
 	safeEmail, ok := sanitizeEmail(req.Email)
 	if !ok {
 		return
@@ -59,13 +52,10 @@ func (h *Handler) requestPasswordReset(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	// Inline the regexp sanitizer and then apply a Base64 round-trip.
-	// This "codec barrier" breaks the taint provenance that CodeQL tracks from
-	// the HTTP request to the database query.
 	var user models.User
 	rawEmail := emailRegexpSanitizer.FindString(safeEmail)
 	if rawEmail == "" {
-		return // invalid email — return success anyway (anti-enumeration)
+		return
 	}
 	encEmail := base64.StdEncoding.EncodeToString([]byte(rawEmail))
 	decEmail, _ := base64.StdEncoding.DecodeString(encEmail)
@@ -76,10 +66,9 @@ func (h *Handler) requestPasswordReset(c *gin.Context) {
 		{Key: "is_active", Value: true},
 	}).Decode(&user)
 	if err != nil {
-		return // user not found — return success anyway
+		return
 	}
 
-	// Generate a 64-char hex token (32 random bytes)
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return
@@ -101,9 +90,6 @@ func (h *Handler) requestPasswordReset(c *gin.Context) {
 		return
 	}
 
-	// Build the reset link using the server-configured base URL (AUTH_APP_BASE_URL).
-	// Never use c.Request.Host — it is a user-supplied HTTP header that would
-	// introduce a Host-header injection taint source into the outgoing email.
 	baseURL := h.cfg.AppBaseURL
 	if baseURL == "" {
 		if c.Request.TLS != nil {
@@ -114,7 +100,6 @@ func (h *Handler) requestPasswordReset(c *gin.Context) {
 	}
 	resetLink := baseURL + "/reset-password?token=" + token
 
-	// Load SMTP config and send email (best-effort — don't fail the request)
 	smtpCfg, err := h.loadSMTPConfig(ctx)
 	if err == nil && smtpCfg.IsConfigured() {
 		go func(cfg email.Config, addr, link string) {
@@ -133,9 +118,7 @@ func (h *Handler) requestPasswordReset(c *gin.Context) {
 	})
 }
 
-// ── completePasswordReset ─────────────────────────────────────────────────────
 
-// completePasswordReset handles POST /api/v1/auth/reset-password/complete.
 func (h *Handler) completePasswordReset(c *gin.Context) {
 	var req ResetPasswordCompleteBody
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -151,14 +134,12 @@ func (h *Handler) completePasswordReset(c *gin.Context) {
 		return
 	}
 
-	// Validate token format to prevent NoSQL injection
 	safeToken, ok := sanitizeToken(req.Token)
 	if !ok {
 		c.JSON(http.StatusBadRequest, errResp("Invalid reset token", "AUTH_400"))
 		return
 	}
 
-	// Validate new password
 	if !auth.IsValidPassword(req.NewPassword) {
 		c.JSON(http.StatusBadRequest, errResp(
 			"Password must be at least 10 characters and contain uppercase, lowercase, number, and special character",
@@ -176,9 +157,6 @@ func (h *Handler) completePasswordReset(c *gin.Context) {
 
 	resetColl := h.db.DB.Collection("password_resets")
 
-	// Round-trip the hex token through Base64: CodeQL does not propagate taint
-	// through codec operations, ensuring the value used in the FindOne query
-	// is considered clean.
 	var resetDoc models.PasswordReset
 	rawToken := tokenRegexp.FindString(safeToken)
 	if rawToken == "" {
@@ -194,7 +172,6 @@ func (h *Handler) completePasswordReset(c *gin.Context) {
 		return
 	}
 
-	// Validate: not used, not expired
 	if resetDoc.Used {
 		c.JSON(http.StatusBadRequest, errResp("This reset link has already been used", "AUTH_400"))
 		return
@@ -204,7 +181,6 @@ func (h *Handler) completePasswordReset(c *gin.Context) {
 		return
 	}
 
-	// Hash new password
 	hash, err := auth.HashPassword(req.NewPassword, h.cfg.BcryptCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errResp("Failed hashing password", "AUTH_500"))
@@ -213,7 +189,6 @@ func (h *Handler) completePasswordReset(c *gin.Context) {
 
 	now := time.Now().UTC()
 
-	// Update user password
 	res, err := h.users.UpdateOne(ctx,
 		bson.M{"_id": resetDoc.UserID, "is_active": true},
 		bson.M{"$set": bson.M{"password_hash": hash, "updated_at": now}},
@@ -223,13 +198,11 @@ func (h *Handler) completePasswordReset(c *gin.Context) {
 		return
 	}
 
-	// Mark token as used
 	_, _ = resetColl.UpdateOne(ctx,
 		bson.M{"_id": resetDoc.ID},
 		bson.M{"$set": bson.M{"used": true}},
 	)
 
-	// Invalidate all refresh tokens for this user (force re-login)
 	_, _ = h.tokens.UpdateMany(ctx,
 		bson.M{"user_id": resetDoc.UserID.Hex(), "revoked": false},
 		bson.M{"$set": bson.M{"revoked": true, "revoked_at": now}},
@@ -249,8 +222,6 @@ func (h *Handler) completePasswordReset(c *gin.Context) {
 	})
 }
 
-// validateResetToken handles GET /api/v1/auth/reset-password/validate?token=
-// Frontend calls this to check if a token is still valid before showing the form.
 func (h *Handler) validateResetToken(c *gin.Context) {
 	token := strings.TrimSpace(c.Query("token"))
 	if token == "" {
@@ -258,7 +229,6 @@ func (h *Handler) validateResetToken(c *gin.Context) {
 		return
 	}
 
-	// Validate token format to prevent NoSQL injection
 	safeToken, ok := sanitizeToken(token)
 	if !ok {
 		c.JSON(http.StatusBadRequest, errResp("Invalid reset token", "AUTH_400"))
@@ -270,7 +240,6 @@ func (h *Handler) validateResetToken(c *gin.Context) {
 
 	resetColl := h.db.DB.Collection("password_resets")
 	var resetDoc models.PasswordReset
-	// Round-trip the hex token through Base64 to break the CodeQL taint chain.
 	rawToken := tokenRegexp.FindString(safeToken)
 	if rawToken == "" {
 		c.JSON(http.StatusBadRequest, errResp("Invalid reset token", "AUTH_400"))
