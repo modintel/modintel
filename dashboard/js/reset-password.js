@@ -19,7 +19,6 @@
         submitBtn.textContent = loading ? 'Resetting…' : 'Reset Password';
     }
 
-    // No token — show error
     if (!token) {
         form.style.display = 'none';
         document.getElementById('page-title').textContent = 'Invalid Link';
@@ -28,7 +27,6 @@
         return;
     }
 
-    // Validate token before showing the form
     try {
         const res = await fetch('/api/v1/auth/reset-password/validate?token=' + encodeURIComponent(token));
         if (!res.ok) {
@@ -40,7 +38,6 @@
             return;
         }
     } catch (_) {
-        // Network error — let the form render and fail on submit
     }
 
     form.addEventListener('submit', async function (e) {

@@ -19,12 +19,6 @@ func ComparePassword(hash, password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 }
 
-// IsValidPassword checks that a password meets the minimum security requirements:
-//   - At least 10 characters
-//   - At least one uppercase letter
-//   - At least one lowercase letter
-//   - At least one digit
-//   - At least one special character
 func IsValidPassword(password string) bool {
 	if len(password) < 10 {
 		return false
@@ -47,13 +41,11 @@ func IsValidPassword(password string) bool {
 	return hasUpper && hasLower && hasDigit && hasSpecial
 }
 
-// IsCommonPassword returns true if the password is in the known-weak list.
 func IsCommonPassword(password string) bool {
 	_, found := commonPasswords[strings.ToLower(password)]
 	return found
 }
 
-// commonPasswords is a curated list of frequently used weak passwords.
 var commonPasswords = map[string]bool{
 	"password123":  true,
 	"password1234": true,

@@ -15,7 +15,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// RegisterRequest is the body for POST /api/v1/auth/register.
 type RegisterRequest struct {
 	Email     string `json:"email"`
 	Password  string `json:"password"`
@@ -23,9 +22,6 @@ type RegisterRequest struct {
 	LastName  string `json:"last_name"`
 }
 
-// register handles first-admin self-registration.
-// If no users exist → creates an admin account.
-// If users already exist → 403 (must use invite flow).
 func (h *Handler) register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -38,7 +34,6 @@ func (h *Handler) register(c *gin.Context) {
 	req.FirstName = strings.TrimSpace(req.FirstName)
 	req.LastName = strings.TrimSpace(req.LastName)
 
-	// Validate email
 	if req.Email == "" {
 		c.JSON(http.StatusBadRequest, errResp("Email is required", "AUTH_400"))
 		return
@@ -48,7 +43,6 @@ func (h *Handler) register(c *gin.Context) {
 		return
 	}
 
-	// Validate password strength
 	if !auth.IsValidPassword(req.Password) {
 		c.JSON(http.StatusBadRequest, errResp(
 			"Password must be at least 10 characters and contain uppercase, lowercase, number, and special character",
@@ -64,7 +58,6 @@ func (h *Handler) register(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	// Count existing users — only allow registration when none exist
 	count, err := h.users.CountDocuments(ctx, bson.M{})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errResp("Failed checking user count", "AUTH_500"))
@@ -76,7 +69,6 @@ func (h *Handler) register(c *gin.Context) {
 		return
 	}
 
-	// Hash password
 	hash, err := auth.HashPassword(req.Password, h.cfg.BcryptCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errResp("Failed hashing password", "AUTH_500"))
@@ -106,7 +98,6 @@ func (h *Handler) register(c *gin.Context) {
 
 	id := res.InsertedID.(primitive.ObjectID)
 
-	// Fetch the created user to return a clean DTO
 	var user models.User
 	_ = h.users.FindOne(ctx, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"password_hash": 0})).Decode(&user)
 
@@ -135,8 +126,6 @@ func (h *Handler) register(c *gin.Context) {
 	})
 }
 
-// authStatus returns whether any users exist in the system.
-// Frontend uses this to decide whether to show /setup or redirect to /signin.
 func (h *Handler) authStatus(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()

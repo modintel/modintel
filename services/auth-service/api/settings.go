@@ -15,31 +15,26 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// ── Request types ─────────────────────────────────────────────────────────────
 
 type SMTPSettingsRequest struct {
 	SMTPHost     string `json:"smtp_host"`
 	SMTPPort     int    `json:"smtp_port"`
 	SMTPUsername string `json:"smtp_username"`
-	SMTPPassword string `json:"smtp_password"` // plaintext in request, encrypted at rest
+	SMTPPassword string `json:"smtp_password"`
 	SMTPFrom     string `json:"smtp_from"`
 	SMTPFromName string `json:"smtp_from_name"`
 	SMTPUseTLS   bool   `json:"smtp_use_tls"`
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
-// loadSMTPConfig reads SMTP settings from MongoDB and returns an email.Config.
-// Returns an empty config (not configured) if no settings are stored.
 func (h *Handler) loadSMTPConfig(ctx context.Context) (email.Config, error) {
 	coll := h.db.DB.Collection("settings")
 	var doc models.SMTPSettings
 	err := coll.FindOne(ctx, bson.M{"_id": "smtp"}).Decode(&doc)
 	if err != nil {
-		return email.Config{}, nil // not configured yet — not an error
+		return email.Config{}, nil
 	}
 
-	// Decrypt password
 	password := ""
 	if doc.SMTPPassword != "" {
 		decrypted, err := auth.DecryptString(doc.SMTPPassword, h.cfg.JWTSecret)
@@ -59,9 +54,7 @@ func (h *Handler) loadSMTPConfig(ctx context.Context) (email.Config, error) {
 	}, nil
 }
 
-// ── Handlers ──────────────────────────────────────────────────────────────────
 
-// getSMTPSettings handles GET /api/v1/settings/smtp (admin only).
 func (h *Handler) getSMTPSettings(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
@@ -70,7 +63,6 @@ func (h *Handler) getSMTPSettings(c *gin.Context) {
 	var doc models.SMTPSettings
 	err := coll.FindOne(ctx, bson.M{"_id": "smtp"}).Decode(&doc)
 	if err != nil {
-		// Not configured yet — return empty defaults
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data": gin.H{
@@ -96,12 +88,10 @@ func (h *Handler) getSMTPSettings(c *gin.Context) {
 			"smtp_from_name": doc.SMTPFromName,
 			"smtp_use_tls":   doc.SMTPUseTLS,
 			"configured":     doc.SMTPHost != "",
-			// password intentionally omitted from response
 		},
 	})
 }
 
-// updateSMTPSettings handles PUT /api/v1/settings/smtp (admin only).
 func (h *Handler) updateSMTPSettings(c *gin.Context) {
 	claims, ok := getAccessClaims(c)
 	if !ok {
@@ -134,7 +124,6 @@ func (h *Handler) updateSMTPSettings(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	// Encrypt password before storing
 	encryptedPassword := ""
 	if strings.TrimSpace(req.SMTPPassword) != "" {
 		var err error
@@ -144,7 +133,6 @@ func (h *Handler) updateSMTPSettings(c *gin.Context) {
 			return
 		}
 	} else {
-		// If no new password provided, keep the existing one
 		coll := h.db.DB.Collection("settings")
 		var existing models.SMTPSettings
 		if err := coll.FindOne(ctx, bson.M{"_id": "smtp"}).Decode(&existing); err == nil {
@@ -188,8 +176,6 @@ func (h *Handler) updateSMTPSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "SMTP settings saved"})
 }
 
-// testSMTPSettings handles POST /api/v1/settings/smtp/test (admin only).
-// Sends a test email to the admin's own address.
 func (h *Handler) testSMTPSettings(c *gin.Context) {
 	claims, ok := getAccessClaims(c)
 	if !ok {

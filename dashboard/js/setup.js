@@ -1,5 +1,4 @@
 (async function () {
-    // If users already exist, redirect to sign-in immediately
     try {
         const res = await fetch('/api/v1/auth/status');
         if (res.ok) {
@@ -10,7 +9,6 @@
             }
         }
     } catch (_) {
-        // Network error — let the form render anyway
     }
 
     const form      = document.getElementById('setup-form');

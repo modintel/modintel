@@ -45,10 +45,7 @@ func Connect(cfg config.Config) *Database {
 }
 
 func GetCollection(dbName, collectionName string) *mongo.Collection {
-	// This will be called after db.Connect() has initialized the singleton
-	// We need to access the global database instance
-	// For now, we'll rely on the Handler having access to the db
-	return nil // Placeholder - will be handled by the caller passing the collection
+	return nil
 }
 
 func ensureIndexes(ctx context.Context, database *mongo.Database) error {
@@ -72,7 +69,6 @@ func ensureIndexes(ctx context.Context, database *mongo.Database) error {
 		return fmt.Errorf("refresh_tokens indexes: %w", err)
 	}
 
-	// Invitations collection
 	invitations := database.Collection("invitations")
 	_, err = invitations.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{Keys: map[string]int{"token": 1}, Options: options.Index().SetUnique(true)},
@@ -83,7 +79,6 @@ func ensureIndexes(ctx context.Context, database *mongo.Database) error {
 		return fmt.Errorf("invitations indexes: %w", err)
 	}
 
-	// Invite logs collection (for rate limiting)
 	inviteLogs := database.Collection("invite_logs")
 	_, err = inviteLogs.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{Keys: bson.D{{Key: "invited_by", Value: 1}, {Key: "created_at", Value: -1}}},
@@ -93,7 +88,6 @@ func ensureIndexes(ctx context.Context, database *mongo.Database) error {
 		return fmt.Errorf("invite_logs indexes: %w", err)
 	}
 
-	// Password resets collection
 	passwordResets := database.Collection("password_resets")
 	_, err = passwordResets.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{Keys: map[string]int{"token": 1}, Options: options.Index().SetUnique(true)},

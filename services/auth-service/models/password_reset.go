@@ -6,8 +6,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// PasswordReset represents a one-time password reset token stored in the
-// password_resets collection.
 type PasswordReset struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	UserID    primitive.ObjectID `bson:"user_id"       json:"user_id"`

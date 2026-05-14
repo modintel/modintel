@@ -19,7 +19,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// ── Request types ─────────────────────────────────────────────────────────────
 
 type TwoFAVerifyRequest struct {
 	Code string `json:"code"`
@@ -35,9 +34,7 @@ type TwoFARecoverRequest struct {
 	RecoveryCode string `json:"recovery_code"`
 }
 
-// ── 2FA Status ────────────────────────────────────────────────────────────────
 
-// twoFAStatus handles GET /api/v1/auth/2fa/status
 func (h *Handler) twoFAStatus(c *gin.Context) {
 	claims, ok := getAccessClaims(c)
 	if !ok {
@@ -68,10 +65,7 @@ func (h *Handler) twoFAStatus(c *gin.Context) {
 	})
 }
 
-// ── 2FA Setup ─────────────────────────────────────────────────────────────────
 
-// twoFASetup handles POST /api/v1/auth/2fa/setup
-// Generates a TOTP secret, stores it (not yet enabled), returns QR code.
 func (h *Handler) twoFASetup(c *gin.Context) {
 	claims, ok := getAccessClaims(c)
 	if !ok {
@@ -81,21 +75,18 @@ func (h *Handler) twoFASetup(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	// Generate TOTP secret
 	secret, otpauthURL, err := auth.GenerateTOTPSecret(claims.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errResp("Failed generating 2FA secret", "AUTH_500"))
 		return
 	}
 
-	// Generate QR code as base64 PNG
 	qrBase64, err := generateQRBase64(otpauthURL)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errResp("Failed generating QR code", "AUTH_500"))
 		return
 	}
 
-	// Store secret in DB (not yet enabled — user must verify first)
 	userOID, err := primitive.ObjectIDFromHex(claims.UserID)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, errResp("User not found", "AUTH_003"))
@@ -123,10 +114,7 @@ func (h *Handler) twoFASetup(c *gin.Context) {
 	})
 }
 
-// ── 2FA Verify (complete setup) ───────────────────────────────────────────────
 
-// twoFAVerify handles POST /api/v1/auth/2fa/verify
-// User submits a code to confirm setup and enable 2FA.
 func (h *Handler) twoFAVerify(c *gin.Context) {
 	claims, ok := getAccessClaims(c)
 	if !ok {
@@ -154,7 +142,6 @@ func (h *Handler) twoFAVerify(c *gin.Context) {
 		return
 	}
 
-	// Fetch user with TOTP secret
 	var user models.User
 	err = h.users.FindOne(ctx, bson.M{"_id": userOID},
 		options.FindOne().SetProjection(bson.M{"totp_secret": 1, "totp_enabled": 1})).Decode(&user)
@@ -168,13 +155,11 @@ func (h *Handler) twoFAVerify(c *gin.Context) {
 		return
 	}
 
-	// Validate the code
 	if !auth.ValidateTOTPCode(user.TOTPSecret, req.Code) {
 		c.JSON(http.StatusUnauthorized, errResp("Invalid 2FA code", "AUTH_401"))
 		return
 	}
 
-	// Generate recovery codes
 	plainCodes, hashedCodes, err := auth.GenerateRecoveryCodes()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errResp("Failed generating recovery codes", "AUTH_500"))
@@ -213,10 +198,7 @@ func (h *Handler) twoFAVerify(c *gin.Context) {
 	})
 }
 
-// ── 2FA Login (submit code after password) ────────────────────────────────────
 
-// twoFALogin handles POST /api/v1/auth/2fa/login
-// Accepts the intermediate 2FA token + TOTP code, issues full tokens.
 func (h *Handler) twoFALogin(c *gin.Context) {
 	var req TwoFALoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -232,7 +214,6 @@ func (h *Handler) twoFALogin(c *gin.Context) {
 		return
 	}
 
-	// Validate the intermediate token
 	tfaClaims, err := h.issuer.ParseTwoFactorToken(req.TwoFAToken)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, errResp("Invalid or expired 2FA token", "AUTH_401"))
@@ -256,7 +237,6 @@ func (h *Handler) twoFALogin(c *gin.Context) {
 		return
 	}
 
-	// Validate TOTP code
 	if !auth.ValidateTOTPCode(user.TOTPSecret, req.Code) {
 		h.logAuditEvent(auditEvent{
 			Action:       "2fa_login",
@@ -272,7 +252,6 @@ func (h *Handler) twoFALogin(c *gin.Context) {
 		return
 	}
 
-	// Issue full tokens
 	now := time.Now().UTC()
 	userIDHex := user.ID.Hex()
 
@@ -342,10 +321,7 @@ func (h *Handler) twoFALogin(c *gin.Context) {
 	})
 }
 
-// ── 2FA Recovery ──────────────────────────────────────────────────────────────
 
-// twoFARecover handles POST /api/v1/auth/2fa/recover
-// Allows login using a one-time recovery code instead of TOTP.
 func (h *Handler) twoFARecover(c *gin.Context) {
 	var req TwoFARecoverRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -384,20 +360,17 @@ func (h *Handler) twoFARecover(c *gin.Context) {
 		return
 	}
 
-	// Match recovery code
 	idx := auth.MatchRecoveryCode(req.RecoveryCode, user.TOTPRecoveryCodes)
 	if idx < 0 {
 		c.JSON(http.StatusUnauthorized, errResp("Invalid recovery code", "AUTH_401"))
 		return
 	}
 
-	// Remove used recovery code
 	newCodes := append(user.TOTPRecoveryCodes[:idx], user.TOTPRecoveryCodes[idx+1:]...)
 	now := time.Now().UTC()
 	_, _ = h.users.UpdateOne(ctx, bson.M{"_id": userOID},
 		bson.M{"$set": bson.M{"totp_recovery_codes": newCodes, "updated_at": now}})
 
-	// Issue full tokens
 	userIDHex := user.ID.Hex()
 	accessToken, accessExp, err := h.issuer.GenerateAccessToken(userIDHex, user.Email, user.Role, now)
 	if err != nil {
@@ -465,10 +438,7 @@ func (h *Handler) twoFARecover(c *gin.Context) {
 	})
 }
 
-// ── 2FA Disable ───────────────────────────────────────────────────────────────
 
-// twoFADisable handles POST /api/v1/auth/2fa/disable
-// Requires password re-entry. Admin only.
 func (h *Handler) twoFADisable(c *gin.Context) {
 	claims, ok := getAccessClaims(c)
 	if !ok {
@@ -528,10 +498,8 @@ func (h *Handler) twoFADisable(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "2FA has been disabled."})
 }
 
-// ── QR code helper ────────────────────────────────────────────────────────────
 
 func generateQRBase64(otpauthURL string) (string, error) {
-	// Parse the otpauth URL back into a key to get the QR image
 	key, err := otp.NewKeyFromURL(otpauthURL)
 	if err != nil {
 		return "", err

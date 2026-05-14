@@ -1,5 +1,4 @@
 (function () {
-    // The 2FA token is passed via sessionStorage from the signin page
     const twoFAToken = sessionStorage.getItem('2fa_token');
 
     const alertBox  = document.getElementById('alert');
@@ -22,7 +21,6 @@
         return;
     }
 
-    // ── TOTP form ─────────────────────────────────────────────────────────────
     document.getElementById('twofa-form').addEventListener('submit', async function (e) {
         e.preventDefault();
         alertBox.style.display = 'none';
@@ -62,7 +60,6 @@
         }
     });
 
-    // ── Recovery code toggle ──────────────────────────────────────────────────
     document.getElementById('use-recovery-link').addEventListener('click', function (e) {
         e.preventDefault();
         document.getElementById('twofa-form').style.display = 'none';
@@ -77,7 +74,6 @@
         alertBox.style.display = 'none';
     });
 
-    // ── Recovery form ─────────────────────────────────────────────────────────
     document.getElementById('recovery-form').addEventListener('submit', async function (e) {
         e.preventDefault();
         alertBox.style.display = 'none';

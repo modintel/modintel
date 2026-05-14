@@ -35,7 +35,6 @@
                 body: JSON.stringify({ email }),
             });
 
-            // Always show success — backend never reveals if email exists
             showAlert('If that email is registered, a reset link has been sent. Check your inbox.', false);
             form.reset();
         } catch (_) {

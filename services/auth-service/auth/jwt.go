@@ -28,14 +28,12 @@ type RefreshClaims struct {
 	jwt.RegisteredClaims
 }
 
-// TwoFactorClaims is a short-lived intermediate token issued after password
-// verification when 2FA is required. It cannot be used as an access token.
 type TwoFactorClaims struct {
 	UserID  string `json:"user_id"`
 	Email   string `json:"email"`
 	Role    string `json:"role"`
-	Purpose string `json:"purpose"` // always "2fa_login"
-	Type    string `json:"type"`    // always "intermediate"
+	Purpose string `json:"purpose"`
+	Type    string `json:"type"`
 	jwt.RegisteredClaims
 }
 
@@ -113,8 +111,6 @@ func HashToken(raw string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// GenerateTwoFactorToken issues a 5-minute intermediate token after password
-// verification when 2FA is required.
 func (t TokenIssuer) GenerateTwoFactorToken(userID, email, role string, now time.Time) (string, time.Time, error) {
 	expiresAt := now.Add(5 * time.Minute)
 	claims := TwoFactorClaims{
@@ -133,7 +129,6 @@ func (t TokenIssuer) GenerateTwoFactorToken(userID, email, role string, now time
 	return raw, expiresAt, err
 }
 
-// ParseTwoFactorToken validates and parses an intermediate 2FA token.
 func (t TokenIssuer) ParseTwoFactorToken(raw string) (*TwoFactorClaims, error) {
 	token, err := jwt.ParseWithClaims(raw, &TwoFactorClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if token.Method != jwt.SigningMethodHS256 {

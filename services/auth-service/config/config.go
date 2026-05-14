@@ -26,10 +26,6 @@ type Config struct {
 	BootstrapAdminPass  string
 	BootstrapAdminRole  string
 	BootstrapAdminName  string
-	// AppBaseURL is the externally reachable base URL used to build invite and
-	// password-reset links in outgoing emails (e.g. https://app.example.com).
-	// Using a server-side config value (not the HTTP Host header) removes the
-	// user-controlled taint source that triggers go/email-injection.
 	AppBaseURL string
 }
 

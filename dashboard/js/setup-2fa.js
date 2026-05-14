@@ -17,7 +17,6 @@
         alertBox.style.display = 'none';
     }
 
-    // ── Step 1: Load QR code ──────────────────────────────────────────────────
     try {
         const res = await apiFetch('/api/v1/auth/2fa/setup', { method: 'POST' });
         const data = await res.json();
@@ -37,7 +36,6 @@
 
     document.getElementById('next-to-verify').addEventListener('click', () => setStep(2));
 
-    // ── Step 2: Verify code ───────────────────────────────────────────────────
     let recoveryCodes = [];
 
     document.getElementById('verify-form').addEventListener('submit', async function (e) {
@@ -80,7 +78,6 @@
         }
     });
 
-    // ── Step 3: Recovery codes ────────────────────────────────────────────────
     function renderRecoveryCodes(codes) {
         const container = document.getElementById('recovery-codes');
         container.innerHTML = codes.map(c =>
