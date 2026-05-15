@@ -145,6 +145,76 @@
     color: var(--accent-fg);
 }
 
+.export-status-section {
+    margin-top: auto;
+    padding: 12px 0;
+    position: sticky;
+    bottom: 0;
+    background: var(--bg);
+}
+
+.export-status-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.export-status-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--fg-subtle);
+    letter-spacing: 0.05em;
+}
+
+.export-pending-status {
+    font-size: 0.65rem;
+    font-weight: 600;
+}
+
+.export-pending-status.pending {
+    color: var(--accent);
+}
+
+.export-pending-status.done {
+    color: var(--success);
+}
+
+.recent-exports-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.export-item {
+    padding: 5px 8px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+}
+
+.export-item-name {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.export-item-meta {
+    font-size: 0.6rem;
+    color: var(--fg-muted);
+    margin-top: 2px;
+}
+
+.export-empty {
+    font-size: 0.68rem;
+    color: var(--fg-muted);
+    padding: 4px 8px;
+}
+
 #cut-modal .form-group {
     margin-bottom: 16px;
 }

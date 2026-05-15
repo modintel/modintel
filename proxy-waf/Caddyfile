@@ -4,7 +4,10 @@
 
 :8080 {
 	log {
-		output file /var/log/caddy/waf-access.json
+		output file /var/log/caddy/waf-access.json {
+			roll_size 2mb
+			roll_keep 1
+		}
 		format json
 	}
 

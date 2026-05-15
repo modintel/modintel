@@ -40,6 +40,7 @@ var GEO_COLORS = [
 function detectVector(rule) {
     if (!rule) return { key: "other", label: "Other" };
     var code = Number(rule);
+    if (code >= 901000 && code < 910000) return null;
     if (code >= 900000 && code < 910000) return { key: "protocol", label: "Protocol" };
     if (code >= 910000 && code < 913000) return { key: "protocol", label: "Protocol" };
     if (code >= 913000 && code < 914000) return { key: "scanner", label: "Scanner" };
@@ -66,14 +67,21 @@ function detectVectorFromRules(rules) {
     var votes = {};
     for (var i = 0; i < rules.length; i++) {
         var v = detectVector(rules[i]);
-        votes[v.key] = (votes[v.key] || 0) + 1;
+        if (v) votes[v.key] = (votes[v.key] || 0) + 1;
+    }
+    if (votes.protocol && Object.keys(votes).length > 1) {
+        var maxNonProtocol = 0;
+        for (var key in votes) {
+            if (key !== 'protocol' && votes[key] > maxNonProtocol) maxNonProtocol = votes[key];
+        }
+        if (votes.protocol <= maxNonProtocol) delete votes.protocol;
     }
     var sorted = Object.entries(votes).sort(function (a, b) { return b[1] - a[1]; });
     if (sorted.length === 0) return detectVector(null);
     var winner = sorted[0][0];
     for (var j = 0; j < rules.length; j++) {
         var v2 = detectVector(rules[j]);
-        if (v2.key === winner) return v2;
+        if (v2 && v2.key === winner) return v2;
     }
     return detectVector(rules[0]);
 }
@@ -416,7 +424,7 @@ async function refreshReports() {
         if (!statsRes.ok) throw new Error("HTTP " + statsRes.status);
         var stats = await statsRes.json();
 
-        var logsRes = await apiFetch(API_BASE + "/logs?limit=100");
+        var logsRes = await apiFetch(API_BASE + "/logs?limit=500");
         var alerts = [];
         if (logsRes.ok) {
             var logsData = await logsRes.json();

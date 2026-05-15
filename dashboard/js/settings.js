@@ -223,22 +223,24 @@ async function revokeAllSessionsAction() {
     );
 }
 
-function renderUsers(users) {
+function renderUsers(users, showAll = false) {
     const listEl = document.getElementById('users-list');
     const emptyEl = document.getElementById('users-empty');
     if (!listEl || !emptyEl) return;
 
     listEl.innerHTML = '';
 
-    if (!Array.isArray(users) || users.length === 0) {
+    const filteredUsers = showAll ? users : users.filter(u => u.is_active !== false);
+
+    if (!Array.isArray(filteredUsers) || filteredUsers.length === 0) {
         emptyEl.style.display = 'block';
-        emptyEl.textContent = 'No users found.';
+        emptyEl.textContent = showAll ? 'No users found.' : 'No active users found.';
         return;
     }
 
     emptyEl.style.display = 'none';
 
-    users.forEach((user) => {
+    filteredUsers.forEach((user) => {
         const item = document.createElement('div');
         item.className = 'user-item';
 
@@ -269,6 +271,12 @@ function renderUsers(users) {
         deleteBtn.className = 'btn btn-danger user-delete-btn';
         deleteBtn.textContent = 'Remove';
         deleteBtn.addEventListener('click', () => deleteUser(user));
+        if (user.is_active === false) {
+            deleteBtn.disabled = true;
+            deleteBtn.title = 'User is inactive';
+            deleteBtn.style.opacity = '0.5';
+            deleteBtn.style.cursor = 'not-allowed';
+        }
 
         item.appendChild(avatar);
         item.appendChild(info);
@@ -279,6 +287,8 @@ function renderUsers(users) {
     });
 }
 
+let showAllUsers = false;
+
 async function loadUsers() {
     try {
         const res = await apiFetch('/api/v1/users');
@@ -288,7 +298,7 @@ async function loadUsers() {
         }
         const payload = await res.json();
         const users = payload?.data?.users || payload?.data || [];
-        renderUsers(Array.isArray(users) ? users : []);
+        renderUsers(Array.isArray(users) ? users : [], showAllUsers);
     } catch (err) {
         console.error('Failed to load users:', err);
     }
@@ -379,6 +389,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const inviteEmail = document.getElementById('invite-email');
     if (inviteEmail && inviteBtn) {
         inviteEmail.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendInvite(); });
+    }
+
+    const toggleShowAllBtn = document.getElementById('toggle-show-all-users-btn');
+    if (toggleShowAllBtn) {
+        toggleShowAllBtn.addEventListener('click', () => {
+            showAllUsers = !showAllUsers;
+            toggleShowAllBtn.textContent = showAllUsers ? 'Hide Inactive' : 'Show All';
+            loadUsers();
+        });
     }
 
     const saveParanoiaBtn = document.getElementById('paranoia-save-btn');

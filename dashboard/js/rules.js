@@ -55,6 +55,24 @@
                 <div class="rule-detail-item"><b>Source</b><span>${escapeHtml(rule.source) || 'owasp-crs'}</span></div>
                 <div class="rule-detail-item"><b>Note</b><span class="text-muted">CRS rules are read-only. Only enable/disable is allowed.</span></div>
             `;
+        } else if (rule.type === 'crs-blocking') {
+            detailsHTML += `
+                <div class="rule-detail-item"><b>Type</b><span>CRS Blocking Evaluation</span></div>
+                <div class="rule-detail-item"><b>Severity</b><span>${escapeHtml(rule.severity) || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Phase</b><span>${escapeHtml(rule.phase) || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Paranoia Level</b><span>${escapeHtml(rule.paranoia_level) || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Source</b><span>${escapeHtml(rule.source) || 'owasp-crs'}</span></div>
+                <div class="rule-detail-item"><b>Note</b><span class="text-muted">Aggregate rule — fires when cumulative anomaly score exceeds the paranoia threshold. Links detection rules to the block decision. Read-only.</span></div>
+            `;
+        } else if (rule.type === 'crs-init') {
+            detailsHTML += `
+                <div class="rule-detail-item"><b>Type</b><span>CRS Initialization</span></div>
+                <div class="rule-detail-item"><b>Severity</b><span>${escapeHtml(rule.severity) || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Phase</b><span>${escapeHtml(rule.phase) || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Paranoia Level</b><span>${escapeHtml(rule.paranoia_level) || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Source</b><span>${escapeHtml(rule.source) || 'owasp-crs'}</span></div>
+                <div class="rule-detail-item"><b>Note</b><span class="text-muted">Initialization rule — sets up CRS variables, exclusions, and configuration on engine start. Read-only.</span></div>
+            `;
         } else {
             const source = rule.source || 'modintel-custom';
             detailsHTML += `
@@ -128,9 +146,14 @@
     function buildRuleRow(rule) {
         const row = document.createElement('tr');
         row.id = `rule-${rule.id}`;
+        row._ruleData = rule;
         
         if (rule.type === 'crs') {
             row.classList.add('crs-rule');
+        } else if (rule.type === 'crs-blocking') {
+            row.classList.add('crs-blocking-rule');
+        } else if (rule.type === 'crs-init') {
+            row.classList.add('crs-init-rule');
         }
 
         const idCell = document.createElement('td');
@@ -142,6 +165,15 @@
 
         const descCell = document.createElement('td');
         descCell.textContent = String(rule.description || 'No description provided');
+        descCell.className = 'desc-collapsed';
+        descCell.title = 'Click to expand';
+        descCell.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isCollapsed = descCell.classList.contains('desc-collapsed');
+            descCell.classList.toggle('desc-collapsed', !isCollapsed);
+            descCell.classList.toggle('desc-expanded', isCollapsed);
+            descCell.title = isCollapsed ? 'Click to collapse' : 'Click to expand';
+        });
 
         const statusCell = document.createElement('td');
         statusCell.className = 'rule-status-cell';
@@ -227,7 +259,7 @@
             updateRuleCount(payload.total_count || rules.length);
         } catch (error) {
             console.error('Failed to load rules from API:', error);
-            tbody.innerHTML = '<td colspan="4">Failed to load rules from API.</td>';
+            tbody.innerHTML = '<tr><td colspan="4">Failed to load rules from API.</td></tr>';
         }
 
         applyRuleDeepLink();
@@ -309,7 +341,7 @@
         const detailsId = `rule-${ruleId}-details`;
         let detailsRow = document.getElementById(detailsId);
         if (!detailsRow) {
-            detailsRow = createDetailsRow(rule);
+            detailsRow = createDetailsRow(rule || row._ruleData);
             row.insertAdjacentElement('afterend', detailsRow);
             const deleteBtn = detailsRow.querySelector('.btn-delete-rule');
             if (deleteBtn) {
@@ -329,6 +361,10 @@
         document.getElementById('rule-category').value = 'SQLi';
         document.getElementById('rule-desc').value = '';
         document.getElementById('rule-syntax').value = '';
+        const sevEl = document.getElementById('rule-severity');
+        if (sevEl) sevEl.value = 'MEDIUM';
+        const phaseEl = document.getElementById('rule-phase');
+        if (phaseEl) phaseEl.value = '2';
     };
 
     window.restartWAF = async function () {
@@ -393,7 +429,8 @@
         const id = document.getElementById('rule-id').value.trim();
         const category = document.getElementById('rule-category').value;
         const desc = document.getElementById('rule-desc').value.trim();
-        const syntax = document.getElementById('rule-syntax').value.trim();
+        const severity = document.getElementById('rule-severity')?.value || 'MEDIUM';
+        const phase = parseInt(document.getElementById('rule-phase')?.value, 10) || 2;
         
         if (!id || !desc) {
             showModal('Error', 'Rule ID and Description are required.', 'error');
@@ -404,7 +441,7 @@
             const resp = await apiFetch('/api/rules', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({id, category, description: desc, severity: 'MEDIUM', phase: 2})
+                body: JSON.stringify({id, category, description: desc, severity, phase})
             });
             if (!resp.ok) throw new Error('Failed');
             showModal('Success', 'Rule created. Toggle to enable.');
@@ -527,9 +564,14 @@
 
     function setupSearch() {
         const searchInput = document.getElementById('rule-search');
+        const clearBtn = document.getElementById('clear-search-btn');
         if (searchInput) {
             let searchTimeout;
+            const toggleClear = () => {
+                if (clearBtn) clearBtn.style.display = searchInput.value.trim() ? 'inline-block' : 'none';
+            };
             searchInput.addEventListener('input', (e) => {
+                toggleClear();
                 clearTimeout(searchTimeout);
                 searchTimeout = setTimeout(() => {
                     currentSearch = e.target.value.trim();
@@ -537,6 +579,16 @@
                     loadRules(1);
                 }, 300);
             });
+            if (clearBtn) {
+                clearBtn.addEventListener('click', () => {
+                    searchInput.value = '';
+                    currentSearch = '';
+                    currentPage = 1;
+                    clearBtn.style.display = 'none';
+                    loadRules(1);
+                });
+            }
+            if (searchInput.value.trim()) toggleClear();
         }
     }
 
@@ -601,6 +653,15 @@
     const paranoiaFilter = document.getElementById('paranoia-filter');
     if (paranoiaFilter && currentType === 'crs') {
         paranoiaFilter.style.display = 'block';
+    }
+    const linkParams = new URLSearchParams(window.location.search);
+    const linkRuleId = linkParams.get('rule');
+    if (linkRuleId) {
+        currentSearch = linkRuleId;
+        const searchInput = document.getElementById('rule-search');
+        if (searchInput) searchInput.value = linkRuleId;
+        const clearBtn = document.getElementById('clear-search-btn');
+        if (clearBtn) clearBtn.style.display = 'inline-block';
     }
     loadRules();
     updateRestartButtonState();

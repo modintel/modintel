@@ -63,10 +63,25 @@
                     <label>Description</label>
                     <input type="text" id="rule-desc" placeholder="Brief description of the rule">
                 </div>
-                <div class="form-group">
-                    <label>Rule Syntax</label>
-                    <textarea id="rule-syntax" rows="4"
-                        placeholder="SecRule ARGS &quot;@rx pattern&quot; &quot;id:990100,phase:2,pass,log,msg:'Rule description'&quot;"></textarea>
+                <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div>
+                        <label>Severity</label>
+                        <select id="rule-severity">
+                            <option value="CRITICAL">CRITICAL</option>
+                            <option value="HIGH">HIGH</option>
+                            <option value="MEDIUM" selected>MEDIUM</option>
+                            <option value="LOW">LOW</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Phase</label>
+                        <select id="rule-phase">
+                            <option value="1">Phase 1 - Request Headers</option>
+                            <option value="2" selected>Phase 2 - Request Body</option>
+                            <option value="3">Phase 3 - Response Headers</option>
+                            <option value="4">Phase 4 - Response Body</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="form-actions">
                     <button class="btn btn-primary" id="save-rule-btn" type="button">Add Rule</button>
@@ -137,6 +152,7 @@
             </div>
             <div class="rules-filters" style="padding: 1rem; border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center;">
                 <input type="text" id="rule-search" placeholder="Search by ID or description..." style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg);">
+                <button id="clear-search-btn" style="display:none; padding: 0.35rem 0.65rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg-muted); cursor: pointer; font-size: 0.75rem; white-space: nowrap;">Clear</button>
                 <select id="category-filter" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg);">
                     <option value="">All Categories</option>
                     <option value="SQLi">SQLi</option>
