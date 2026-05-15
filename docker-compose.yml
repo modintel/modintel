@@ -36,7 +36,7 @@ services:
       - ./proxy-waf/Caddyfile:/config/caddy/Caddyfile
       - ./proxy-waf/coraza.conf:/opt/coraza/config.d/user.conf
       - ./proxy-waf/custom_rules.conf:/opt/coraza/config.d/custom.conf
-      - ./proxy-waf/crs-setup.conf:/opt/corazo/config/crs-setup.conf
+      - ./proxy-waf/crs-setup.conf:/opt/coraza/config/crs-setup.conf
       - ./proxy-waf/overrides:/opt/coraza/overrides
       - modintel_waf-logs:/var/log/coraza
       - modintel_caddy_logs:/var/log/caddy
@@ -58,7 +58,6 @@ services:
       - SIGNATURES_FILE=/app/signatures/modintel_regex.signatures
       - INFERENCE_URL=http://inference-engine:8083/predict-miss
       - BACKEND_URL=http://juice-shop:3000
-      - BLOCK_THRESHOLD=0.5
       - REPORT_URL=http://log-collector:8081/api/waf/block-event
     networks:
       - modintel-net
@@ -154,6 +153,7 @@ services:
       - ./models:/app/models
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
+      - modintel_caddy_logs:/var/log/caddy:ro
     environment:
       - MONGO_URI=${MONGO_URI}
       - MONGO_DB_NAME=${MONGO_DB_NAME}

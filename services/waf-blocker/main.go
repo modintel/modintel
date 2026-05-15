@@ -435,12 +435,7 @@ func main() {
 	backendURL := env("BACKEND_URL", "http://juice-shop:3000")
 	reportURL := env("REPORT_URL", "http://log-collector:8081/api/waf/block-event")
 	listenAddr := env("LISTEN_ADDR", ":8086")
-	blockThreshold := 0.85
-	if v := os.Getenv("BLOCK_THRESHOLD"); v != "" {
-		if _, err := fmt.Sscanf(v, "%f", &blockThreshold); err != nil {
-			log.Fatalf("Invalid BLOCK_THRESHOLD: %v", err)
-		}
-	}
+	blockThreshold := 0.94
 
 	log.Printf("Loading signatures from %s", signaturesFile)
 	prefilter, err := LoadPrefilter(signaturesFile)

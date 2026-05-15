@@ -24,9 +24,10 @@ var statsMu sync.Mutex
 func main() {
 	db.Connect()
 	db.SeedWAFRules()
-  db.InitRuleIndexes()
+	db.InitRuleIndexes()
 	api.InitAuditIndexes()
 	api.InitHub()
+	api.SyncLayer2ThresholdToBlocker()
 
 	port := os.Getenv("PORT")
 	if port == "" {
