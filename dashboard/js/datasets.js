@@ -1,5 +1,10 @@
 const API_BASE = '/api';
 
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 let selectedDatasets = new Set();
 
 function updateDatasetActions() {
@@ -120,6 +125,8 @@ async function loadDatasetSources() {
     }
 }
 
+const activeBalanceTimers = {};
+
 function renderDatasets(items) {
     const tbody = document.getElementById('datasets-list');
     if (!items.length) {
@@ -134,7 +141,7 @@ function renderDatasets(items) {
             <td>${d.attack_pct || 0}%</td>
             <td>${d.created_at ? new Date(d.created_at).toLocaleDateString() : '—'}</td>
             <td>
-                <button class="btn btn-sm process-dataset-btn" data-id="${d._id}">
+                <button class="btn btn-sm process-dataset-btn" data-id="${d._id}" data-name="${escapeHtml(d.name || '')}">
                     <svg class="process-circle" viewBox="0 0 20 20" width="14" height="14">
                         <circle cx="10" cy="10" r="8" fill="none" stroke="var(--border)" stroke-width="2.5"/>
                         <circle class="process-fill" cx="10" cy="10" r="8" fill="none" stroke="#ff570a" stroke-width="2.5" stroke-dasharray="50.27" stroke-dashoffset="50.27" stroke-linecap="round" transform="rotate(-90 10 10)"/>
@@ -159,6 +166,97 @@ function renderDatasets(items) {
     document.querySelectorAll('.process-dataset-btn').forEach(btn => {
         btn.addEventListener('click', () => processDataset(btn));
     });
+
+    items.forEach(d => {
+        if (d.name) checkActiveBalanceJob(d.name);
+    });
+}
+
+async function checkActiveBalanceJob(name) {
+    try {
+        const res = await apiFetch(`${API_BASE}/training/datasets/${encodeURIComponent(name)}/balance/status`);
+        if (!res.ok) {
+            console.debug('Balance status for', name, 'returned', res.status);
+            return;
+        }
+        const job = await res.json();
+        console.debug('Balance job for', name, ':', job);
+        if (!job || job.status === 'idle' || !job.needed) return;
+
+        const btn = Array.from(document.querySelectorAll('.process-dataset-btn')).find(b => b.dataset.name === name);
+        if (!btn) { console.debug('Button not found for', name); return; }
+        const fill = btn.querySelector('.process-fill');
+        if (!fill) { console.debug('Fill not found for', name); return; }
+
+        const pct = Math.min(1, job.collected / job.needed);
+        fill.style.strokeDashoffset = String(50.27 * (1 - pct));
+
+        if (job.status === 'done' || job.status === 'error' || job.status === 'partial') {
+            return;
+        }
+
+        if (job.status === 'running' || job.status === 'collecting') {
+            btn.disabled = true;
+            btn.classList.add('is-processing');
+            fill.classList.add('processing');
+            console.debug('Restored balance animation for', name, 'at', Math.round(pct * 100) + '%');
+            resumeBalancePolling(name, btn, fill, job);
+        }
+    } catch (e) {
+        console.debug('checkActiveBalanceJob error for', name, ':', e);
+    }
+}
+
+function resumeBalancePolling(name, btn, fill, job) {
+    if (activeBalanceTimers[name]) clearInterval(activeBalanceTimers[name]);
+    let resolved = false;
+    const pollStatus = function () {
+        apiFetch(`${API_BASE}/training/datasets/${encodeURIComponent(name)}/balance/status`)
+            .then(res => res.ok ? res.json() : null)
+            .then(j => {
+                if (j) {
+                    const pct = Math.min(1, j.collected / j.needed);
+                    fill.style.strokeDashoffset = String(50.27 * (1 - pct));
+                    if ((j.status === 'done' || j.status === 'error' || j.status === 'partial') && !resolved) {
+                        resolved = true;
+                        clearInterval(activeBalanceTimers[name]);
+                        delete activeBalanceTimers[name];
+                        btn.disabled = false;
+                        btn.classList.remove('is-processing');
+                        fill.classList.remove('processing');
+                        fill.style.strokeDashoffset = '50.27';
+                        if (j.status === 'done') {
+                            const totalSamples = j.samples || (j.attack_count + j.benign_count);
+                            showModal('Dataset Balanced',
+                                totalSamples + ' total samples (' + j.attack_count + ' attacks + ' + j.benign_count + ' benign, ' + j.attack_pct + '% attacks)',
+                                'info');
+                            loadDatasets();
+                        } else if (j.status === 'partial') {
+                            const totalSamples = j.samples || (j.attack_count + j.benign_count);
+                            showModal('Partially Balanced',
+                                'Collected ' + j.benign_count + ' of ' + j.needed + ' benign samples.\n'
+                                + totalSamples + ' total (' + j.attack_count + ' attacks + ' + j.benign_count + ' benign, ' + j.attack_pct + '% attacks).\n\n'
+                                + 'Generate more benign traffic and try again.',
+                                'info');
+                        } else {
+                            let msg = j.message || 'Failed to balance dataset';
+                            let title = 'Balance Failed';
+                            if (msg === 'no benign traffic available' || msg === 'caddy access log not found') {
+                                title = 'No Benign Traffic Available';
+                                msg = 'Not enough benign requests found in the access logs. Browse the application normally and try again.';
+                            } else if (msg === 'dataset already at or above 60% attacks') {
+                                title = 'Dataset Already Balanced';
+                                msg = 'This dataset already has 60% or more attack samples. No benign blending needed.';
+                            }
+                            showModal(title, msg, 'error');
+                        }
+                    }
+                }
+            })
+            .catch(() => {});
+    };
+    activeBalanceTimers[name] = setInterval(pollStatus, 1000);
+    pollStatus();
 }
 
 function renderSources(sources) {
@@ -269,17 +367,106 @@ function processDataset(btn) {
     const fill = btn.querySelector('.process-fill');
     if (!fill || fill.classList.contains('processing')) return;
 
+    const name = btn.dataset.name;
+    if (!name) return;
+
     btn.disabled = true;
     btn.classList.add('is-processing');
     fill.classList.add('processing');
     fill.style.strokeDashoffset = '0';
 
-    setTimeout(() => {
+    let pollTimer = null;
+    let resolved = false;
+    const updateProgress = function (job) {
+        if (!job || !job.needed) return;
+        const pct = Math.min(1, job.collected / job.needed);
+        fill.style.strokeDashoffset = String(50.27 * (1 - pct));
+    };
+
+    const finish = function () {
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = null;
+        if (activeBalanceTimers[name]) { clearInterval(activeBalanceTimers[name]); delete activeBalanceTimers[name]; }
         btn.disabled = false;
         btn.classList.remove('is-processing');
         fill.classList.remove('processing');
         fill.style.strokeDashoffset = '50.27';
-    }, 2000);
+    };
+
+    const pollStatus = function () {
+        apiFetch(`${API_BASE}/training/datasets/${encodeURIComponent(name)}/balance/status`)
+            .then(res => res.ok ? res.json() : null)
+            .then(job => {
+                if (job) {
+                    updateProgress(job);
+                    if ((job.status === 'done' || job.status === 'error' || job.status === 'partial') && !resolved) {
+                        resolved = true;
+                        if (job.status === 'done') {
+                            const totalSamples = job.samples || (job.attack_count + job.benign_count);
+                            showModal('Dataset Balanced',
+                                totalSamples + ' total samples (' + job.attack_count + ' attacks + ' + job.benign_count + ' benign, ' + job.attack_pct + '% attacks)',
+                                'info');
+                            loadDatasets();
+                        } else if (job.status === 'partial') {
+                            const totalSamples = job.samples || (job.attack_count + job.benign_count);
+                            showModal('Partially Balanced',
+                                'Collected ' + job.benign_count + ' of ' + job.needed + ' benign samples.\n'
+                                + totalSamples + ' total (' + job.attack_count + ' attacks + ' + job.benign_count + ' benign, ' + job.attack_pct + '% attacks).\n\n'
+                                + 'Generate more benign traffic and try again.',
+                                'info');
+                        } else {
+                            let msg = job.message || 'Failed to balance dataset';
+                            let title = 'Balance Failed';
+                            if (msg === 'no benign traffic available' || msg === 'caddy access log not found') {
+                                title = 'No Benign Traffic Available';
+                                msg = 'Not enough benign requests found in the access logs. Browse the application normally and try again.';
+                            } else if (msg === 'dataset already at or above 60% attacks') {
+                                title = 'Dataset Already Balanced';
+                                msg = 'This dataset already has 60% or more attack samples. No benign blending needed.';
+                            }
+                            showModal(title, msg, 'error');
+                        }
+                        finish();
+                    }
+                }
+            })
+            .catch(() => {});
+    };
+
+    apiFetch(`${API_BASE}/training/datasets/${encodeURIComponent(name)}/balance`, {
+        method: 'POST'
+    }).then(function (res) {
+        if (!res.ok) {
+            return res.json().then(function (data) {
+                throw new Error(data.detail || 'HTTP ' + res.status);
+            });
+        }
+        return res.json();
+    }).then(function (data) {
+        if (data && data.status === 'balanced') {
+            resolved = true;
+            const totalSamples = data.samples || (data.attack_count + data.benign_count);
+            showModal('Dataset Balanced',
+                totalSamples + ' total samples (' + data.attack_count + ' attacks + ' + data.benign_count + ' benign, ' + data.attack_pct + '% attacks)',
+                'info');
+            loadDatasets();
+            finish();
+        }
+    }).catch(function (err) {
+        if (!resolved) {
+            let msg = err.message || 'Failed to balance dataset';
+            let title = 'Balance Failed';
+            if (msg.includes('not found') || msg.includes('404')) {
+                title = 'Dataset Not Found';
+                msg = 'The dataset file could not be found. Make sure the dataset exists on disk.';
+            }
+            showModal(title, msg, 'error');
+            finish();
+        }
+    });
+
+    pollTimer = setInterval(pollStatus, 1000);
+    pollStatus();
 }
 
 const generateDatasetBtn = document.getElementById('generate-dataset-btn');

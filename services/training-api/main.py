@@ -4,6 +4,8 @@ import os
 import re
 import socket
 import subprocess
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -25,6 +27,16 @@ client: Optional[MongoClient] = None
 db = None
 training_active = False
 current_job_id: Optional[str] = None
+balance_jobs = {}
+balance_lock = threading.Lock()
+
+
+def _update_balance_job(dataset_name: str, job_id: str, updates: dict) -> None:
+    with balance_lock:
+        job = balance_jobs.get(dataset_name)
+        if not job or job.get("job_id") != job_id:
+            return
+        job.update(updates)
 
 
 def get_db():
@@ -406,6 +418,214 @@ def _restart_inference_engine(version: str):
         pass
 
 
+@app.get("/api/training/datasets/{dataset_name}/balance/status")
+async def balance_status(dataset_name: str):
+    with balance_lock:
+        job = balance_jobs.get(dataset_name)
+    if not job:
+        return {"status": "idle", "needed": 0, "collected": 0}
+    return job
+
+
+def _run_balance_job(dataset_name: str, job_id: str):
+    try:
+        import pandas as pd
+    except ImportError:
+        _update_balance_job(dataset_name, job_id, {
+            "status": "error",
+            "message": "pandas not available",
+        })
+        return
+
+    try:
+        db = get_db()
+
+        parquet_path = os.path.join(DATA_DIR, "processed", f"{dataset_name}.parquet")
+        if not os.path.isfile(parquet_path):
+            _update_balance_job(dataset_name, job_id, {
+                "status": "error",
+                "message": "dataset not found",
+            })
+            return
+
+        df = pd.read_parquet(parquet_path)
+        attack_count = len(df)
+
+        benign_needed = int(attack_count / 0.6 - attack_count)
+        if benign_needed <= 0:
+            _update_balance_job(dataset_name, job_id, {
+                "status": "error",
+                "message": "dataset already at or above 60% attacks",
+            })
+            return
+
+        _update_balance_job(dataset_name, job_id, {
+            "needed": benign_needed,
+            "attack_count": attack_count,
+        })
+
+        cursor_coll = db["cut_cursor"]
+        cursor_id = f"last_balance_{dataset_name}"
+        # Clear stale cursor so all current log entries are considered
+        cursor_coll.delete_one({"_id": cursor_id})
+        last_ts = 0
+
+        caddy_log = "/var/log/caddy/waf-access.json"
+        if not os.path.isfile(caddy_log):
+            _update_balance_job(dataset_name, job_id, {
+                "status": "error",
+                "message": "caddy access log not found",
+            })
+            return
+
+        benign_rows = []
+        max_ts = last_ts
+
+        def _append_entry(entry):
+            nonlocal max_ts
+            ts = entry.get("ts", 0)
+            if ts <= last_ts:
+                return False
+            if ts > max_ts:
+                max_ts = ts
+            req = entry.get("request", {})
+            benign_rows.append({
+                "timestamp": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts else datetime.now(timezone.utc).isoformat(),
+                "method": req.get("method", "GET"),
+                "uri": req.get("uri", "/"),
+                "headers": req.get("headers", {}),
+                "body": entry.get("request_body", "") or entry.get("captured_body", "") or "",
+                "source": "benign",
+                "human_label": "benign",
+                "ai_score": 0.0,
+            })
+            _update_balance_job(dataset_name, job_id, {"collected": len(benign_rows)})
+            return True
+
+        def _collect_from_log():
+            if not os.path.isfile(caddy_log):
+                return
+            with open(caddy_log, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("status") != 200:
+                            continue
+                        _append_entry(entry)
+                        if len(benign_rows) >= benign_needed:
+                            return
+                    except (json.JSONDecodeError, KeyError):
+                        continue
+
+        _collect_from_log()
+
+        if len(benign_rows) < benign_needed:
+            _update_balance_job(dataset_name, job_id, {
+                "status": "collecting",
+                "message": "waiting for benign traffic",
+            })
+
+            try:
+                last_size = os.path.getsize(caddy_log) if os.path.isfile(caddy_log) else 0
+                with open(caddy_log, "r", encoding="utf-8", errors="ignore") as f:
+                    if last_size > 0:
+                        f.seek(last_size)
+                    start = time.time()
+                    while len(benign_rows) < benign_needed and (time.time() - start) < 60:
+                        line = f.readline()
+                        if not line:
+                            time.sleep(0.5)
+                            continue
+                        try:
+                            entry = json.loads(line)
+                            if entry.get("status") != 200:
+                                continue
+                            _append_entry(entry)
+                        except (json.JSONDecodeError, KeyError):
+                            continue
+            except Exception:
+                pass
+
+        actual_benign = len(benign_rows)
+        if actual_benign == 0:
+            _update_balance_job(dataset_name, job_id, {
+                "status": "error",
+                "message": "no benign traffic available",
+            })
+            return
+
+        actual_attack_pct = round((attack_count / (attack_count + actual_benign)) * 100)
+
+        benign_df = pd.DataFrame(benign_rows)
+        balanced_df = pd.concat([df, benign_df], ignore_index=True)
+        balanced_df.to_parquet(parquet_path, index=False)
+
+        total = len(balanced_df)
+
+        cursor_coll.update_one(
+            {"_id": cursor_id},
+            {"$set": {"last_ts": max_ts}},
+            upsert=True,
+        )
+
+        db["datasets"].update_one(
+            {"name": dataset_name},
+            {"$set": {
+                "samples": total,
+                "attack_pct": actual_attack_pct,
+                "true_positives": attack_count,
+                "false_positives": 0,
+                "type": "Balanced",
+                "balanced_at": datetime.now(timezone.utc).isoformat(),
+            }}
+        )
+
+        if actual_benign >= benign_needed:
+            _update_balance_job(dataset_name, job_id, {
+                "status": "done",
+                "benign_count": actual_benign,
+                "attack_pct": actual_attack_pct,
+                "samples": total,
+                "message": "balanced",
+            })
+        else:
+            _update_balance_job(dataset_name, job_id, {
+                "status": "partial",
+                "benign_count": actual_benign,
+                "attack_pct": actual_attack_pct,
+                "samples": total,
+                "message": f"collected {actual_benign}/{benign_needed} benign samples",
+            })
+    except Exception:
+        _update_balance_job(dataset_name, job_id, {
+            "status": "error",
+            "message": "internal error during balancing",
+        })
+
+
+@app.get("/api/training/datasets/cut-cursor")
+async def get_cut_cursor():
+    try:
+        db = get_db()
+        cursor_coll = db["cut_cursor"]
+        cursor_doc = cursor_coll.find_one({"_id": "last_cut"})
+        last_cut_at = cursor_doc.get("last_cut_at") if cursor_doc else None
+
+        query = {"status": "reviewed"}
+        if last_cut_at is not None:
+            query["reviewed_at"] = {"$gt": last_cut_at}
+
+        collection = db["alerts"]
+        pending = collection.count_documents(query)
+
+        return {"success": True, "data": {"pending": pending}}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal error")
+
+
 @app.post("/api/training/datasets/cut")
 async def cut_reviewed_dataset(body: dict = Body({})):
     try:
@@ -414,24 +634,39 @@ async def cut_reviewed_dataset(body: dict = Body({})):
         raise HTTPException(status_code=500, detail="pandas not available")
 
     try:
+        db = get_db()
+
         dataset_name = re.sub(r"[^\w\s-]", "", str(body.get("name", ""))).strip()
         dataset_name = re.sub(r"\s+", "_", dataset_name)[:100]
         if not dataset_name:
             dataset_name = f"reviewed_export_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
 
-        collection = get_db()["alerts"]
-        cursor = collection.find(
-            {"status": "reviewed"},
+        datasets_coll = db["datasets"]
+        existing_count = datasets_coll.count_documents({"name": {"$regex": f"^{re.escape(dataset_name)}"}})
+        if existing_count > 0:
+            dataset_name = f"{dataset_name}_{existing_count + 1}"
+
+        cursor_coll = db["cut_cursor"]
+        cursor_doc = cursor_coll.find_one({"_id": "last_cut"})
+        last_cut_at = cursor_doc.get("last_cut_at") if cursor_doc else None
+
+        query = {"status": "reviewed"}
+        if last_cut_at is not None:
+            query["reviewed_at"] = {"$gt": last_cut_at}
+
+        collection = db["alerts"]
+        cur = collection.find(
+            query,
             {
                 "timestamp": 1, "method": 1, "uri": 1, "source": 1,
                 "ai_score": 1, "ai_probability": 1, "triggered_rules": 1,
-                "anomaly_score": 1, "human_label": 1, "_id": 0,
+                "anomaly_score": 1, "human_label": 1, "alert_key": 1, "_id": 0,
             },
         ).limit(50000)
 
-        rows = list(cursor)
+        rows = list(cur)
         if not rows:
-            raise HTTPException(status_code=400, detail="No reviewed alerts to export")
+            raise HTTPException(status_code=400, detail="No new reviewed alerts to export")
 
         df = pd.DataFrame(rows)
         os.makedirs(os.path.join(DATA_DIR, "processed"), exist_ok=True)
@@ -443,7 +678,13 @@ async def cut_reviewed_dataset(body: dict = Body({})):
         total = len(df)
         attack_pct = round((tp_count / total) * 100) if total > 0 else 0
 
-        datasets_coll = get_db()["datasets"]
+        now = datetime.now(timezone.utc)
+        cursor_coll.update_one(
+            {"_id": "last_cut"},
+            {"$set": {"last_cut_at": now}},
+            upsert=True,
+        )
+
         doc = {
             "name": dataset_name,
             "type": "Mixed",
@@ -451,7 +692,7 @@ async def cut_reviewed_dataset(body: dict = Body({})):
             "attack_pct": attack_pct,
             "true_positives": tp_count,
             "false_positives": fp_count,
-            "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "created_at": now.strftime("%Y-%m-%d"),
             "status": "ready",
             "source": "reviewed",
         }
@@ -468,6 +709,46 @@ async def cut_reviewed_dataset(body: dict = Body({})):
         raise
     except Exception:
         raise HTTPException(status_code=500, detail="Internal error during export")
+
+
+@app.post("/api/training/datasets/{dataset_name}/balance")
+async def balance_dataset(dataset_name: str):
+    try:
+        parquet_path = os.path.join(DATA_DIR, "processed", f"{dataset_name}.parquet")
+        if not os.path.isfile(parquet_path):
+            raise HTTPException(status_code=404, detail="Dataset not found")
+
+        with balance_lock:
+            existing = balance_jobs.get(dataset_name)
+            if existing and existing.get("status") in {"running", "collecting"}:
+                return existing
+
+        job_id = f"{dataset_name}-{int(time.time())}"
+
+        with balance_lock:
+            balance_jobs[dataset_name] = {
+                "job_id": job_id,
+                "status": "running",
+                "needed": 0,
+                "collected": 0,
+                "attack_count": 0,
+                "benign_count": 0,
+                "attack_pct": 0,
+                "samples": 0,
+                "message": "starting",
+            }
+
+        t = threading.Thread(target=_run_balance_job, args=(dataset_name, job_id), daemon=True)
+        t.start()
+
+        return {
+            "status": "started",
+            "job_id": job_id,
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal error during balancing")
 
 
 @app.post("/api/training/datasets/export")
