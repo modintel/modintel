@@ -48,6 +48,10 @@
     color: var(--fg-muted);
 }
 
+.section-note.is-accent {
+    color: #ff7a1a;
+}
+
 .source-list {
     display: flex;
     flex-direction: column;
@@ -165,4 +169,8 @@ input[type="checkbox"] {
 .process-dataset-btn.is-processing {
     color: #ff570a;
     border-color: rgba(255, 87, 10, 0.3);
+}
+
+.process-dataset-btn.is-processing .process-fill {
+    transition: stroke-dashoffset 0.4s linear;
 }
