@@ -110,7 +110,7 @@ function showPrompt(title, message, defaultValue, onConfirm, onCancel) {
     const inputEl = document.getElementById('modal-input');
 
     titleEl.textContent = title;
-    messageEl.textContent = message;
+    messageEl.innerHTML = message;
 
     modal.classList.add('open');
 

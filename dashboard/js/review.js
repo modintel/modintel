@@ -2,11 +2,13 @@ const API_BASE = '/api';
 let currentStatus = localStorage.getItem('reviewFilter_status') || 'generated';
 let currentPriority = localStorage.getItem('reviewFilter_priority') || '';
 let currentSource = localStorage.getItem('reviewFilter_source') || '';
+let currentSort = localStorage.getItem('reviewSort_order') || 'asc';
 let nextCursor = '';
 let hasMore = false;
 let isLoading = false;
 const alertBodies = {};
 const alertHeaders = {};
+let reviewedTotal = 0;
 
 function getAlertId(alert) {
     if (!alert) return '';
@@ -51,10 +53,12 @@ async function loadReviewStats() {
             apiFetch(`${API_BASE}/alerts/review?status=reviewed&limit=1&human_label=true_positive`),
             apiFetch(`${API_BASE}/alerts/review?status=reviewed&limit=1&human_label=false_positive`),
         ]);
-        document.getElementById('stat-reviewed').textContent = (await reviewed.json()).total || 0;
+        reviewedTotal = (await reviewed.json()).total || 0;
+        document.getElementById('stat-reviewed').textContent = reviewedTotal;
         document.getElementById('stat-pending').textContent = (await generated.json()).total || 0;
         document.getElementById('stat-tp').textContent = (await tp.json()).total || 0;
         document.getElementById('stat-fp').textContent = (await fp.json()).total || 0;
+        loadRecentExports();
     } catch (e) {
         console.error('Error loading review stats:', e);
     }
@@ -75,6 +79,7 @@ async function loadReviewAlerts(reset) {
     if (currentPriority) params.set('priority', currentPriority);
     if (currentSource) params.set('source', currentSource);
     if (nextCursor) params.set('cursor', nextCursor);
+    params.set('sort', currentSort);
 
     try {
         const res = await apiFetch(`${API_BASE}/alerts/review?${params.toString()}`);
@@ -253,6 +258,60 @@ function toggleHeadersRow(id) {
 
 document.getElementById('load-more-review').addEventListener('click', () => loadReviewAlerts(false));
 
+async function loadRecentExports() {
+    try {
+        const res = await apiFetch(`${API_BASE}/datasets`);
+        if (!res.ok) {
+            renderRecentExports([], 'Unable to load exports');
+            updateExportPendingStatus(0);
+            return;
+        }
+        const data = await res.json();
+        const datasets = data?.items || data?.data || data || [];
+        renderRecentExports(datasets.slice(0, 3));
+
+        const lastCutRes = await apiFetch(`${API_BASE}/training/datasets/cut-cursor`);
+        let pending = 0;
+        if (lastCutRes.ok) {
+            const cursorData = await lastCutRes.json();
+            pending = cursorData?.data?.pending || 0;
+        } else {
+            pending = reviewedTotal;
+        }
+        updateExportPendingStatus(pending);
+    } catch (_) {
+        renderRecentExports([], 'Unable to load exports');
+        updateExportPendingStatus(0);
+    }
+}
+
+function updateExportPendingStatus(pending) {
+    const statusEl = document.getElementById('export-pending-status');
+    if (!statusEl) return;
+    if (pending > 0) {
+        statusEl.textContent = `${pending} unexported`;
+        statusEl.className = 'export-pending-status pending';
+    } else {
+        statusEl.textContent = 'All exported';
+        statusEl.className = 'export-pending-status done';
+    }
+}
+
+function renderRecentExports(datasets, emptyText) {
+    const listEl = document.getElementById('recent-exports-list');
+    if (!listEl) return;
+    if (!datasets.length) {
+        listEl.innerHTML = `<div class="export-empty">${emptyText || 'No exports yet'}</div>`;
+        return;
+    }
+    listEl.innerHTML = datasets.map(function (d) {
+        return '<div class="export-item">' +
+            '<div class="export-item-name">' + escapeHtml(d.name || '—') + '</div>' +
+            '<div class="export-item-meta">' + (d.samples || 0) + ' samples &middot; ' + (d.true_positives || 0) + ' TP &middot; ' + (d.false_positives || 0) + ' FP</div>' +
+            '</div>';
+    }).join('');
+}
+
 document.getElementById('review-body').addEventListener('click', (e) => {
     const btn = e.target.closest('.btn-tp, .btn-fp, .btn-undo, .btn-body, .btn-headers');
     if (!btn) return;
@@ -287,8 +346,20 @@ document.querySelectorAll('.filter-row button').forEach(btn => {
     });
 });
 
+const sortBtn = document.getElementById('sort-order-btn');
+if (sortBtn) {
+    sortBtn.textContent = currentSort === 'asc' ? '▲ Oldest' : '▼ Newest';
+    sortBtn.addEventListener('click', () => {
+        currentSort = currentSort === 'asc' ? 'desc' : 'asc';
+        localStorage.setItem('reviewSort_order', currentSort);
+        sortBtn.textContent = currentSort === 'asc' ? '▲ Oldest' : '▼ Newest';
+        loadReviewAlerts(true);
+    });
+}
+
 loadReviewStats();
 loadReviewAlerts(true);
+loadRecentExports();
 
 (function restoreFilters() {
     var filters = {
@@ -320,7 +391,7 @@ if (cutBtn && cutModal) {
     });
 
     document.getElementById('cut-modal-confirm').addEventListener('click', async () => {
-            const name = document.getElementById('cut-dataset-name').value.trim() || 'reviewed_export';
+            const name = document.getElementById('cut-dataset-name').value.trim();
             cutModal.classList.remove('open');
 
             try {

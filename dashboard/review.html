@@ -90,6 +90,14 @@
                     <button class="priority-btn" data-filter="source" data-value="ml_miss_detector">Layer 2</button>
                 </div>
             </div>
+
+            <div class="export-status-section">
+                <div class="export-status-header">
+                    <div class="export-status-label">Recent Exports</div>
+                    <div id="export-pending-status" class="export-pending-status"></div>
+                </div>
+                <div id="recent-exports-list" class="recent-exports-list"></div>
+            </div>
         </div>
 
         <div class="panel-right">
@@ -100,6 +108,7 @@
                     </div>
                 </div>
                 <div class="header-right-group">
+                    <button class="btn btn-sm" id="sort-order-btn" type="button" style="border: none;">▲ Oldest</button>
                     <button class="btn btn-sm" id="cut-dataset-btn" type="button">Export</button>
                 </div>
             </div>

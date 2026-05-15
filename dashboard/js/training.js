@@ -3,6 +3,28 @@ let trainingPollInterval = null;
 let selectedTrainingVersions = new Set();
 let allTrainingHistory = [];
 
+function normalizeHistory(data) {
+    const items = Array.isArray(data) ? data : (data && data.items ? data.items : []);
+    return items.map((item) => {
+        const safe = item && typeof item === 'object' ? item : {};
+        const targetLayer = safe.target_layer || safe.targetLayer || 'layer1';
+        return { ...safe, target_layer: targetLayer };
+    });
+}
+
+function formatPct(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '—';
+    return num.toFixed(2) + '%';
+}
+
+function formatDate(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleDateString();
+}
+
 async function loadModelTypes() {
     var select = document.getElementById('model-type');
     try {
@@ -73,7 +95,7 @@ async function loadTrainingHistory() {
     try {
         const res = await apiFetch(`${API_BASE}/training/history`);
         const data = await res.json();
-        allTrainingHistory = data || [];
+        allTrainingHistory = normalizeHistory(data);
 
         const activeBtn = document.querySelector('.panel-right-header .view-btn.active');
         const view = activeBtn ? activeBtn.dataset.view : 'layer1';
@@ -113,10 +135,10 @@ function renderHistory(items) {
             <td><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;" ${item.active || isLayer1 ? 'disabled' : ''}>${item.version}</td>
             <td>${item.model_type}</td>
             <td>${item.dataset}</td>
-            <td>${(item.precision).toFixed(2)}%</td>
-            <td>${(item.recall).toFixed(2)}%</td>
-            <td style="color:var(--accent);">${(item.fpr).toFixed(2)}%</td>
-            <td>${new Date(item.trained_at).toLocaleDateString()}</td>
+            <td>${formatPct(item.precision)}</td>
+            <td>${formatPct(item.recall)}</td>
+            <td style="color:var(--accent);">${formatPct(item.fpr)}</td>
+            <td>${formatDate(item.trained_at)}</td>
             <td>
                 ${item.active
                     ? '<span class="badge-active">Active</span>'
@@ -291,19 +313,19 @@ function updateEvalMetrics(item) {
     metrics.innerHTML = `
         <div class="metric">
             <div class="metric-label">Precision</div>
-            <div class="metric-value">${(item.precision).toFixed(2)}%</div>
+            <div class="metric-value">${formatPct(item.precision)}</div>
         </div>
         <div class="metric">
             <div class="metric-label">Recall</div>
-            <div class="metric-value">${(item.recall).toFixed(2)}%</div>
+            <div class="metric-value">${formatPct(item.recall)}</div>
         </div>
         <div class="metric">
             <div class="metric-label">FPR</div>
-            <div class="metric-value" style="color:var(--accent);">${(item.fpr).toFixed(2)}%</div>
+            <div class="metric-value" style="color:var(--accent);">${formatPct(item.fpr)}</div>
         </div>
         <div class="metric">
             <div class="metric-label">F1</div>
-            <div class="metric-value">${(item.f1_score).toFixed(2)}%</div>
+            <div class="metric-value">${formatPct(item.f1_score)}</div>
         </div>
     `;
 }

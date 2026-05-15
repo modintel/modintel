@@ -90,7 +90,7 @@ function addChartHoverDots(svgId, values, width, height, padding, unit, dotClass
             } else {
                 const waf = Number.isFinite(_seriesRequestData[i]) ? _seriesRequestData[i].toFixed(1) : '0.0';
                 const inf = Number.isFinite(_seriesInferenceData[i]) ? _seriesInferenceData[i].toFixed(1) : '0.0';
-                tooltip.innerHTML = '<div style="line-height:1.6">WAF: ' + waf + ' req/min<br>Inference: ' + inf + ' inf/min</div>';
+                tooltip.innerHTML = '<div style="line-height:1.6"><span style="color:#ff570a">●</span> WAF: ' + waf + ' req/min<br><span style="color:#2563eb">●</span> Inference: ' + inf + ' inf/min</div>';
             }
             tooltip.style.display = 'block';
         });

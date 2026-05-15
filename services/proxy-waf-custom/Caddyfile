@@ -17,7 +17,12 @@
 	}
 
 	handle /api/training/* {
-		reverse_proxy training-api:8085
+		reverse_proxy training-api:8085 {
+			flush_interval -1
+			transport http {
+				keepalive 0
+			}
+		}
 	}
 
 	reverse_proxy review-api:8082 {

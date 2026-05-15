@@ -52,6 +52,27 @@
     font-weight: 600;
 }
 
+.desc-collapsed {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+
+.desc-collapsed:hover {
+    color: var(--accent);
+}
+
+.desc-expanded {
+    white-space: normal;
+    word-break: break-word;
+    cursor: pointer;
+}
+
+.desc-expanded:hover {
+    color: var(--accent);
+}
+
 .highlight-row {
     animation: highlightFade 4s ease-out;
 }
@@ -342,6 +363,22 @@
 
 .crs-rule:hover {
     background: rgba(255, 87, 10, 0.05);
+}
+
+.crs-blocking-rule {
+    background: rgba(100, 150, 255, 0.03);
+}
+
+.crs-blocking-rule:hover {
+    background: rgba(100, 150, 255, 0.07);
+}
+
+.crs-init-rule {
+    background: rgba(100, 200, 150, 0.03);
+}
+
+.crs-init-rule:hover {
+    background: rgba(100, 200, 150, 0.07);
 }
 
 .rule-type {
