@@ -192,14 +192,6 @@ func seedCRSRules(ctx context.Context) int {
 			continue
 		}
 
-		// Skip non-detection rule files
-		if strings.Contains(entry.Name(), "REQUEST-901") || // Initialization
-			strings.Contains(entry.Name(), "REQUEST-949") || // Blocking evaluation
-			strings.Contains(entry.Name(), "REQUEST-959") || // Blocking evaluation
-			strings.Contains(entry.Name(), "RESPONSE-95") { // Response rules
-			continue
-		}
-
 		filePath := crsRulesPath + "/" + entry.Name()
 		file, err := os.Open(filePath)
 		if err != nil {
@@ -266,14 +258,24 @@ func processCRSRule(ctx context.Context, coll *mongo.Collection, ruleText string
 	}
 	ruleID := idMatch[1]
 
-	// Skip initialization and blocking rules
-	if strings.HasPrefix(ruleID, "901") || strings.HasPrefix(ruleID, "949") || strings.HasPrefix(ruleID, "959") {
-		return 0
+	// Determine rule type based on ID prefix
+	ruleType := "crs"
+	if strings.HasPrefix(ruleID, "949") || strings.HasPrefix(ruleID, "959") {
+		ruleType = "crs-blocking"
+	}
+	// 901xxx are initialization rules (not detection, not blocking)
+	if strings.HasPrefix(ruleID, "901") {
+		ruleType = "crs-init"
 	}
 
 	// Extract description
 	msgRegex := regexp.MustCompile(`msg:'([^']*)'`)
 	description := "CRS Detection Rule"
+	if ruleType == "crs-blocking" {
+		description = "CRS Blocking Evaluation Rule"
+	} else if ruleType == "crs-init" {
+		description = "CRS Initialization Rule"
+	}
 	if msgMatch := msgRegex.FindStringSubmatch(ruleText); len(msgMatch) >= 2 {
 		description = msgMatch[1]
 	}
@@ -296,14 +298,20 @@ func processCRSRule(ctx context.Context, coll *mongo.Collection, ruleText string
 
 	// Extract category from tags
 	category := "Generic"
-	tagRegex := regexp.MustCompile(`tag:'([^']*)'`)
-	tags := tagRegex.FindAllStringSubmatch(ruleText, -1)
-	for _, tagMatch := range tags {
-		if len(tagMatch) >= 2 {
-			tag := tagMatch[1]
-			if strings.HasPrefix(tag, "attack-") {
-				category = mapCRSTagToCategory(tag)
-				break
+	if ruleType == "crs-blocking" {
+		category = "Blocking Evaluation"
+	} else if ruleType == "crs-init" {
+		category = "Initialization"
+	} else {
+		tagRegex := regexp.MustCompile(`tag:'([^']*)'`)
+		tags := tagRegex.FindAllStringSubmatch(ruleText, -1)
+		for _, tagMatch := range tags {
+			if len(tagMatch) >= 2 {
+				tag := tagMatch[1]
+				if strings.HasPrefix(tag, "attack-") {
+					category = mapCRSTagToCategory(tag)
+					break
+				}
 			}
 		}
 	}
@@ -324,13 +332,13 @@ func processCRSRule(ctx context.Context, coll *mongo.Collection, ruleText string
 	update := bson.M{
 		"$setOnInsert": bson.M{
 			"id":          ruleID,
-			"type":        "crs",
 			"source":      "owasp-crs",
 			"enabled":     true,
 			"archived":    false,
 			"created_at":  now,
 		},
 		"$set": bson.M{
+			"type":           ruleType,
 			"description":    description,
 			"category":       category,
 			"severity":       severity,
