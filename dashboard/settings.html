@@ -149,10 +149,10 @@
                     <div class="layer2-threshold-group">
                         <div class="layer2-label-row">
                             <label>Layer-2 Block Threshold</label>
-                            <span id="layer2-threshold-val">85%</span>
+                            <span id="layer2-threshold-val">94%</span>
                         </div>
                         <div class="layer2-slider-group">
-                            <input type="range" id="layer2-threshold" min="85" max="100" value="85">
+                            <input type="range" id="layer2-threshold" min="85" max="100" value="94">
                         </div>
                     </div>
                     <button class="btn btn-primary" id="paranoia-save-btn">Save & Restart WAF</button>
@@ -205,6 +205,7 @@
                 <div class="users-panel" id="users-panel" style="display: none;">
                     <div class="panel-right-header" style="margin-top: 0;">
                         <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Users &amp; Roles</div>
+                        <button class="btn btn-secondary btn-sm" id="toggle-show-all-users-btn" title="Show inactive/deleted users">Show All</button>
                     </div>
                     <div id="users-empty" class="sessions-empty">Loading users...</div>
                     <div id="users-list" class="users-list"></div>
