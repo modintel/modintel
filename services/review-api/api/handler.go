@@ -467,7 +467,11 @@ func GetRules(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "type must be 'crs' or 'custom'"})
 			return
 		}
-		filter["type"] = ruleType
+		if ruleType == "crs" {
+			filter["type"] = bson.M{"$in": []string{"crs", "crs-blocking", "crs-init"}}
+		} else {
+			filter["type"] = ruleType
+		}
 	}
 
 	if category != "" {
@@ -506,7 +510,7 @@ func GetRules(c *gin.Context) {
 
 	
 	opts := options.Find().
-		SetSort(bson.D{{Key: "type", Value: 1}, {Key: "id", Value: 1}}). 
+		SetSort(bson.D{{Key: "id", Value: 1}}). 
 		SetSkip(int64(skip)).
 		SetLimit(int64(params.Limit))
 
@@ -561,6 +565,16 @@ func GetRegexRules(c *gin.Context) {
 
 	categories := make(map[string]RegexCategory)
 	for _, sig := range signatures {
+		enabled := true
+		if e, ok := sig["enabled"]; ok {
+			if b, ok := e.(bool); ok {
+				enabled = b
+			}
+		}
+		if !enabled {
+			continue
+		}
+
 		cat := sig["category"].(string)
 		patternCount := 0
 		if p, ok := sig["patterns"].([]interface{}); ok {
@@ -1036,36 +1050,60 @@ func UpdateLayer2Threshold(c *gin.Context) {
 	}})
 }
 
-func notifyWafBlockerThresholdUpdate(threshold float64) {
+func notifyWafBlockerThresholdUpdate(threshold float64) error {
 	url := "http://waf-blocker:8086/api/waf/threshold"
 	body := map[string]float64{"threshold": threshold}
 	data, err := json.Marshal(body)
 	if err != nil {
 		log.Printf("failed to marshal threshold update: %v", err)
-		return
+		return err
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Post(url, "application/json", bytes.NewReader(data))
 	if err != nil {
 		log.Printf("failed to notify waf-blocker of threshold update: %v", err)
-		return
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("waf-blocker returned status %d for threshold update", resp.StatusCode)
+		return fmt.Errorf("waf-blocker returned status %d", resp.StatusCode)
 	}
+	return nil
+}
+
+func SyncLayer2ThresholdToBlocker() {
+	cfg := readParanoiaConfig()
+	threshold := cfg.Layer2BlockThreshold
+	if threshold < 0.01 {
+		threshold = 0.94
+	}
+
+	go func() {
+		maxRetries := 10
+		for i := 0; i < maxRetries; i++ {
+			err := notifyWafBlockerThresholdUpdate(threshold)
+			if err == nil {
+				log.Printf("Layer-2 threshold synced to %.2f on startup", threshold)
+				return
+			}
+			log.Printf("Retry %d/%d: failed to sync threshold on startup: %v", i+1, maxRetries, err)
+			time.Sleep(3 * time.Second)
+		}
+		log.Printf("Failed to sync threshold after %d retries; waf-blocker will use default until next update", maxRetries)
+	}()
 }
 
 func readParanoiaConfig() WAFParanoiaConfig {
-	cfg := WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On", Layer2BlockThreshold: 0.85}
+	cfg := WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On", Layer2BlockThreshold: 0.94}
 	data, err := os.ReadFile(wafConfigPath)
 	if err != nil {
 		return cfg
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On", Layer2BlockThreshold: 0.85}
+		return WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On", Layer2BlockThreshold: 0.94}
 	}
 	if cfg.Paranoia < 1 {
 		cfg.Paranoia = 4
@@ -1080,7 +1118,7 @@ func readParanoiaConfig() WAFParanoiaConfig {
 		cfg.RuleEngine = "On"
 	}
 	if cfg.Layer2BlockThreshold < 0.01 {
-		cfg.Layer2BlockThreshold = 0.85
+		cfg.Layer2BlockThreshold = 0.94
 	}
 	if cfg.Layer2BlockThreshold > 1.0 {
 		cfg.Layer2BlockThreshold = 1.0
@@ -2534,10 +2572,19 @@ func GetReviewAlerts(c *gin.Context) {
 	humanLabel := c.DefaultQuery("human_label", "")
 	limitStr := c.DefaultQuery("limit", "50")
 	cursorStr := c.Query("cursor")
+	sortOrder := c.DefaultQuery("sort", "asc")
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit < 1 || limit > 100 {
 		limit = 50
+	}
+
+	sortAsc := sortOrder != "desc"
+	cmpOp := "$gt"
+	sortVal := 1
+	if !sortAsc {
+		cmpOp = "$lt"
+		sortVal = -1
 	}
 
 	filter := bson.M{}
@@ -2559,14 +2606,14 @@ func GetReviewAlerts(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cursor"})
 			return
 		}
-		filter["_id"] = bson.M{"$gt": oid}
+		filter["_id"] = bson.M{cmpOp: oid}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	collection := db.GetCollection("modintel", "alerts")
-	opts := options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}).SetLimit(int64(limit + 1))
+	opts := options.Find().SetSort(bson.D{{Key: "_id", Value: sortVal}}).SetLimit(int64(limit + 1))
 
 	cursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
