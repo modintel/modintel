@@ -89,6 +89,20 @@ func InitRuleIndexes() {
 			Options: options.Index().
 				SetName("idx_enabled"),
 		},
+		{
+			Keys: bson.D{
+				{Key: "archived", Value: 1},
+			},
+			Options: options.Index().
+				SetName("idx_waf_rules_archived"),
+		},
+		{
+			Keys: bson.D{
+				{Key: "paranoia_level", Value: 1},
+			},
+			Options: options.Index().
+				SetName("idx_waf_rules_paranoia"),
+		},
 	}
 
 	_, err := rulesColl.Indexes().CreateMany(ctx, indexes)
