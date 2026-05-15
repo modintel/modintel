@@ -34,6 +34,7 @@ type Handler struct {
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	IsUnlock bool   `json:"is_unlock"`
 }
 
 type RefreshRequest struct {
@@ -268,7 +269,7 @@ func (h *Handler) login(c *gin.Context) {
 	userIDHex := user.ID.Hex()
 
 	// If 2FA is enabled, issue an intermediate token instead of full tokens
-	if user.TOTPEnabled {
+	if user.TOTPEnabled && !req.IsUnlock {
 		twoFAToken, _, err := h.issuer.GenerateTwoFactorToken(userIDHex, user.Email, user.Role, now)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, errResp("Failed generating 2FA token", "AUTH_500"))

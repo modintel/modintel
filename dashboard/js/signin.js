@@ -34,6 +34,7 @@
     }
 
     function handleLoginSuccess(data, remember) {
+        localStorage.removeItem('dashboard_locked');
         storeAuthData(data.user);
         hideAlert();
         signinForm.style.display = 'none';
@@ -46,13 +47,14 @@
 
     async function authenticate(email, password, remember) {
         try {
+            const isUnlock = localStorage.getItem('dashboard_locked') === 'true';
             const response = await fetch(AUTH_SERVICE_URL, {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({ email, password, is_unlock: isUnlock }),
             });
 
             const data = await response.json();

@@ -92,13 +92,18 @@
         return refreshPromise;
     }
 
-    async function logout() {
+    async function logout(isLock = false) {
         try {
-            await fetch('/api/v1/auth/logout', {
+            await fetch('/api/v1/auth/logout' + (isLock ? '?lock=true' : ''), {
                 method: 'POST',
                 credentials: 'same-origin',
             });
         } catch (_) {
+        }
+        if (isLock) {
+            localStorage.setItem('dashboard_locked', 'true');
+        } else {
+            localStorage.removeItem('dashboard_locked');
         }
         clearAuth();
         if (window.location.pathname !== SIGNIN_ROUTE) {

@@ -348,7 +348,7 @@ if (cutBtn && cutModal) {
 const lockBtn = document.getElementById('lock-btn');
 if (lockBtn) {
     lockBtn.addEventListener('click', () => {
-        window.logout();
+        window.logout(true);
     });
 }
 

@@ -404,7 +404,7 @@ if (syncBtn) {
 const lockBtn = document.getElementById('lock-btn');
 if (lockBtn) {
     lockBtn.addEventListener('click', () => {
-        window.logout();
+        window.logout(true);
     });
 }
 
