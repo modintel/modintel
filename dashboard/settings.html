@@ -37,8 +37,8 @@
             <h1>Settings</h1>
             <p>Configure system preferences and user settings.</p>
 
-            <details class="section">
-                <summary class="collapsible-summary"><span class="collapsible-caret">&#9654;</span><h3>User Profile</h3></summary>
+            <div class="section">
+                <h3>User Profile</h3>
                 <div class="form-group">
                     <label>Display Name</label>
                     <input type="text" id="display-name" placeholder="Loading..." readonly>
@@ -52,110 +52,53 @@
                     <button class="btn btn-primary" id="save-profile-btn" type="button" style="display: none;">Save Changes</button>
                     <button class="btn btn-ghost" id="cancel-profile-btn" type="button" style="display: none;">Cancel</button>
                 </div>
-            </details>
+            </div>
 
-            <details class="section" id="section-2fa">
-                <summary class="collapsible-summary"><span class="collapsible-caret">&#9654;</span><h3>Two-Factor Authentication</h3></summary>
-                <p id="twofa-status-text">Loading 2FA status…</p>
-                <div class="form-actions" id="twofa-actions">
-                    <button class="btn btn-primary" id="setup-2fa-btn" type="button" style="display:none;">Set Up 2FA</button>
-                    <button class="btn btn-danger" id="disable-2fa-btn" type="button" style="display:none;">Disable 2FA</button>
+            <div class="section">
+                <h3>Notifications</h3>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Email Alerts</div>
+                        <div class="setting-desc">Receive email for high-priority alerts</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="email-alerts">
+                        <span class="toggle-slider"></span>
+                    </label>
                 </div>
-            </details>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Daily Summary</div>
+                        <div class="setting-desc">Receive daily attack summary report</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="daily-summary" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
 
-            <details class="section" id="section-smtp" style="display:none;">
-                <summary class="collapsible-summary"><span class="collapsible-caret">&#9654;</span><h3>Email Configuration</h3></summary>
-                <p>Configure SMTP to send invitation and password reset emails.</p>
-                <div class="form-group">
-                    <label>SMTP Host</label>
-                    <input type="text" id="smtp-host" placeholder="smtp.gmail.com">
-                </div>
-                <div class="form-group">
-                    <label>SMTP Port</label>
-                    <input type="number" id="smtp-port" value="587" min="1" max="65535">
-                </div>
-                <div class="form-group">
-                    <label>Username</label>
-                    <input type="text" id="smtp-username" placeholder="you@gmail.com" autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" id="smtp-password" placeholder="Leave blank to keep existing" autocomplete="new-password">
-                </div>
-                <div class="form-group">
-                    <label>From Address</label>
-                    <input type="email" id="smtp-from" placeholder="you@gmail.com">
-                </div>
-                <div class="form-group">
-                    <label>From Name</label>
-                    <input type="text" id="smtp-from-name" placeholder="ModIntel Security">
-                </div>
-                <div class="form-group" style="display:flex;align-items:center;gap:8px;">
-                    <input type="checkbox" id="smtp-use-tls" style="width:auto;accent-color:var(--accent);">
-                    <label for="smtp-use-tls" style="margin:0;">Use implicit TLS (port 465)</label>
-                </div>
-                <div class="form-actions">
-                    <button class="btn btn-primary" id="smtp-save-btn" type="button">Save SMTP Settings</button>
-                    <button class="btn btn-secondary" id="smtp-test-btn" type="button">Send Test Email</button>
-                </div>
-            </details>
-
-            <div class="section" id="waf-paranoia">                <div class="paranoia-header">
-                    <h3>WAF Paranoia</h3>
-                    <div class="paranoia-toggle">
-                        <span class="toggle-label">Layer-1 Blocking</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="rule-engine-enabled" checked>
-                            <span class="toggle-slider"></span>
-                        </label>
+            <div class="section">
+                <h3>System</h3>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Auto-refresh</div>
+                        <div class="setting-desc">Automatically refresh dashboard data</div>
                     </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="auto-refresh" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
                 </div>
-                <div class="paranoia-body">
-                    <div class="paranoia-rows">
-                        <div class="paranoia-row">
-                            <label>Detection Paranoia <span class="paranoia-hint">(1-4)</span></label>
-                            <div class="paranoia-input-group">
-                                <button class="paranoia-stepper" data-target="paranoia-level" data-dir="down">−</button>
-                                <input type="number" id="paranoia-level" min="1" max="4" value="4">
-                                <button class="paranoia-stepper" data-target="paranoia-level" data-dir="up">+</button>
-                            </div>
-                        </div>
-                        <div class="paranoia-row">
-                            <label>Blocking Paranoia <span class="paranoia-hint">(1-4)</span></label>
-                            <div class="paranoia-input-group">
-                                <button class="paranoia-stepper" data-target="blocking-paranoia" data-dir="down">−</button>
-                                <input type="number" id="blocking-paranoia" min="1" max="4" value="4">
-                                <button class="paranoia-stepper" data-target="blocking-paranoia" data-dir="up">+</button>
-                            </div>
-                        </div>
-                        <div class="paranoia-row">
-                            <label>Anomaly Threshold <span class="paranoia-hint">(1-20)</span></label>
-                            <div class="paranoia-input-group">
-                                <button class="paranoia-stepper" data-target="anomaly-inbound" data-dir="down">−</button>
-                                <input type="number" id="anomaly-inbound" min="1" max="20" value="3">
-                                <button class="paranoia-stepper" data-target="anomaly-inbound" data-dir="up">+</button>
-                            </div>
-                        </div>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">AI Enrichment</div>
+                        <div class="setting-desc">Enable ML inference on new alerts</div>
                     </div>
-                    <div class="paranoia-presets">
-                        <button class="btn btn-sm" data-preset="custom">Custom</button>
-                        <button class="btn btn-sm" data-preset="4">P4 — Paranoid</button>
-                        <button class="btn btn-sm" data-preset="3">P3 — Strict</button>
-                        <button class="btn btn-sm" data-preset="2">P2 — Moderate</button>
-                        <button class="btn btn-sm" data-preset="1">P1 — Minimal</button>
-                    </div>
-                </div>
-                <div class="layer2-row">
-                    <div class="layer2-threshold-group">
-                        <div class="layer2-label-row">
-                            <label>Layer-2 Block Threshold</label>
-                            <span id="layer2-threshold-val">85%</span>
-                        </div>
-                        <div class="layer2-slider-group">
-                            <input type="range" id="layer2-threshold" min="85" max="100" value="85">
-                        </div>
-                    </div>
-                    <button class="btn btn-primary" id="paranoia-save-btn">Save & Restart WAF</button>
+                    <label class="toggle">
+                        <input type="checkbox" id="ai-enrichment" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
                 </div>
             </div>
         </div>
@@ -164,58 +107,37 @@
                 <div
                     style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
                     Account</div>
-                <a href="/help" class="help-icon-right" title="Help">?</a>
             </div>
             <div class="account-section">
-                <div class="account-profile">
-                    <div class="account-avatar"></div>
-                    <div class="account-info">
-                        <div class="account-name"></div>
-                        <div class="account-role"></div>
-                    </div>
-                    <button class="btn btn-danger" id="logout-btn">Logout</button>
+                <div class="account-avatar">SA</div>
+                <div class="account-info">
+                    <div class="account-name">Security Analyst</div>
+                    <div class="account-role">analyst@modintel.local</div>
                 </div>
-                <div class="account-invite">
-                    <div class="invite-header">
-                        <div class="invite-label">Invite Users</div>
-                        <div class="invite-desc">Send an invite link to new team members</div>
-                    </div>
-                    <div class="invite-form">
-                        <input type="email" id="invite-email" class="invite-input" placeholder="Enter email address">
-                        <select id="invite-role" class="invite-role">
-                            <option value="analyst" selected>Analyst</option>
-                            <option value="viewer">Viewer</option>
-                        </select>
-                        <button class="btn btn-primary" id="invite-btn">Invite</button>
-                    </div>
-                </div>
+                <button class="btn btn-danger" id="logout-btn">Logout</button>
             </div>
-            <div class="sessions-users-grid">
-                <div class="sessions-panel">
-                    <div class="panel-right-header" style="margin-top: 0;">
-                        <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Active Sessions</div>
-                    </div>
-                    <div class="session-actions">
-                        <button class="btn btn-secondary" id="refresh-sessions-btn">Show All Sessions</button>
-                        <button class="btn btn-danger" id="revoke-all-sessions-btn">Revoke All</button>
-                    </div>
-                    <div id="sessions-empty" class="sessions-empty">No active sessions found.</div>
-                    <div id="sessions-list" class="sessions-list"></div>
-                </div>
-                <div class="users-panel" id="users-panel" style="display: none;">
-                    <div class="panel-right-header" style="margin-top: 0;">
-                        <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Users &amp; Roles</div>
-                    </div>
-                    <div id="users-empty" class="sessions-empty">Loading users...</div>
-                    <div id="users-list" class="users-list"></div>
-                </div>
+            <div class="panel-right-header" style="margin-top: 16px;">
+                <div
+                    style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
+                    Active Sessions</div>
             </div>
+            <div class="session-actions">
+                <button class="btn btn-secondary" id="refresh-sessions-btn">Refresh Sessions</button>
+                <button class="btn btn-danger" id="revoke-all-sessions-btn">Revoke All Sessions</button>
+            </div>
+            <div id="sessions-empty" class="sessions-empty">No active sessions found.</div>
+<div id="sessions-list" class="sessions-list"></div>
         </div>
     </div>
     <script src="js/auth.js"></script>
-    <script src="js/modal.js"></script>
     <script src="js/boot.js"></script>
+    <script src="js/modal.js"></script>
     <script src="js/settings.js"></script>
 </body>
 
 </html>
+
+
+
+
+

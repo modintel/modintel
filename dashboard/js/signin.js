@@ -29,12 +29,19 @@
         }
     }
 
-    function storeAuthData(user) {
+    function storeAuthData(token, user, remember) {
+        localStorage.setItem('access_token', token);
+        if (remember && user && user.refresh_token) {
+            localStorage.setItem('refresh_token', user.refresh_token);
+        }
         localStorage.setItem('user', JSON.stringify(user));
     }
 
     function handleLoginSuccess(data, remember) {
-        storeAuthData(data.user);
+        storeAuthData(data.access_token, {
+            ...data.user,
+            refresh_token: data.refresh_token,
+        }, remember);
         hideAlert();
         signinForm.style.display = 'none';
         if (loadingDots) loadingDots.style.display = 'flex';
@@ -48,7 +55,6 @@
         try {
             const response = await fetch(AUTH_SERVICE_URL, {
                 method: 'POST',
-                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                 },
@@ -58,11 +64,6 @@
             const data = await response.json();
 
             if (response.ok && data.success) {
-                if (data.require_2fa && data['2fa_token']) {
-                    sessionStorage.setItem('2fa_token', data['2fa_token']);
-                    window.location.replace('/login-2fa');
-                    return;
-                }
                 handleLoginSuccess(data.data, remember);
             } else {
                 showAlert('danger', data.error || 'Invalid credentials. Please try again.');
@@ -90,16 +91,13 @@
 
     window.showComingSoon = function(e) {
         if (e) e.preventDefault();
-        showAlert('info', 'ModIntel is a private platform. Please contact your administrator to request an account.');
+        showAlert('danger', 'Feature coming soon. Please use email sign in.');
     };
 
     function bindComingSoonLinks() {
         const forgotPasswordLink = document.getElementById('forgot-password-link');
         if (forgotPasswordLink) {
-            forgotPasswordLink.addEventListener('click', function (e) {
-                e.preventDefault();
-                window.location.href = '/forgot-password';
-            });
+            forgotPasswordLink.addEventListener('click', window.showComingSoon);
         }
 
         const requestAccessLink = document.getElementById('request-access-link');
@@ -109,31 +107,32 @@
     }
 
     async function checkExistingAuth() {
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+            return;
+        }
+
         try {
             const response = await fetch('/api/v1/auth/me', {
                 method: 'GET',
-                credentials: 'same-origin',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
             });
+
             if (response.ok) {
                 window.location.href = DASHBOARD_URL;
                 return;
             }
         } catch (_) {
         }
+
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
     }
 
     async function init() {
-        try {
-            const statusRes = await fetch('/api/v1/auth/status');
-            if (statusRes.ok) {
-                const statusData = await statusRes.json();
-                if (statusData.has_users === false) {
-                    window.location.replace('/setup');
-                    return;
-                }
-            }
-        } catch (_) {}
-
         await checkExistingAuth();
 
         if (signinForm) {

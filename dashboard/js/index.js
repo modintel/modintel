@@ -1,15 +1,15 @@
 const API_BASE = '/api';
-let currentGraphRange = localStorage.getItem('indexGraphRange') || 'day';
-let currentView = localStorage.getItem('indexView') || 'waf';
+let currentGraphRange = 'day';
+let currentView = 'waf';
 const MAX_VISIBLE_RULES = 5;
 let logsCursor = null;
 let logsHasMore = true;
 let logsLoading = false;
 let lastAlertCount = 0;
 const priorityFilters = {
-    p1: localStorage.getItem('indexPriority_p1') !== 'false',
-    p2: localStorage.getItem('indexPriority_p2') !== 'false',
-    p3: localStorage.getItem('indexPriority_p3') !== 'false',
+    p1: true,
+    p2: true,
+    p3: true
 };
 
 function formatRules(rules) {
@@ -47,7 +47,7 @@ async function updateStats() {
         const data = await res.json();
         const total = data.total_alerts || 0;
         document.getElementById('stat-total').textContent = total;
-        document.getElementById('stat-ai-count').textContent = data.coraza_count || 0;
+        document.getElementById('stat-ai-count').textContent = data.ai_enriched_count || 0;
         document.getElementById('stat-misses').textContent = data.ml_miss_count || 0;
 
         const priorityEl = document.getElementById('stat-priority');
@@ -77,11 +77,6 @@ async function updateLogs(append = false) {
             url += '&source=ml_miss_detector';
         }
 
-        const activePriorities = Object.keys(priorityFilters).filter(p => priorityFilters[p]);
-        if (activePriorities.length > 0 && activePriorities.length < 3) {
-            url += '&priority=' + activePriorities.map(p => p.toUpperCase()).join(',');
-        }
-
         const res = await apiFetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -99,7 +94,6 @@ async function updateLogs(append = false) {
 
         data.data.forEach((alert, i) => {
             const row = document.createElement('tr');
-            if (alert.alert_key) row.dataset.alertKey = alert.alert_key;
             let ts = alert.timestamp || '-';
             if (ts.includes('/')) {
                 ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
@@ -109,7 +103,6 @@ async function updateLogs(append = false) {
             const rules = formatRules(alert.triggered_rules);
 
             const aiScoreVal = alert.ai_score;
-            const mlScoreVal = alert.ml_score;
             const aiScore = aiScoreVal !== null && aiScoreVal !== undefined
                 ? `<span class="ai-score">${(aiScoreVal * 100).toFixed(1)}%</span>`
                 : '-';
@@ -120,20 +113,14 @@ async function updateLogs(append = false) {
                 ? `${alert.ai_confidence.toFixed(0)}%`
                 : '-';
 
-            let scoreValue;
-            if (isMiss) {
-                scoreValue = (mlScoreVal !== null && mlScoreVal !== undefined) ? mlScoreVal : aiScoreVal;
-            } else {
-                scoreValue = alert.anomaly_score;
-            }
-            const scoreDisplay = isMiss && scoreValue !== null && scoreValue !== undefined
-                ? `<span class="ai-score">*${(scoreValue * 100).toFixed(1)}%</span>`
+            const scoreDisplay = isMiss && aiScoreVal !== null && aiScoreVal !== undefined
+                ? `<span class="ai-score">*${(aiScoreVal * 100).toFixed(1)}%</span>`
                 : `<span class="anomaly-badge">${alert.anomaly_score}</span>`;
 
             row.innerHTML = `
                 <td style="color:var(--fg-muted);">${new Date(ts).toLocaleTimeString()}</td>
                 <td>${alert.client_ip}</td>
-                <td class="uri-cell" data-tooltip="${alert.uri}"><span>${alert.uri}</span></td>
+                <td style="font-family:monospace;font-size:0.75rem;">${alert.uri}</td>
                 <td style="text-align: center;">${scoreDisplay}</td>
                 <td style="text-align: center;">${rules}</td>
                 <td style="text-align: center;">${aiScore}</td>
@@ -154,6 +141,7 @@ async function updateLogs(append = false) {
         }
 
         if (streamSearchQuery) applyStreamSearch();
+        applyPriorityFilter();
     } catch (e) {
         console.error('Error in updateLogs:', e);
     } finally {
@@ -173,226 +161,43 @@ async function loadMoreLogs() {
     await updateLogs(true);
 }
 
-let isInitialLoad = true;
-let sseClient = null;
-let pollingInterval = null;
-
-function startSSE() {
-    if (sseClient) sseClient.close();
-
-    const indicator = SSE_createIndicator('connection-indicator');
-    sseClient = new SSEClient('/api/events/stream', {
-        onAlert: function (alert) {
-            if (isInitialLoad) return;
-            const tbody = document.getElementById('logs-body');
-            if (alert.alert_key) {
-                if (tbody.querySelector('tr[data-alert-key="' + alert.alert_key.replace(/"/g, '') + '"]')) return;
-            } else {
-                const ts = alert.timestamp || '';
-                const uri = alert.uri || '';
-                const existing = Array.from(tbody.querySelectorAll('tr')).find(row => {
-                    const cells = row.querySelectorAll('td');
-                    return cells.length > 2 && cells[0].textContent === new Date(ts).toLocaleTimeString() && cells[2].textContent === uri;
-                });
-                if (existing) return;
-            }
-            prependAlertRow(alert);
-        },
-        onAlertUpdate: function (update) {
-            updateAlertRow(update);
-        },
-        onStats: function (stats) {
-            updateStatCards(stats);
-            lastAlertCount = stats.total_alerts || 0;
-        },
-        onConnect: function () {
-            if (sseClient && sseClient.fallbackActive) {
-                stopPolling();
-                sseClient.fallbackActive = false;
-            }
-            updateLogsNewOnly();
-        },
-        onFallback: function () {
-            startPolling();
-        }
-    });
-    if (indicator) sseClient.indicator = indicator;
-    sseClient.connect();
-}
-
-function stopSSE() {
-    if (sseClient) {
-        sseClient.close();
-        sseClient = null;
+setInterval(async () => {
+    const currentTotal = await updateStats();
+    if (currentTotal > lastAlertCount) {
+        lastAlertCount = currentTotal;
+        logsCursor = null;
+        await updateLogs();
     }
-}
-
-function startPolling() {
-    if (pollingInterval) return;
-    pollingInterval = setInterval(async () => {
-        const currentTotal = await updateStats();
-        if (currentTotal > lastAlertCount) {
-            lastAlertCount = currentTotal;
-            if (!isInitialLoad) {
-                await updateLogsNewOnly();
-            }
-        }
-    }, 1000);
-}
-
-function stopPolling() {
-    if (pollingInterval) {
-        clearInterval(pollingInterval);
-        pollingInterval = null;
-    }
-}
-
-function updateStatCards(stats) {
-    document.getElementById('stat-total').textContent = stats.total_alerts || 0;
-    document.getElementById('stat-ai-count').textContent = stats.coraza_count || 0;
-    document.getElementById('stat-misses').textContent = stats.ml_miss_count || 0;
-
-    const priorityEl = document.getElementById('stat-priority');
-    if (stats.latest_priority && stats.latest_priority !== '-') {
-        priorityEl.textContent = stats.latest_priority;
-        priorityEl.className = 'stat-value priority-' + stats.latest_priority.toLowerCase();
-    } else {
-        priorityEl.textContent = '-';
-        priorityEl.className = 'stat-value';
-    }
-}
-
-function prependAlertRow(alert) {
-    const tbody = document.getElementById('logs-body');
-    if (alert.alert_key && tbody.querySelector('tr[data-alert-key="' + alert.alert_key.replace(/"/g, '') + '"]')) return;
-
-    let ts = alert.timestamp || '-';
-    if (ts.includes('/')) {
-        ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
-    }
-    const tsFormatted = new Date(ts).toLocaleTimeString();
-
-    const source = alert.source || 'coraza';
-    const isMiss = source === 'ml_miss_detector';
-    const rules = formatRules(alert.triggered_rules);
-    const aiScoreVal = alert.ai_score;
-    const mlScoreVal = alert.ml_score;
-    const aiScore = aiScoreVal !== null && aiScoreVal !== undefined
-        ? '<span class="ai-score">' + (aiScoreVal * 100).toFixed(1) + '%</span>' : '-';
-    const aiPriority = alert.ai_priority
-        ? '<span class="priority-' + alert.ai_priority.toLowerCase() + '">' + alert.ai_priority + '</span>' : '-';
-    const aiConf = alert.ai_confidence !== null && alert.ai_confidence !== undefined
-        ? alert.ai_confidence.toFixed(0) + '%' : '-';
-    let scoreValue;
-    if (isMiss) {
-        scoreValue = (mlScoreVal !== null && mlScoreVal !== undefined) ? mlScoreVal : aiScoreVal;
-    } else {
-        scoreValue = alert.anomaly_score;
-    }
-    const scoreDisplay = isMiss && scoreValue !== null && scoreValue !== undefined
-        ? '<span class="ai-score">*' + (scoreValue * 100).toFixed(1) + '%</span>'
-        : '<span class="anomaly-badge">' + alert.anomaly_score + '</span>';
-
-    const row = document.createElement('tr');
-    if (alert.alert_key) row.dataset.alertKey = alert.alert_key;
-    row.innerHTML = '<td style="color:var(--fg-muted);">' + tsFormatted + '</td>' +
-        '<td>' + alert.client_ip + '</td>' +
-        '<td class="uri-cell" data-tooltip="' + alert.uri + '"><span>' + alert.uri + '</span></td>' +
-        '<td style="text-align: center;">' + scoreDisplay + '</td>' +
-        '<td style="text-align: center;">' + rules + '</td>' +
-        '<td style="text-align: center;">' + aiScore + '</td>' +
-        '<td style="text-align: center;">' + aiConf + '</td>' +
-        '<td style="text-align: center;">' + aiPriority + '</td>';
-    tbody.insertBefore(row, tbody.firstChild);
-
-    applyStreamSearch();
-}
-
-function updateAlertRow(update) {
-    if (!update.alert_key) return;
-    var row = document.querySelector('#logs-body tr[data-alert-key="' + update.alert_key.replace(/"/g, '') + '"]');
-    if (!row) return;
-    var cells = row.querySelectorAll('td');
-    if (cells.length < 8) return;
-
-    var confVal = update.ai_confidence;
-    var prioVal = update.ai_priority;
-
-    cells[5].innerHTML = update.ai_score !== null && update.ai_score !== undefined
-        ? '<span class="ai-score">' + (update.ai_score * 100).toFixed(1) + '%</span>' : '-';
-
-    cells[6].textContent = confVal !== null && confVal !== undefined
-        ? confVal.toFixed(0) + '%' : '-';
-
-    cells[7].innerHTML = prioVal
-        ? '<span class="priority-' + prioVal.toLowerCase() + '">' + prioVal + '</span>' : '-';
-}
-
+}, 100);
 updateStats().then(total => { lastAlertCount = total; });
-updateLogs().then(() => { isInitialLoad = false; startSSE(); });
+updateLogs();
 
-async function updateLogsNewOnly() {
+async function clearLogs() {
     try {
-        let url = `${API_BASE}/logs?limit=10`;
-        if (currentView === 'miss') {
-            url += '&source=ml_miss_detector';
-        }
-        const activePriorities = Object.keys(priorityFilters).filter(p => priorityFilters[p]);
-        if (activePriorities.length > 0 && activePriorities.length < 3) {
-            url += '&priority=' + activePriorities.map(p => p.toUpperCase()).join(',');
-        }
-
-        const res = await apiFetch(url);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!data.data || data.data.length === 0) return;
-
-        const tbody = document.getElementById('logs-body');
-
-        data.data.reverse().forEach((alert) => {
-            if (alert.alert_key && tbody.querySelector('tr[data-alert-key="' + alert.alert_key.replace(/"/g, '') + '"]')) return;
-
-            const ts = alert.timestamp || '-';
-            if (ts.includes('/')) {
-                ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
-            }
-            const tsFormatted = new Date(ts).toLocaleTimeString();
-
-            const source = alert.source || 'coraza';
-            const isMiss = source === 'ml_miss_detector';
-            const rules = formatRules(alert.triggered_rules);
-            const aiScoreVal = alert.ai_score;
-            const aiScore = aiScoreVal !== null && aiScoreVal !== undefined
-                ? `<span class="ai-score">${(aiScoreVal * 100).toFixed(1)}%</span>` : '-';
-            const aiPriority = alert.ai_priority
-                ? `<span class="priority-${alert.ai_priority.toLowerCase()}">${alert.ai_priority}</span>` : '-';
-            const aiConf = alert.ai_confidence !== null && alert.ai_confidence !== undefined
-                ? `${alert.ai_confidence.toFixed(0)}%` : '-';
-            const scoreDisplay = isMiss && aiScoreVal !== null && aiScoreVal !== undefined
-                ? `<span class="ai-score">*${(aiScoreVal * 100).toFixed(1)}%</span>`
-                : `<span class="anomaly-badge">${alert.anomaly_score}</span>`;
-
-            const row = document.createElement('tr');
-            if (alert.alert_key) row.dataset.alertKey = alert.alert_key;
-            row.innerHTML = `
-                <td style="color:var(--fg-muted);">${tsFormatted}</td>
-                <td>${alert.client_ip}</td>
-                <td class="uri-cell" data-tooltip="${alert.uri}"><span>${alert.uri}</span></td>
-                <td style="text-align: center;">${scoreDisplay}</td>
-                <td style="text-align: center;">${rules}</td>
-                <td style="text-align: center;">${aiScore}</td>
-                <td style="text-align: center;">${aiConf}</td>
-                <td style="text-align: center;">${aiPriority}</td>
-            `;
-            tbody.insertBefore(row, tbody.firstChild);
-        });
-
-        applyStreamSearch();
+        const res = await apiFetch(`${API_BASE}/logs`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        logsCursor = null;
+        logsHasMore = true;
+        lastAlertCount = 0;
+        await updateStats();
+        await updateLogs();
     } catch (e) {
-        console.error('Error in updateLogsNewOnly:', e);
+        console.error('Error clearing logs:', e);
     }
 }
 
+function showClearModal() {
+    document.getElementById('clear-modal').classList.add('open');
+}
+
+function hideClearModal() {
+    document.getElementById('clear-modal').classList.remove('open');
+}
+
+function confirmClearLogs() {
+    hideClearModal();
+    clearLogs();
+}
 
 let streamSearchQuery = '';
 
@@ -414,18 +219,55 @@ function applyStreamSearch() {
     });
 }
 
+let isReviewing = false;
+
+function toggleReview() {
+    const btn = document.getElementById('sync-btn');
+    const icon = document.getElementById('review-icon');
+    isReviewing = !isReviewing;
+
+    if (isReviewing) {
+        btn.classList.add('active');
+        icon.innerHTML = '<rect x="6" y="6" width="12" height="12"></rect>';
+    } else {
+        btn.classList.remove('active');
+        icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+    }
+}
+
 const syncBtn = document.getElementById('sync-btn');
 if (syncBtn) {
-    syncBtn.addEventListener('click', () => {
-        window.location.href = '/review';
-    });
+    syncBtn.addEventListener('click', toggleReview);
 }
 
 const lockBtn = document.getElementById('lock-btn');
 if (lockBtn) {
     lockBtn.addEventListener('click', () => {
-        window.logout();
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        window.location.href = '/signin';
     });
+}
+
+const refreshBtn = document.getElementById('refresh-btn');
+if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => window.location.reload());
+}
+
+const clearLogsBtn = document.getElementById('clear-logs-btn');
+if (clearLogsBtn) {
+    clearLogsBtn.addEventListener('click', showClearModal);
+}
+
+const clearCancelBtn = document.getElementById('clear-modal-cancel');
+if (clearCancelBtn) {
+    clearCancelBtn.addEventListener('click', hideClearModal);
+}
+
+const clearConfirmBtn = document.getElementById('clear-modal-confirm');
+if (clearConfirmBtn) {
+    clearConfirmBtn.addEventListener('click', confirmClearLogs);
 }
 
 const loadMoreLogsBtn = document.getElementById('load-more-logs');
@@ -452,59 +294,6 @@ if (searchWrap && streamSearchInput) {
     streamSearchInput.addEventListener('input', (e) => handleStreamSearch(e.target.value));
 }
 
-function addChartHoverDots(svgId, values, width, height, padding, unit, dotClass) {
-    const svg = document.getElementById(svgId);
-    if (!svg) return;
-    svg.querySelectorAll('.' + dotClass).forEach(el => el.remove());
-
-    let tooltip = document.getElementById('global-chart-tooltip');
-    if (!tooltip) {
-        tooltip = document.createElement('div');
-        tooltip.id = 'global-chart-tooltip';
-        tooltip.style.cssText = 'position:fixed;display:none;background:#fafafa;border:1px solid rgba(0,0,0,0.08);color:#121212;font-size:0.7rem;padding:4px 8px;border-radius:4px;pointer-events:none;z-index:99999;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.15);font-family:var(--font,sans-serif);';
-        document.body.appendChild(tooltip);
-    }
-
-    const clean = values.map(v => Number.isFinite(Number(v)) ? Number(v) : 0);
-    if (clean.length === 0) return;
-
-    const max = Math.max(...clean, 1);
-    const min = Math.min(...clean, 0);
-    const range = max - min || 1;
-    const step = (width - padding * 2) / Math.max(clean.length - 1, 1);
-
-    clean.forEach((val, i) => {
-        const x = padding + i * step;
-        const y = height - padding - ((val - min) / range) * (height - padding * 2);
-
-        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        circle.setAttribute('cx', x);
-        circle.setAttribute('cy', y);
-        circle.setAttribute('r', '4');
-        circle.setAttribute('fill', 'transparent');
-        circle.setAttribute('stroke', 'transparent');
-        circle.setAttribute('stroke-width', '8');
-        circle.classList.add(dotClass);
-        circle.style.cursor = 'pointer';
-
-        circle.addEventListener('mouseenter', function () {
-            tooltip.textContent = val.toFixed(1) + ' ' + unit;
-            tooltip.style.display = 'block';
-        });
-
-        circle.addEventListener('mousemove', function (e) {
-            tooltip.style.left = (e.clientX + 12) + 'px';
-            tooltip.style.top = (e.clientY - 10) + 'px';
-        });
-
-        circle.addEventListener('mouseleave', function () {
-            tooltip.style.display = 'none';
-        });
-
-        svg.appendChild(circle);
-    });
-}
-
 function generateGraphPoints(data) {
     const max = Math.max(...data, 1);
     const width = 300;
@@ -524,15 +313,10 @@ function generateGraphPoints(data) {
 }
 
 function updateGraphVisual(range, data) {
-    const width = 300;
-    const height = 100;
-    const padding = 5;
     const { points, areaPoints } = generateGraphPoints(data);
 
     document.getElementById('chart-line').setAttribute('points', points);
     document.getElementById('chart-area').setAttribute('d', 'M' + areaPoints);
-
-    addChartHoverDots('attack-chart', data, width, height, padding, 'attacks', 'trend-dot');
 
     document.querySelectorAll('.graph-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.range === range);
@@ -568,7 +352,6 @@ function renderGraphLabels(range, labels) {
 
 async function updateGraph(range) {
     currentGraphRange = range;
-    localStorage.setItem('indexGraphRange', range);
     try {
         const res = await apiFetch(`${API_BASE}/trend?range=${range}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -587,27 +370,14 @@ document.querySelectorAll('.graph-btn').forEach(btn => {
     btn.addEventListener('click', () => updateGraph(btn.dataset.range));
 });
 
-(function restoreIndexFilters() {
-    document.querySelectorAll('.graph-btn').forEach(function (btn) {
-        btn.classList.toggle('active', btn.dataset.range === currentGraphRange);
-    });
-    document.querySelectorAll('.view-btn').forEach(function (btn) {
-        btn.classList.toggle('active', btn.dataset.view === currentView);
-    });
-    document.querySelectorAll('.priority-btn').forEach(function (btn) {
-        btn.classList.toggle('active', priorityFilters[btn.dataset.priority]);
-    });
-})();
-
-updateGraph(currentGraphRange);
+updateGraph('day');
 
 document.querySelectorAll('.view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentView = btn.dataset.view;
-        localStorage.setItem('indexView', currentView);
-        logsCursor = null;
+        logsCursor = null; // Reset cursor when switching views
         updateLogs();
     });
 });
@@ -616,11 +386,19 @@ document.querySelectorAll('.priority-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         btn.classList.toggle('active');
         priorityFilters[btn.dataset.priority] = btn.classList.contains('active');
-        localStorage.setItem('indexPriority_' + btn.dataset.priority, btn.classList.contains('active'));
-        logsCursor = null;
-        updateLogs();
+        applyPriorityFilter();
     });
 });
 
-
+function applyPriorityFilter() {
+    const rows = document.querySelectorAll('#logs-body tr');
+    rows.forEach(row => {
+        const priorityCell = row.querySelector('td:last-child');
+        if (!priorityCell) return;
+        const priorityMatch = priorityCell.textContent.match(/P[123]/i);
+        if (!priorityMatch) return;
+        const p = priorityMatch[0].toLowerCase();
+        row.style.display = priorityFilters[p] ? '' : 'none';
+    });
+}
 

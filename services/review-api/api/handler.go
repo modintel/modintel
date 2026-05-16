@@ -1,11 +1,9 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -26,14 +24,41 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var (
+	httpRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "modintel_api_requests_total",
+			Help: "Total API requests",
+		},
+		[]string{"method", "endpoint", "status_code"},
+	)
+	httpRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "modintel_api_request_duration_seconds",
+			Help:    "HTTP request duration in seconds",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0},
+		},
+		[]string{"method", "endpoint"},
+	)
+	activeConnections = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "modintel_api_active_connections",
+			Help: "Number of active connections",
+		},
+	)
+	inferenceRequestsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "modintel_inference_requests_total",
+			Help: "Total inference requests through review-api",
+		},
+	)
 	totalRequests    atomic.Uint64
 	totalErrors      atomic.Uint64
 	requestStats     = newRequestWindowStats()
@@ -117,12 +142,73 @@ func (s *requestWindowStats) totals(window time.Duration, now time.Time) (uint64
 	return requests, errors
 }
 
-type updateRuleRequest struct {
-	Enabled     *bool  `json:"enabled"`
-	Category    string `json:"category"`
-	Description string `json:"description"`
-	Severity    string `json:"severity"`
-	Phase       int    `json:"phase"`
+func (s *requestWindowStats) liveRPM(now time.Time) float64 {
+	currentMinute := now.UTC().Truncate(time.Minute).Unix()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var total uint64
+	var count int
+	for i := int64(1); i <= 2; i++ {
+		m := currentMinute - i*60
+		if bucket, ok := s.buckets[m]; ok {
+			total += bucket.Requests
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+	return float64(total) / float64(count)
+}
+
+type WAFRule struct {
+	ID          string    `json:"id" bson:"id"`
+	Category    string    `json:"category" bson:"category"`
+	Description string    `json:"description" bson:"description"`
+	Enabled     bool      `json:"enabled" bson:"enabled"`
+	UpdatedAt   time.Time `json:"updated_at,omitempty" bson:"updated_at,omitempty"`
+}
+
+type toggleRuleRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
+var defaultWAFRules = []WAFRule{
+	{ID: "990001", Category: "LFI", Description: "Custom LFI Protection: etc/passwd access denied", Enabled: true},
+	{ID: "990002", Category: "LFI", Description: "Custom LFI Protection: etc/shadow access denied", Enabled: true},
+	{ID: "990003", Category: "LFI", Description: "Custom LFI Protection: Windows System32 access denied", Enabled: true},
+	{ID: "990004", Category: "CMDi", Description: "Custom CMDi Protection: Backtick operator detected", Enabled: true},
+	{ID: "990005", Category: "RCE", Description: "Custom Log4Shell Protection: JNDI in User-Agent", Enabled: true},
+	{ID: "990006", Category: "Protocol", Description: "Custom Protocol Protection: CRLF Injection detected", Enabled: true},
+	{ID: "990007", Category: "XXE", Description: "Custom XXE Protection: DTD/Entity detected in body", Enabled: true},
+	{ID: "990008", Category: "NoSQLi", Description: "Custom NoSQLi Protection: MongoDB operator detected", Enabled: true},
+	{ID: "990009", Category: "NoSQLi", Description: "Custom NoSQLi Protection: URI based NoSQLi detected", Enabled: true},
+	{ID: "990010", Category: "NoSQLi", Description: "Custom NoSQLi Protection: $where operator detected", Enabled: true},
+	{ID: "990011", Category: "SSTI", Description: "Custom SSTI Protection: Handlebars Template markers detected", Enabled: true},
+	{ID: "990012", Category: "SSTI", Description: "Custom SSTI Protection: EL/JEXL Template markers detected", Enabled: true},
+	{ID: "990020", Category: "SQLi", Description: "Custom SQLi Protection: SQL keyword detected", Enabled: true},
+	{ID: "990021", Category: "SQLi", Description: "Custom SQLi Protection: SQL keyword in URI detected", Enabled: true},
+	{ID: "990022", Category: "SQLi", Description: "Custom SQLi Protection: SQL phrase detected", Enabled: true},
+	{ID: "990023", Category: "SQLi", Description: "Custom SQLi Protection: OR/AND 1=1 detected", Enabled: true},
+	{ID: "990024", Category: "SQLi", Description: "Custom SQLi Protection: Time-based SQL injection detected", Enabled: true},
+	{ID: "990030", Category: "XSS", Description: "Custom XSS Protection: HTML tag detected", Enabled: true},
+	{ID: "990031", Category: "XSS", Description: "Custom XSS Protection: Event handler detected", Enabled: true},
+	{ID: "990032", Category: "XSS", Description: "Custom XSS Protection: javascript: URI detected", Enabled: true},
+	{ID: "990033", Category: "XSS", Description: "Custom XSS Protection: JS function detected", Enabled: true},
+	{ID: "990040", Category: "CMDi", Description: "Custom CMDi Protection: Pipe command detected", Enabled: true},
+	{ID: "990041", Category: "CMDi", Description: "Custom CMDi Protection: Command injection chars detected", Enabled: true},
+	{ID: "990042", Category: "CMDi", Description: "Custom CMDi Protection: Shell command in URI", Enabled: true},
+	{ID: "990050", Category: "SSRF", Description: "Custom SSRF Protection: URL scheme detected", Enabled: true},
+	{ID: "990051", Category: "SSRF", Description: "Custom SSRF Protection: Localhost/internal IP detected", Enabled: true},
+}
+
+func init() {
+	prometheus.MustRegister(httpRequestsTotal)
+	prometheus.MustRegister(httpRequestDuration)
+	prometheus.MustRegister(activeConnections)
+	prometheus.MustRegister(inferenceRequestsTotal)
 }
 
 func SetupRouter() *gin.Engine {
@@ -154,117 +240,14 @@ func SetupRouter() *gin.Engine {
 	r.GET("/api/events/stream", SSEAuth(jwtSecret), SSEStreamHandler)
 	r.GET("/api/whoami", AuthMiddleware(jwtSecret), GetWhoAmI)
 
-	
-	authProxy := r.Group("/api/v1/auth")
-	{
-		authProxy.POST("/login", ProxyToAuthService)
-		authProxy.POST("/refresh", ProxyToAuthService)
-		authProxy.POST("/logout", ProxyToAuthService)
-		authProxy.GET("/sessions", ProxyToAuthService)
-		authProxy.POST("/sessions/revoke", ProxyToAuthService)
-		authProxy.POST("/sessions/revoke-all", ProxyToAuthService)
-		authProxy.GET("/me", ProxyToAuthService)
-		authProxy.PATCH("/profile", ProxyToAuthService)
-	}
-
 	api := r.Group("/api")
 	api.Use(AuthMiddleware(jwtSecret))
 	api.Use(AuthAuditLog())
 	{
 		api.GET("/rules", RequireRoles("admin", "analyst", "viewer"), GetRules)
 		api.PUT("/rules/:id", RequireRoles("admin"), UpdateRuleStatus)
-		api.POST("/rules", RequireRoles("admin"), CreateRule)
-		api.DELETE("/rules/:id", RequireRoles("admin"), DeleteRule)
-		api.GET("/rules/regex", RequireRoles("admin", "analyst", "viewer"), GetRegexRules)
 		api.GET("/alerts", RequireRoles("admin", "analyst", "viewer"), GetAlerts)
 		api.GET("/alerts/review", RequireRoles("admin", "analyst"), GetReviewAlerts)
-		api.GET("/admin/audit-logs", RequireRoles("admin"), func(c *gin.Context) {
-			userStr := c.Query("user")
-			actionStr := c.Query("action")
-			resourceTypeStr := c.Query("resource_type")
-			limitStr := c.DefaultQuery("limit", "50")
-			offsetStr := c.DefaultQuery("offset", "0")
-			startStr := c.Query("start")
-			endStr := c.Query("end")
-
-			limit, err := strconv.ParseInt(limitStr, 10, 64)
-			if err != nil || limit <= 0 {
-				limit = 50
-			}
-
-			offset, err := strconv.ParseInt(offsetStr, 10, 64)
-			if err != nil || offset < 0 {
-				offset = 0
-			}
-
-			filter := bson.M{}
-			if userStr != "" {
-				filter["$or"] = []bson.M{
-					{"user_id": userStr},
-					{"user_email": userStr},
-				}
-			}
-			if actionStr != "" {
-				filter["action"] = actionStr
-			}
-			if resourceTypeStr != "" {
-				filter["resource_type"] = resourceTypeStr
-			}
-
-			if startStr != "" || endStr != "" {
-				timeFilter := bson.M{}
-				if startStr != "" {
-					if t, err := time.Parse(time.RFC3339, startStr); err != nil {
-						if t, err := time.Parse("2006-01-02T15:04", startStr); err == nil {
-							timeFilter["$gte"] = t
-						}
-					} else {
-						timeFilter["$gte"] = t
-					}
-				}
-				if endStr != "" {
-					if t, err := time.Parse(time.RFC3339, endStr); err != nil {
-						if t, err := time.Parse("2006-01-02T15:04", endStr); err == nil {
-							timeFilter["$lte"] = t
-						}
-					} else {
-						timeFilter["$lte"] = t
-					}
-				}
-				if len(timeFilter) > 0 {
-					filter["timestamp"] = timeFilter
-				}
-			}
-
-			collection := db.GetCollection("modintel", "audit_logs")
-			ctx := context.Background()
-
-			total, err := collection.CountDocuments(ctx, filter)
-			if err != nil {
-				total = 0
-			}
-
-			opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: -1}}).SetLimit(limit).SetSkip(offset)
-			cursor, err := collection.Find(ctx, filter, opts)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch audit logs"})
-				return
-			}
-			defer cursor.Close(ctx)
-
-			var logs []AuditLog
-			if err := cursor.All(ctx, &logs); err != nil {
-				logs = []AuditLog{}
-			}
-
-			c.JSON(http.StatusOK, gin.H{
-				"success": true,
-				"logs":    logs,
-				"total":   total,
-				"offset":  offset,
-				"limit":   limit,
-			})
-		})
 		api.PUT("/alerts/:id/review", RequireRoles("admin", "analyst"), ReviewAlert)
 		api.GET("/logs", RequireRoles("admin", "analyst", "viewer"), GetLogs)
 		api.GET("/stats", RequireRoles("admin", "analyst", "viewer"), GetStats)
@@ -272,13 +255,8 @@ func SetupRouter() *gin.Engine {
 		api.GET("/config", RequireRoles("admin", "analyst", "viewer"), GetConfig)
 		api.GET("/waf/paranoia", RequireRoles("admin"), GetWAFParanoia)
 		api.PUT("/waf/paranoia", RequireRoles("admin"), UpdateWAFParanoia)
-		api.GET("/waf/layer2/threshold", RequireRoles("admin"), GetLayer2Threshold)
-		api.PUT("/waf/layer2/threshold", RequireRoles("admin"), UpdateLayer2Threshold)
 		api.GET("/monitor/health", RequireRoles("admin", "analyst", "viewer"), GetmonitorHealth)
 		api.GET("/monitor/metrics", RequireRoles("admin", "analyst", "viewer"), GetmonitorMetrics)
-		api.POST("/admin/audit/log", RequireRoles("admin"), IngestAuditLog)
-		api.GET("/admin/audit/logs", RequireRoles("admin", "analyst", "viewer"), GetAuditLogsHandler)
-		api.POST("/admin/storage/clear", RequireRoles("admin"), ClearStorageCollections)
 		api.POST("/system/restart/proxy-waf", RequireRoles("admin"), RestartProxyWAF)
 		api.DELETE("/logs", RequireRoles("admin", "analyst"), ClearLogs)
 		api.GET("/datasets", RequireRoles("admin", "analyst", "viewer"), GetDatasets)
@@ -301,17 +279,12 @@ func SetupRouter() *gin.Engine {
 	r.GET("/datasets.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/datasets") })
 	r.GET("/reports.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/reports") })
 	r.GET("/monitor.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/monitor") })
+	r.GET("/Monitor.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/monitor") })
 	r.GET("/settings.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/settings") })
 	r.GET("/help.html", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/help") })
 
 	r.GET("/", func(c *gin.Context) { c.File("/srv/dashboard/index.html") })
 	r.GET("/signin", func(c *gin.Context) { c.File("/srv/dashboard/signin.html") })
-	r.GET("/setup", func(c *gin.Context) { c.File("/srv/dashboard/setup.html") })
-	r.GET("/accept-invite", func(c *gin.Context) { c.File("/srv/dashboard/accept-invite.html") })
-	r.GET("/forgot-password", func(c *gin.Context) { c.File("/srv/dashboard/forgot-password.html") })
-	r.GET("/reset-password", func(c *gin.Context) { c.File("/srv/dashboard/reset-password.html") })
-	r.GET("/setup-2fa", func(c *gin.Context) { c.File("/srv/dashboard/setup-2fa.html") })
-	r.GET("/login-2fa", func(c *gin.Context) { c.File("/srv/dashboard/login-2fa.html") })
 	r.GET("/events", func(c *gin.Context) { c.File("/srv/dashboard/index.html") })
 	r.GET("/rules", func(c *gin.Context) { c.File("/srv/dashboard/rules.html") })
 	r.GET("/review", func(c *gin.Context) { c.File("/srv/dashboard/review.html") })
@@ -321,7 +294,6 @@ func SetupRouter() *gin.Engine {
 	r.GET("/monitor", func(c *gin.Context) { c.File("/srv/dashboard/monitor.html") })
 	r.GET("/settings", func(c *gin.Context) { c.File("/srv/dashboard/settings.html") })
 	r.GET("/help", func(c *gin.Context) { c.File("/srv/dashboard/help.html") })
-	r.GET("/audit-logs", func(c *gin.Context) { c.File("/srv/dashboard/audit-logs.html") })
 
 	return r
 }
@@ -333,7 +305,6 @@ type dockerContainerInfo struct {
 func RestartProxyWAF(c *gin.Context) {
 	if !restartInFlight.CompareAndSwap(false, true) {
 		c.JSON(http.StatusAccepted, gin.H{"success": true, "service": "proxy-waf", "status": "restart_already_queued"})
-		LogAction(c, "waf_restart", "system", "proxy-waf", nil, "failure", "restart already in flight")
 		return
 	}
 
@@ -343,7 +314,6 @@ func RestartProxyWAF(c *gin.Context) {
 	containerID, err := dockerFindComposeServiceContainer(ctx, "proxy-waf")
 	if err != nil {
 		restartInFlight.Store(false)
-		LogAction(c, "waf_restart", "system", "proxy-waf", nil, "failure", err.Error())
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "proxy-waf container not found"})
 		return
 	}
@@ -357,7 +327,6 @@ func RestartProxyWAF(c *gin.Context) {
 		}
 	}(containerID)
 
-	LogAction(c, "waf_restart", "system", "proxy-waf", nil, "success", "")
 	c.JSON(http.StatusAccepted, gin.H{"success": true, "service": "proxy-waf", "status": "restart_queued"})
 }
 
@@ -442,89 +411,54 @@ func requestTracker() gin.HandlerFunc {
 }
 
 func GetRules(c *gin.Context) {
-	
-	ruleType := strings.TrimSpace(c.Query("type"))        
-	category := strings.TrimSpace(c.Query("category"))    
-	search := strings.TrimSpace(c.Query("search"))        
-	paranoiaStr := c.Query("paranoia_level")              
-	
 	params, err := parseOffsetParams(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
 	ruleColl := db.GetCollection("modintel", "waf_rules")
 
-	
-	filter := bson.M{"archived": bson.M{"$ne": true}} 
+	rules := make([]WAFRule, 0, len(defaultWAFRules))
+	rules = append(rules, defaultWAFRules...)
 
-	if ruleType != "" {
-		if ruleType != "crs" && ruleType != "custom" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "type must be 'crs' or 'custom'"})
-			return
-		}
-		filter["type"] = ruleType
-	}
-
-	if category != "" {
-		if strings.HasPrefix(category, "$") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid category"})
-			return
-		}
-		filter["category"] = category
-	}
-
-	if search != "" {
-		escaped := regexp.QuoteMeta(search)
-		filter["$or"] = []bson.M{
-			{"id": bson.M{"$regex": escaped, "$options": "i"}},
-			{"description": bson.M{"$regex": escaped, "$options": "i"}},
+	cursor, err := ruleColl.Find(ctx, bson.M{})
+	if err == nil {
+		defer cursor.Close(ctx)
+		for cursor.Next(ctx) {
+			var override WAFRule
+			if decodeErr := cursor.Decode(&override); decodeErr != nil {
+				continue
+			}
+			for i := range rules {
+				if rules[i].ID == override.ID {
+					rules[i].Enabled = override.Enabled
+					rules[i].UpdatedAt = override.UpdatedAt
+					break
+				}
+			}
 		}
 	}
 
-	if paranoiaStr != "" {
-		pl, err := strconv.Atoi(paranoiaStr)
-		if err == nil && pl >= 1 && pl <= 4 {
-			filter["paranoia_level"] = pl
-		}
-	}
-
-	
-	totalCount, err := ruleColl.CountDocuments(ctx, filter)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count rules"})
-		return
-	}
-
-	
+	totalCount := int64(len(rules))
 	totalPages := int((totalCount + int64(params.Limit) - 1) / int64(params.Limit))
 	skip := (params.Page - 1) * params.Limit
 
-	
-	opts := options.Find().
-		SetSort(bson.D{{Key: "type", Value: 1}, {Key: "id", Value: 1}}). 
-		SetSkip(int64(skip)).
-		SetLimit(int64(params.Limit))
-
-	cursor, err := ruleColl.Find(ctx, filter, opts)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch rules"})
-		return
+	start := skip
+	end := skip + params.Limit
+	if start > len(rules) {
+		start = len(rules)
 	}
-	defer cursor.Close(ctx)
-
-	rules := make([]db.WAFRule, 0)
-	if err := cursor.All(ctx, &rules); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode rules"})
-		return
+	if end > len(rules) {
+		end = len(rules)
 	}
+	paginatedRules := rules[start:end]
 
 	response := OffsetResponse{
-		Data:       rules,
+		Data:       paginatedRules,
 		Page:       params.Page,
 		PageSize:   params.Limit,
 		TotalCount: totalCount,
@@ -534,70 +468,37 @@ func GetRules(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-func GetRegexRules(c *gin.Context) {
-	signaturesPath := os.Getenv("MODINTEL_SIGNATURES_FILE")
-	if signaturesPath == "" {
-		signaturesPath = "/app/signatures/modintel_regex.signatures"
-	}
-
-	data, err := os.ReadFile(signaturesPath)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read signatures file"})
-		return
-	}
-
-	var signatures []map[string]interface{}
-	if err := json.Unmarshal(data, &signatures); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse signatures"})
-		return
-	}
-
-	type RegexCategory struct {
-		Name     string `json:"name"`
-		Category string `json:"category"`
-		Severity string `json:"severity"`
-		Patterns int    `json:"patterns"`
-	}
-
-	categories := make(map[string]RegexCategory)
-	for _, sig := range signatures {
-		cat := sig["category"].(string)
-		patternCount := 0
-		if p, ok := sig["patterns"].([]interface{}); ok {
-			patternCount = len(p)
-		}
-		if existing, ok := categories[cat]; ok {
-			existing.Patterns += patternCount
-			categories[cat] = existing
-		} else {
-			categories[cat] = RegexCategory{
-				Name:     sig["name"].(string),
-				Category: cat,
-				Severity: sig["severity"].(string),
-				Patterns: patternCount,
-			}
-		}
-	}
-
-	result := make([]RegexCategory, 0, len(categories))
-	for _, v := range categories {
-		result = append(result, v)
-	}
-
-	c.JSON(http.StatusOK, result)
-}
-
 func UpdateRuleStatus(c *gin.Context) {
 	ruleID := strings.TrimSpace(c.Param("id"))
 	if ruleID == "" {
-		LogAction(c, "rule_update", "rule", "", nil, "failure", "rule id is required")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "rule id is required"})
 		return
 	}
 
 	if !ruleIDPattern.MatchString(ruleID) {
-		LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "invalid rule id format")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid rule id format"})
+		return
+	}
+
+	known := false
+	for _, rule := range defaultWAFRules {
+		if rule.ID == ruleID {
+			known = true
+			break
+		}
+	}
+	if !known {
+		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		return
+	}
+
+	var req toggleRuleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
+		return
+	}
+	if req.Enabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled is required"})
 		return
 	}
 
@@ -605,219 +506,24 @@ func UpdateRuleStatus(c *gin.Context) {
 	defer cancel()
 
 	ruleColl := db.GetCollection("modintel", "waf_rules")
-	var existingRule db.WAFRule
-	err := ruleColl.FindOne(ctx, bson.M{"id": ruleID}).Decode(&existingRule)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "rule not found")
-			c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
-			return
-		}
-		LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "database error")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
-		return
-	}
-
-	var req updateRuleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "invalid request payload")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
-		return
-	}
-
-	hasToggle := req.Enabled != nil
-	hasMetadata := req.Category != "" || req.Description != "" || req.Severity != "" || req.Phase != 0
-
-	if !hasToggle && !hasMetadata {
-		LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "no fields to update")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no fields to update"})
-		return
-	}
-
-	setFields := bson.M{"updated_at": time.Now().UTC()}
-
-	if hasToggle {
-		setFields["enabled"] = *req.Enabled
-	}
-
-	if hasMetadata {
-		if existingRule.Type != "custom" {
-			LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "cannot edit CRS rule metadata")
-			c.JSON(http.StatusForbidden, gin.H{"error": "cannot edit CRS rule metadata"})
-			return
-		}
-		if req.Category != "" {
-			if strings.HasPrefix(req.Category, "$") {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid category"})
-				return
-			}
-			setFields["category"] = req.Category
-		}
-		if req.Description != "" {
-			setFields["description"] = req.Description
-		}
-		if req.Severity != "" {
-			validSeverities := map[string]bool{"CRITICAL": true, "HIGH": true, "MEDIUM": true, "LOW": true}
-			if !validSeverities[strings.ToUpper(req.Severity)] {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "severity must be CRITICAL, HIGH, MEDIUM, or LOW"})
-				return
-			}
-			setFields["severity"] = strings.ToUpper(req.Severity)
-		}
-		if req.Phase != 0 {
-			if req.Phase < 1 || req.Phase > 4 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "phase must be 1-4"})
-				return
-			}
-			setFields["phase"] = req.Phase
-		}
-	}
-
-	_, err = ruleColl.UpdateOne(
+	_, err := ruleColl.UpdateOne(
 		ctx,
 		bson.M{"id": ruleID},
-		bson.M{"$set": setFields},
+		bson.M{"$set": bson.M{"enabled": *req.Enabled, "updated_at": time.Now().UTC()}},
+		options.Update().SetUpsert(true),
 	)
 	if err != nil {
-		LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "failed updating rule")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed updating rule"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed updating rule status"})
 		return
 	}
 
-	if hasToggle {
-		if err := syncManagedWAFOverrides(ctx); err != nil {
-			log.Printf("failed syncing managed overrides: %v", err)
-			LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "failed syncing waf overrides")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed syncing waf overrides"})
-			return
-		}
-	}
-
-	LogAction(c, "rule_update", "rule", ruleID, map[string]interface{}{"enabled": req.Enabled, "type": existingRule.Type}, "success", "")
-	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID, "type": existingRule.Type})
-}
-
-func DeleteRule(c *gin.Context) {
-	ruleID := strings.TrimSpace(c.Param("id"))
-	if ruleID == "" {
-		LogAction(c, "rule_delete", "rule", "", nil, "failure", "rule id is required")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "rule id is required"})
+	if err := syncManagedWAFOverrides(ctx); err != nil {
+		log.Printf("failed syncing managed overrides: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed syncing waf overrides"})
 		return
 	}
 
-	if !ruleIDPattern.MatchString(ruleID) {
-		LogAction(c, "rule_delete", "rule", ruleID, nil, "failure", "invalid rule id format")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid rule id format"})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-	defer cancel()
-
-	ruleColl := db.GetCollection("modintel", "waf_rules")
-	var existingRule db.WAFRule
-	err := ruleColl.FindOne(ctx, bson.M{"id": ruleID}).Decode(&existingRule)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			LogAction(c, "rule_delete", "rule", ruleID, nil, "failure", "rule not found")
-			c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
-			return
-		}
-		LogAction(c, "rule_delete", "rule", ruleID, nil, "failure", "database error")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
-		return
-	}
-
-	if existingRule.Type != "custom" {
-		LogAction(c, "rule_delete", "rule", ruleID, nil, "failure", "cannot delete CRS rules")
-		c.JSON(http.StatusForbidden, gin.H{"error": "cannot delete CRS rules"})
-		return
-	}
-
-	_, err = ruleColl.DeleteOne(ctx, bson.M{"id": ruleID})
-	if err != nil {
-		LogAction(c, "rule_delete", "rule", ruleID, nil, "failure", "failed deleting rule")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed deleting rule"})
-		return
-	}
-
-	LogAction(c, "rule_delete", "rule", ruleID, nil, "success", "")
-	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID})
-}
-
-type createRuleRequest struct {
-	ID          string `json:"id" bson:"id"`
-	Type        string `json:"type" bson:"type"`
-	Category    string `json:"category" bson:"category"`
-	Description string `json:"description" bson:"description"`
-	Severity    string `json:"severity" bson:"severity"`
-	Phase       int    `json:"phase" bson:"phase"`
-	Source      string `json:"source" bson:"source"`
-	Syntax      string `json:"syntax" bson:"-"`
-}
-
-func CreateRule(c *gin.Context) {
-	var req createRuleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
-		return
-	}
-
-	if req.ID == "" || req.Category == "" || req.Description == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id, category, and description are required"})
-		return
-	}
-
-	if !ruleIDPattern.MatchString(req.ID) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id must be numeric"})
-		return
-	}
-
-	if strings.HasPrefix(req.Category, "$") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid category"})
-		return
-	}
-
-	validSeverities := map[string]bool{"CRITICAL": true, "HIGH": true, "MEDIUM": true, "LOW": true}
-	if req.Severity != "" && !validSeverities[strings.ToUpper(req.Severity)] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "severity must be CRITICAL, HIGH, MEDIUM, or LOW"})
-		return
-	}
-
-	if req.Phase < 1 || req.Phase > 4 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "phase must be 1-4"})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
-	defer cancel()
-
-	ruleColl := db.GetCollection("modintel", "waf_rules")
-	now := time.Now().UTC()
-
-	rule := db.WAFRule{
-		ID:          req.ID,
-		Type:        "custom",
-		Category:    req.Category,
-		Description: req.Description,
-		Severity:    strings.ToUpper(req.Severity),
-		Phase:       req.Phase,
-		Source:      "modintel-custom",
-		Enabled:     true,
-		Archived:    false,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-
-	_, err := ruleColl.InsertOne(ctx, rule)
-	if err != nil {
-		log.Printf("Failed to create rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create rule"})
-		return
-	}
-
-	LogAction(c, "rule_create", "rule", req.ID, map[string]interface{}{"category": req.Category}, "success", "")
-	c.JSON(http.StatusCreated, gin.H{"success": true, "id": req.ID})
+	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID, "enabled": *req.Enabled})
 }
 
 func getWAFOverridesFilePath() string {
@@ -898,11 +604,10 @@ func GetConfig(c *gin.Context) {
 }
 
 type WAFParanoiaConfig struct {
-	Paranoia             int     `json:"paranoia"`
-	BlockingParanoia     int     `json:"blocking_paranoia"`
-	AnomalyInbound       int     `json:"anomaly_inbound"`
-	RuleEngine           string  `json:"rule_engine"`
-	Layer2BlockThreshold float64 `json:"layer2_block_threshold"`
+	Paranoia         int    `json:"paranoia"`
+	BlockingParanoia int    `json:"blocking_paranoia"`
+	AnomalyInbound   int    `json:"anomaly_inbound"`
+	RuleEngine       string `json:"rule_engine"`
 }
 
 func GetWAFParanoia(c *gin.Context) {
@@ -920,7 +625,6 @@ type UpdateWAFParanoiaRequest struct {
 func UpdateWAFParanoia(c *gin.Context) {
 	var req UpdateWAFParanoiaRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		LogAction(c, "waf_paranoia_update", "system", "waf", nil, "failure", "invalid request body")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
@@ -929,7 +633,6 @@ func UpdateWAFParanoia(c *gin.Context) {
 
 	if req.Paranoia != nil {
 		if *req.Paranoia < 1 || *req.Paranoia > 4 {
-			LogAction(c, "waf_paranoia_update", "system", "waf", map[string]interface{}{"paranoia": *req.Paranoia}, "failure", "paranoia must be 1-4")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "paranoia must be 1-4"})
 			return
 		}
@@ -938,7 +641,6 @@ func UpdateWAFParanoia(c *gin.Context) {
 
 	if req.BlockingParanoia != nil {
 		if *req.BlockingParanoia < 1 || *req.BlockingParanoia > 4 {
-			LogAction(c, "waf_paranoia_update", "system", "waf", map[string]interface{}{"blocking_paranoia": *req.BlockingParanoia}, "failure", "blocking_paranoia must be 1-4")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "blocking_paranoia must be 1-4"})
 			return
 		}
@@ -947,7 +649,6 @@ func UpdateWAFParanoia(c *gin.Context) {
 
 	if req.AnomalyInbound != nil {
 		if *req.AnomalyInbound < 1 || *req.AnomalyInbound > 20 {
-			LogAction(c, "waf_paranoia_update", "system", "waf", map[string]interface{}{"anomaly_inbound": *req.AnomalyInbound}, "failure", "anomaly_inbound must be 1-20")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "anomaly_inbound must be 1-20"})
 			return
 		}
@@ -957,7 +658,6 @@ func UpdateWAFParanoia(c *gin.Context) {
 	if req.RuleEngine != nil {
 		valid := *req.RuleEngine == "On" || *req.RuleEngine == "DetectionOnly"
 		if !valid {
-			LogAction(c, "waf_paranoia_update", "system", "waf", map[string]interface{}{"rule_engine": *req.RuleEngine}, "failure", "rule_engine must be 'On' or 'DetectionOnly'")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "rule_engine must be 'On' or 'DetectionOnly'"})
 			return
 		}
@@ -965,7 +665,6 @@ func UpdateWAFParanoia(c *gin.Context) {
 	}
 
 	if err := writeParanoiaConfig(cfg); err != nil {
-		LogAction(c, "waf_paranoia_update", "system", "waf", nil, "failure", "failed to save config")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save config"})
 		return
 	}
@@ -983,89 +682,17 @@ func UpdateWAFParanoia(c *gin.Context) {
 		}
 	}()
 
-	LogAction(c, "waf_paranoia_update", "system", "waf", map[string]interface{}{"paranoia": cfg.Paranoia, "blocking_paranoia": cfg.BlockingParanoia, "anomaly_inbound": cfg.AnomalyInbound, "rule_engine": cfg.RuleEngine, "layer2_block_threshold": cfg.Layer2BlockThreshold}, "success", "")
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": cfg})
 }
 
-func GetLayer2Threshold(c *gin.Context) {
-	cfg := readParanoiaConfig()
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
-		"layer2_block_threshold": cfg.Layer2BlockThreshold,
-	}})
-}
-
-type UpdateLayer2ThresholdRequest struct {
-	Layer2BlockThreshold *float64 `json:"layer2_block_threshold"`
-}
-
-func UpdateLayer2Threshold(c *gin.Context) {
-	var req UpdateLayer2ThresholdRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		LogAction(c, "waf_layer2_threshold_update", "system", "waf", nil, "failure", "invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-
-	if req.Layer2BlockThreshold == nil {
-		LogAction(c, "waf_layer2_threshold_update", "system", "waf", nil, "failure", "missing layer2_block_threshold")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "layer2_block_threshold is required"})
-		return
-	}
-
-	threshold := *req.Layer2BlockThreshold
-	if threshold < 0.85 || threshold > 1.0 {
-		LogAction(c, "waf_layer2_threshold_update", "system", "waf", map[string]interface{}{"layer2_block_threshold": threshold}, "failure", "layer2_block_threshold must be between 0.85 and 1.0")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "layer2_block_threshold must be between 0.85 and 1.0"})
-		return
-	}
-
-	cfg := readParanoiaConfig()
-	cfg.Layer2BlockThreshold = threshold
-
-	if err := writeParanoiaConfig(cfg); err != nil {
-		LogAction(c, "waf_layer2_threshold_update", "system", "waf", nil, "failure", "failed to save config")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save config"})
-		return
-	}
-
-	go notifyWafBlockerThresholdUpdate(threshold)
-
-	LogAction(c, "waf_layer2_threshold_update", "system", "waf", map[string]interface{}{"layer2_block_threshold": threshold}, "success", "")
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
-		"layer2_block_threshold": cfg.Layer2BlockThreshold,
-	}})
-}
-
-func notifyWafBlockerThresholdUpdate(threshold float64) {
-	url := "http://waf-blocker:8086/api/waf/threshold"
-	body := map[string]float64{"threshold": threshold}
-	data, err := json.Marshal(body)
-	if err != nil {
-		log.Printf("failed to marshal threshold update: %v", err)
-		return
-	}
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Post(url, "application/json", bytes.NewReader(data))
-	if err != nil {
-		log.Printf("failed to notify waf-blocker of threshold update: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("waf-blocker returned status %d for threshold update", resp.StatusCode)
-	}
-}
-
 func readParanoiaConfig() WAFParanoiaConfig {
-	cfg := WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On", Layer2BlockThreshold: 0.85}
+	cfg := WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On"}
 	data, err := os.ReadFile(wafConfigPath)
 	if err != nil {
 		return cfg
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On", Layer2BlockThreshold: 0.85}
+		return WAFParanoiaConfig{Paranoia: 4, BlockingParanoia: 4, AnomalyInbound: 3, RuleEngine: "On"}
 	}
 	if cfg.Paranoia < 1 {
 		cfg.Paranoia = 4
@@ -1078,12 +705,6 @@ func readParanoiaConfig() WAFParanoiaConfig {
 	}
 	if cfg.RuleEngine == "" {
 		cfg.RuleEngine = "On"
-	}
-	if cfg.Layer2BlockThreshold < 0.01 {
-		cfg.Layer2BlockThreshold = 0.85
-	}
-	if cfg.Layer2BlockThreshold > 1.0 {
-		cfg.Layer2BlockThreshold = 1.0
 	}
 	return cfg
 }
@@ -1098,6 +719,29 @@ func writeParanoiaConfig(cfg WAFParanoiaConfig) error {
 		return err
 	}
 	if err := os.WriteFile(wafConfigPath, data, 0644); err != nil {
+		return err
+	}
+
+	corazaPath := "/project/proxy-waf/coraza.conf"
+	corazaContent, err := os.ReadFile(corazaPath)
+	if err != nil {
+		return err
+	}
+	corazaLines := strings.Split(string(corazaContent), "\n")
+	var newCorazaLines []string
+	ruleEngineSet := false
+	for _, line := range corazaLines {
+		if strings.HasPrefix(strings.TrimSpace(line), "SecRuleEngine") {
+			newCorazaLines = append(newCorazaLines, fmt.Sprintf("SecRuleEngine %s", cfg.RuleEngine))
+			ruleEngineSet = true
+		} else {
+			newCorazaLines = append(newCorazaLines, line)
+		}
+	}
+	if !ruleEngineSet {
+		newCorazaLines = append([]string{fmt.Sprintf("SecRuleEngine %s", cfg.RuleEngine)}, newCorazaLines...)
+	}
+	if err := os.WriteFile(corazaPath, []byte(strings.Join(newCorazaLines, "\n")), 0644); err != nil {
 		return err
 	}
 
@@ -1140,7 +784,29 @@ SecAction \
 		return err
 	}
 
-	return nil
+	composePath := "/project/docker-compose.yml"
+	content, err := os.ReadFile(composePath)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(content), "\n")
+	var newLines []string
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "- PARANOIA=") {
+			newLines = append(newLines, fmt.Sprintf("      - PARANOIA=%d", cfg.Paranoia))
+		} else if strings.HasPrefix(strings.TrimSpace(line), "- BLOCKING_PARANOIA=") {
+			newLines = append(newLines, fmt.Sprintf("      - BLOCKING_PARANOIA=%d", cfg.BlockingParanoia))
+		} else if strings.HasPrefix(strings.TrimSpace(line), "- ANOMALY_INBOUND=") {
+			newLines = append(newLines, fmt.Sprintf("      - ANOMALY_INBOUND=%d", cfg.AnomalyInbound))
+		} else if strings.HasPrefix(strings.TrimSpace(line), "- CORAZA_RULE_ENGINE=") {
+			newLines = append(newLines, fmt.Sprintf("      - CORAZA_RULE_ENGINE=%s", cfg.RuleEngine))
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+
+	return os.WriteFile(composePath, []byte(strings.Join(newLines, "\n")), 0644)
 }
 
 func GetWhoAmI(c *gin.Context) {
@@ -1165,7 +831,7 @@ func GetWhoAmI(c *gin.Context) {
 	})
 }
 
-func _parseAlertTimestamp(raw string) (time.Time, bool) {
+func parseAlertTimestamp(raw string) (time.Time, bool) {
 	layouts := []string{
 		time.RFC3339,
 		"2006-01-02 15:04:05",
@@ -1231,18 +897,8 @@ func GetTrend(c *gin.Context) {
 		}
 	}
 
-	startStr := start.Format(time.RFC3339)
-	endStr := now.Add(time.Minute).Format(time.RFC3339)
-
-	filter := bson.M{
-		"timestamp": bson.M{
-			"$gte": startStr,
-			"$lte": endStr,
-		},
-	}
-
 	opts := options.Find().SetProjection(bson.M{"timestamp": 1})
-	cursor, err := collection.Find(ctx, filter, opts)
+	cursor, err := collection.Find(ctx, bson.M{}, opts)
 	if err != nil {
 		log.Println("Error fetching trend data:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
@@ -1261,7 +917,7 @@ func GetTrend(c *gin.Context) {
 			continue
 		}
 
-		ts, ok := _parseAlertTimestamp(rawTS)
+		ts, ok := parseAlertTimestamp(rawTS)
 		if !ok || ts.Before(start) || ts.After(now.Add(time.Minute)) {
 			continue
 		}
@@ -1593,91 +1249,45 @@ func GetStats(c *gin.Context) {
 
 	collection := db.GetCollection("modintel", "alerts")
 
-	pipeline := mongo.Pipeline{
-		bson.D{{Key: "$facet", Value: bson.M{
-			"total": bson.A{
-				bson.D{{Key: "$count", Value: "count"}},
-			},
-			"coraza": bson.A{
-				bson.D{{Key: "$match", Value: bson.M{"source": bson.M{"$in": bson.A{"coraza", "waf_blocked"}}}}},
-				bson.D{{Key: "$count", Value: "count"}},
-			},
-			"ml_miss": bson.A{
-				bson.D{{Key: "$match", Value: bson.M{"source": "ml_miss_detector"}}},
-				bson.D{{Key: "$count", Value: "count"}},
-			},
-			"ai_enriched": bson.A{
-				bson.D{{Key: "$match", Value: bson.M{"ai_status": "enriched"}}},
-				bson.D{{Key: "$count", Value: "count"}},
-			},
-			"blocked": bson.A{
-				bson.D{{Key: "$match", Value: bson.M{"anomaly_score": bson.M{"$gte": 5}}}},
-				bson.D{{Key: "$count", Value: "count"}},
-			},
-			"latest_priority": bson.A{
-				bson.D{{Key: "$match", Value: bson.M{"ai_priority": bson.M{"$type": "string"}}}},
-				bson.D{{Key: "$sort", Value: bson.D{{Key: "_id", Value: -1}}}},
-				bson.D{{Key: "$limit", Value: 1}},
-				bson.D{{Key: "$project", Value: bson.M{"ai_priority": 1, "_id": 0}}},
-			},
-		}}},
-	}
-
-	cursor, err := collection.Aggregate(ctx, pipeline)
+	total, err := collection.CountDocuments(ctx, bson.M{})
 	if err != nil {
-		log.Println("Error aggregating stats:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
-		return
-	}
-	defer cursor.Close(ctx)
-
-	var results []bson.M
-	if err := cursor.All(ctx, &results); err != nil {
-		log.Println("Error decoding stats:", err)
+		log.Println("Error counting alerts:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 		return
 	}
 
-	var total, corazaCount, mlMissCount, aiEnrichedCount, blockedCount int64
+	corazaCount, err := collection.CountDocuments(ctx, bson.M{"source": bson.M{"$in": []string{"coraza", "waf_blocked"}}})
+	if err != nil {
+		log.Println("Error counting Coraza alerts:", err)
+		corazaCount = 0
+	}
+
+	mlMissCount, err := collection.CountDocuments(ctx, bson.M{"source": "ml_miss_detector"})
+	if err != nil {
+		log.Println("Error counting ml misses:", err)
+		mlMissCount = 0
+	}
+
+	aiEnrichedCount, err := collection.CountDocuments(ctx, bson.M{"ai_status": "enriched"})
+	if err != nil {
+		log.Println("Error counting AI enriched documents:", err)
+		aiEnrichedCount = 0
+	}
+
+	opts := options.FindOne().SetSort(bson.D{{Key: "timestamp", Value: -1}})
+	var result bson.M
 	latestPriority := "—"
-
-	if len(results) > 0 {
-		faceted := results[0]
-
-		extractCount := func(key string) int64 {
-			arr, ok := faceted[key].(bson.A)
-			if !ok || len(arr) == 0 {
-				return 0
-			}
-			doc, ok := arr[0].(bson.M)
-			if !ok {
-				return 0
-			}
-			switch v := doc["count"].(type) {
-			case int32:
-				return int64(v)
-			case int64:
-				return v
-			case float64:
-				return int64(v)
-			default:
-				return 0
-			}
+	err = collection.FindOne(ctx, bson.M{"ai_priority": bson.M{"$type": "string"}}, opts).Decode(&result)
+	if err == nil {
+		if priority, ok := result["ai_priority"].(string); ok && priority != "" {
+			latestPriority = priority
 		}
+	}
 
-		total = extractCount("total")
-		corazaCount = extractCount("coraza")
-		mlMissCount = extractCount("ml_miss")
-		aiEnrichedCount = extractCount("ai_enriched")
-		blockedCount = extractCount("blocked")
-
-		if priorityArr, ok := faceted["latest_priority"].(bson.A); ok && len(priorityArr) > 0 {
-			if priorityDoc, ok := priorityArr[0].(bson.M); ok {
-				if p, ok := priorityDoc["ai_priority"].(string); ok && p != "" {
-					latestPriority = p
-				}
-			}
-		}
+	blockedCount, err := collection.CountDocuments(ctx, bson.M{"anomaly_score": bson.M{"$gte": 5}})
+	if err != nil {
+		log.Println("Error counting blocked alerts:", err)
+		blockedCount = 0
 	}
 
 	var blockedPct float64
@@ -1704,233 +1314,11 @@ func ClearLogs(c *gin.Context) {
 	result, err := collection.DeleteMany(ctx, bson.M{})
 	if err != nil {
 		log.Println("Error clearing logs:", err)
-		LogAction(c, "logs_clear", "alerts", "*", nil, "failure", "error clearing logs")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 		return
 	}
 
-	LogAction(c, "logs_clear", "alerts", "*", map[string]interface{}{"deleted": result.DeletedCount}, "success", "")
 	c.JSON(http.StatusOK, gin.H{"deleted": result.DeletedCount})
-}
-
-type storageClearRequest struct {
-	Collections []string `json:"collections"`
-}
-
-type auditIngestRequest struct {
-	Action       string                 `json:"action"`
-	ResourceType string                 `json:"resource_type"`
-	ResourceID   string                 `json:"resource_id"`
-	Details      map[string]interface{} `json:"details"`
-	Outcome      string                 `json:"outcome"`
-	ErrorMessage string                 `json:"error_message"`
-	UserID       string                 `json:"user_id"`
-	UserEmail    string                 `json:"user_email"`
-	UserRole     string                 `json:"user_role"`
-}
-
-func IngestAuditLog(c *gin.Context) {
-	var payload auditIngestRequest
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-
-	payload.Action = normalizeAuditAction(payload.Action)
-	payload.ResourceType = strings.TrimSpace(payload.ResourceType)
-	payload.ResourceID = strings.TrimSpace(payload.ResourceID)
-	payload.Outcome = strings.ToLower(strings.TrimSpace(payload.Outcome))
-	payload.ErrorMessage = strings.TrimSpace(payload.ErrorMessage)
-	payload.UserID = strings.TrimSpace(payload.UserID)
-	payload.UserEmail = strings.TrimSpace(payload.UserEmail)
-	payload.UserRole = strings.TrimSpace(payload.UserRole)
-
-	if payload.Action == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "action is required"})
-		return
-	}
-	if !isAllowedAuditAction(payload.Action) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported action"})
-		return
-	}
-	if payload.ResourceType == "" {
-		payload.ResourceType = "system"
-	}
-	if payload.Outcome == "" {
-		payload.Outcome = "success"
-	}
-	if payload.Outcome != "success" && payload.Outcome != "failure" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "outcome must be success or failure"})
-		return
-	}
-
-	if claimsAny, exists := c.Get("access_claims"); exists {
-		if claims, ok := claimsAny.(*AccessClaims); ok && claims != nil {
-			if payload.UserID == "" {
-				payload.UserID = strings.TrimSpace(claims.UserID)
-			}
-			if payload.UserEmail == "" {
-				payload.UserEmail = strings.TrimSpace(claims.Email)
-			}
-			if payload.UserRole == "" {
-				payload.UserRole = strings.TrimSpace(claims.Role)
-			}
-		}
-	}
-
-	logEntry := AuditLog{
-		UserID:       payload.UserID,
-		UserEmail:    payload.UserEmail,
-		UserRole:     payload.UserRole,
-		Action:       payload.Action,
-		ResourceType: payload.ResourceType,
-		ResourceID:   payload.ResourceID,
-		Details:      payload.Details,
-		IPAddress:    c.ClientIP(),
-		UserAgent:    c.Request.UserAgent(),
-		Outcome:      payload.Outcome,
-		ErrorMessage: payload.ErrorMessage,
-	}
-
-	LogAudit(logEntry)
-	c.JSON(http.StatusOK, gin.H{"success": true})
-}
-
-func GetAuditLogsHandler(c *gin.Context) {
-	filter := bson.M{}
-
-	if userID := c.Query("user_id"); userID != "" {
-		filter["user_id"] = userID
-	}
-	if action := c.Query("action"); action != "" {
-		filter["action"] = action
-	}
-	if resourceType := c.Query("resource_type"); resourceType != "" {
-		filter["resource_type"] = resourceType
-	}
-	if start := c.Query("start"); start != "" {
-		if t, err := time.Parse(time.RFC3339, start); err == nil {
-			filter["timestamp"] = bson.M{"$gte": t}
-		}
-	}
-	if end := c.Query("end"); end != "" {
-		if t, err := time.Parse(time.RFC3339, end); err == nil {
-			if existing, ok := filter["timestamp"].(bson.M); ok {
-				filter["timestamp"] = bson.M{"$gte": existing["$gte"], "$lte": t}
-			} else {
-				filter["timestamp"] = bson.M{"$lte": t}
-			}
-		}
-	}
-
-	limit := int64(100)
-	if l := c.Query("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
-			limit = int64(parsed)
-		}
-	}
-
-	sort := bson.D{{Key: "timestamp", Value: -1}}
-
-	logs, err := GetAuditLogs(filter, limit, sort)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query audit logs"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"logs": logs})
-}
-
-func normalizeAuditAction(action string) string {
-	value := strings.ToLower(strings.TrimSpace(action))
-	value = strings.ReplaceAll(value, " ", "_")
-	value = strings.ReplaceAll(value, "-", "_")
-	return value
-}
-
-func isAllowedAuditAction(action string) bool {
-	switch action {
-	case "auth_login",
-		"auth_logout",
-		"session_revoke",
-		"session_revoke_all",
-		"profile_update",
-		"user_create",
-		"user_invite",
-		"user_update",
-		"user_deactivate",
-		"alert_review",
-		"alert_review_undo",
-		"rule_enable",
-		"rule_disable",
-		"waf_paranoia_update",
-		"rule_toggle",
-		"logs_clear",
-		"storage_clear",
-		"dataset_generate",
-		"dataset_merge",
-		"dataset_delete",
-		"dataset_cut",
-		"dataset_export",
-		"training_start",
-		"training_activate",
-		"training_delete_version",
-		"waf_restart":
-		return true
-	default:
-		return false
-	}
-}
-
-func ClearStorageCollections(c *gin.Context) {
-	var payload storageClearRequest
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-
-	allowed := map[string]struct{}{
-		"alerts":   {},
-		"datasets": {},
-	}
-
-	collections := make([]string, 0, len(payload.Collections))
-	seen := map[string]struct{}{}
-	for _, name := range payload.Collections {
-		if _, ok := allowed[name]; !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid collection: " + name})
-			return
-		}
-		if _, exists := seen[name]; exists {
-			continue
-		}
-		seen[name] = struct{}{}
-		collections = append(collections, name)
-	}
-
-	if len(collections) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no collections selected"})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	deleted := map[string]int64{}
-	for _, name := range collections {
-		collection := db.GetCollection("modintel", name)
-		result, err := collection.DeleteMany(ctx, bson.M{})
-		if err != nil {
-			log.Printf("Error clearing collection %s: %v", name, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to clear " + name})
-			return
-		}
-		deleted[name] = result.DeletedCount
-	}
-
-	LogAction(c, "storage_clear", "system", "database", map[string]interface{}{"collections": collections, "deleted": deleted}, "success", "")
-
-	c.JSON(http.StatusOK, gin.H{"success": true, "deleted": deleted})
 }
 
 func HealthCheck(c *gin.Context) {
@@ -2074,12 +1462,11 @@ func GetmonitorMetrics(c *gin.Context) {
 
 	values := make([]float64, bucketCount)
 	errValues := make([]float64, bucketCount)
-	predValues := make([]float64, bucketCount)
 	counts := make([]int, bucketCount)
 
 	filter := bson.M{"timestamp": bson.M{"$gte": startTime}}
 	opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: 1}}).SetProjection(bson.M{
-		"timestamp": 1, "requests_per_minute": 1, "errors_per_minute": 1, "predictions_per_minute": 1,
+		"timestamp": 1, "requests_per_minute": 1, "errors_per_minute": 1,
 	})
 
 	cursor, err := metricsCollection.Find(ctx, filter, opts)
@@ -2090,10 +1477,9 @@ func GetmonitorMetrics(c *gin.Context) {
 
 	for cursor.Next(ctx) {
 		var doc struct {
-			Timestamp  time.Time `bson:"timestamp"`
-			ReqPerMin  float64   `bson:"requests_per_minute"`
-			ErrPerMin  float64   `bson:"errors_per_minute"`
-			PredPerMin float64   `bson:"predictions_per_minute"`
+			Timestamp time.Time `bson:"timestamp"`
+			ReqPerMin float64   `bson:"requests_per_minute"`
+			ErrPerMin float64   `bson:"errors_per_minute"`
 		}
 		if err := cursor.Decode(&doc); err != nil {
 			continue
@@ -2103,7 +1489,6 @@ func GetmonitorMetrics(c *gin.Context) {
 		if idx >= 0 && idx < bucketCount {
 			values[idx] += doc.ReqPerMin
 			errValues[idx] += doc.ErrPerMin
-			predValues[idx] += doc.PredPerMin
 			counts[idx]++
 		}
 	}
@@ -2113,17 +1498,14 @@ func GetmonitorMetrics(c *gin.Context) {
 		ts := startTime.Add(time.Duration(i) * bucketSize)
 		reqVal := values[i]
 		errVal := errValues[i]
-		predVal := predValues[i]
 		if counts[i] > 0 {
 			reqVal /= float64(counts[i])
 			errVal /= float64(counts[i])
-			predVal /= float64(counts[i])
 		}
 		timeSeries = append(timeSeries, map[string]interface{}{
-			"timestamp":              ts,
-			"requests_per_minute":    reqVal,
-			"errors_per_minute":      errVal,
-			"predictions_per_minute": predVal,
+			"timestamp":           ts,
+			"requests_per_minute": reqVal,
+			"errors_per_minute":   errVal,
 		})
 	}
 
@@ -2134,14 +1516,13 @@ func GetmonitorMetrics(c *gin.Context) {
 	inferenceMetrics := GetInferenceMetrics()
 	systemMetrics := getSystemMetrics(ctx)
 	window_requests, window_errors := requestStats.totals(window, time.Now().UTC())
-	wafSnapshot, hasWAF := GetWAFTrafficSnapshot()
 
 	var errorRate float64
 	if window_requests > 0 {
 		errorRate = float64(window_errors) / float64(window_requests)
 	}
 
-	response := gin.H{
+	c.JSON(http.StatusOK, gin.H{
 		timeField:                  timeSeries,
 		"range":                    rangeType,
 		"total_alerts":             totalAlerts,
@@ -2165,14 +1546,7 @@ func GetmonitorMetrics(c *gin.Context) {
 		"mongodb_connections":      systemMetrics.MongoDBConnections,
 		"timestamp":                time.Now().UTC(),
 		"system":                   systemMetrics,
-	}
-	if hasWAF {
-		response["requests_per_minute"] = wafSnapshot.RequestsPerMin
-		response["waf_blocked_per_minute"] = wafSnapshot.BlockedPerMin
-		response["waf_allowed_per_minute"] = wafSnapshot.AllowedPerMin
-	}
-
-	c.JSON(http.StatusOK, response)
+	})
 }
 
 func parseMetricsWindow(raw string) time.Duration {
@@ -2205,13 +1579,6 @@ type inferenceMetricsData struct {
 	PredictionsPerMinute float64 `json:"predictions_per_minute"`
 	ModelVersion         string  `json:"model_version"`
 	UptimeSeconds        float64 `json:"inference_uptime_seconds"`
-}
-
-type wafTrafficSnapshot struct {
-	Timestamp      time.Time `json:"timestamp"`
-	RequestsPerMin float64   `json:"requests_per_minute"`
-	BlockedPerMin  float64   `json:"blocked_per_minute"`
-	AllowedPerMin  float64   `json:"allowed_per_minute"`
 }
 
 func GetInferenceMetrics() inferenceMetricsData {
@@ -2279,7 +1646,7 @@ type systemMetricsData struct {
 	MemoryUsedMB             uint64  `json:"memory_used_mb"`
 	MemoryTotalMB            uint64  `json:"memory_total_mb"`
 	MemoryPercent            float64 `json:"memory_percent"`
-	Goroutines               float64 `json:"goroutines"`
+	Goroutines               int     `json:"goroutines"`
 	MongoDBConnections       int64   `json:"mongodb_connections"`
 	MongoDBDatabaseSizeBytes int64   `json:"mongodb_database_size_bytes"`
 	MongoDBAlertCount        int64   `json:"mongodb_alert_count"`
@@ -2323,67 +1690,26 @@ func getSystemTotalMemoryMB() uint64 {
 	return 0
 }
 
-func getSystemUsedMemoryMB() uint64 {
-	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
-		var memTotal, memFree, buffers, cached uint64
-		for _, line := range strings.Split(string(data), "\n") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				val, err := strconv.ParseUint(fields[1], 10, 64)
-				if err != nil {
-					continue
-				}
-				switch {
-				case strings.HasPrefix(line, "MemTotal:"):
-					memTotal = val
-				case strings.HasPrefix(line, "MemFree:"):
-					memFree = val
-				case strings.HasPrefix(line, "Buffers:"):
-					buffers = val
-				case strings.HasPrefix(line, "Cached:"):
-					cached = val
-				}
-			}
-		}
-		if memTotal > 0 {
-			used := memTotal - memFree - buffers - cached
-			return used / 1024
-		}
-	}
-	return 0
-}
-
-func getSystemLoadAverage() float64 {
-	if data, err := os.ReadFile("/proc/loadavg"); err == nil {
-		fields := strings.Fields(string(data))
-		if len(fields) >= 1 {
-			if load, err := strconv.ParseFloat(fields[0], 64); err == nil {
-				return load
-			}
-		}
-	}
-	return 0.0
-}
-
 func getSystemMetrics(ctx context.Context) systemMetricsData {
 	metrics := systemMetricsData{
 		Hostname:      getHostname(),
 		GoVersion:     runtime.Version(),
 		UptimeSeconds: time.Since(serviceStartTime).Seconds(),
-		Goroutines:    getSystemLoadAverage(),
+		Goroutines:    runtime.NumGoroutine(),
 	}
 
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	metrics.MemoryUsedMB = m.Alloc / (1024 * 1024)
+
 	sysTotalMB := getSystemTotalMemoryMB()
-	sysUsedMB := getSystemUsedMemoryMB()
 	if sysTotalMB > 0 {
 		metrics.MemoryTotalMB = sysTotalMB
-		metrics.MemoryUsedMB = sysUsedMB
-		metrics.MemoryPercent = float64(sysUsedMB) / float64(sysTotalMB) * 100
 	} else {
-		var m runtime.MemStats
-		runtime.ReadMemStats(&m)
-		metrics.MemoryUsedMB = m.Sys / (1024 * 1024)
-		metrics.MemoryTotalMB = m.Sys / (1024 * 1024)
+		metrics.MemoryTotalMB = m.TotalAlloc / (1024 * 1024)
+	}
+	if metrics.MemoryTotalMB > 0 {
+		metrics.MemoryPercent = float64(m.Alloc) / float64(metrics.MemoryTotalMB*1024*1024) * 100
 	}
 
 	metrics.CpuPercent = getCPULoad()
@@ -2480,11 +1806,9 @@ func ReviewAlert(c *gin.Context) {
 			return
 		}
 		if result.MatchedCount == 0 {
-			LogAction(c, "alert_review_undo", "alert", id, nil, "failure", "alert not found")
 			c.JSON(http.StatusNotFound, gin.H{"error": "Alert not found"})
 			return
 		}
-		LogAction(c, "alert_review_undo", "alert", id, nil, "success", "")
 		c.JSON(http.StatusOK, gin.H{"success": true, "status": "generated", "human_label": nil})
 		return
 	}
@@ -2517,12 +1841,6 @@ func ReviewAlert(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Alert not found"})
 		return
 	}
-
-	action := "alert_review"
-	if body.HumanLabel == "" {
-		action = "alert_review_undo"
-	}
-	LogAction(c, action, "alert", id, map[string]interface{}{"label": body.HumanLabel}, "success", "")
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "status": "reviewed", "human_label": body.HumanLabel})
 }
@@ -2624,40 +1942,11 @@ func GetTotalErrors() uint64 {
 var LastRequestsPerMin float64
 
 func GetRequestsPerMin() float64 {
+	live := requestStats.liveRPM(time.Now())
+	if live > 0 {
+		return live
+	}
 	return LastRequestsPerMin
-}
-
-func GetWAFTrafficSnapshot() (wafTrafficSnapshot, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://log-collector:8081/api/waf/traffic", nil)
-	if err != nil {
-		return wafTrafficSnapshot{}, false
-	}
-
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return wafTrafficSnapshot{}, false
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return wafTrafficSnapshot{}, false
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return wafTrafficSnapshot{}, false
-	}
-
-	var snapshot wafTrafficSnapshot
-	if err := json.Unmarshal(body, &snapshot); err != nil {
-		return wafTrafficSnapshot{}, false
-	}
-
-	return snapshot, true
 }
 
 func GetSystemMetrics(ctx context.Context) systemMetricsData {
@@ -2693,6 +1982,7 @@ func getCPULoad() float64 {
 		return 0.0
 	}
 
+	now := time.Now().UnixNano()
 	cpuMu.Lock()
 	defer cpuMu.Unlock()
 
@@ -2708,15 +1998,37 @@ func getCPULoad() float64 {
 
 	cpuLastTotal = total
 	cpuLastIdle = idle
+	_ = now
 	return 0.0
 }
 
 func GetDatasets(c *gin.Context) {
+	params, err := parseOffsetParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	collection := db.GetCollection("modintel", "datasets")
-	cursor, err := collection.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+
+	totalCount, err := collection.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count datasets"})
+		return
+	}
+
+	skip := int64((params.Page - 1) * params.Limit)
+	totalPages := int((totalCount + int64(params.Limit) - 1) / int64(params.Limit))
+
+	cursor, err := collection.Find(ctx, bson.M{},
+		options.Find().
+			SetSort(bson.D{{Key: "created_at", Value: -1}}).
+			SetSkip(skip).
+			SetLimit(int64(params.Limit)),
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch datasets"})
 		return
@@ -2733,29 +2045,15 @@ func GetDatasets(c *gin.Context) {
 		if oid, ok := items[i]["_id"].(primitive.ObjectID); ok {
 			items[i]["_id"] = oid.Hex()
 		}
-
-		if pct, ok := items[i]["attack_pct"]; ok {
-			var val float64
-			if f, ok := pct.(float64); ok {
-				val = f
-			} else if i, ok := pct.(int32); ok {
-				val = float64(i)
-			} else if i, ok := pct.(int); ok {
-				val = float64(i)
-			}
-			items[i]["attack_pct"] = float64(int(val*10+0.5)) / 10
-		}
-
-		if created, ok := items[i]["created_at"]; ok {
-			if t, ok := created.(time.Time); ok {
-				items[i]["created_at"] = t.UTC().Format("2006-01-02")
-			} else if dt, ok := created.(primitive.DateTime); ok {
-				items[i]["created_at"] = dt.Time().UTC().Format("2006-01-02")
-			}
-		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"items": items})
+	c.JSON(http.StatusOK, gin.H{
+		"items":       items,
+		"page":        params.Page,
+		"page_size":   params.Limit,
+		"total_count": totalCount,
+		"total_pages": totalPages,
+	})
 }
 
 func GetDatasetSources(c *gin.Context) {
@@ -2810,7 +2108,6 @@ type GenerateDatasetRequest struct {
 func GenerateDataset(c *gin.Context) {
 	var req GenerateDatasetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		LogAction(c, "dataset_generate", "dataset", "", nil, "failure", "invalid request")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
@@ -2849,12 +2146,9 @@ func GenerateDataset(c *gin.Context) {
 
 	result, err := collection.InsertOne(ctx, doc)
 	if err != nil {
-		LogAction(c, "dataset_generate", "dataset", "", map[string]interface{}{"attack_type": req.AttackType, "samples": req.SampleCount}, "failure", "failed to create dataset")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create dataset"})
 		return
 	}
-
-	LogAction(c, "dataset_generate", "dataset", fmt.Sprintf("%v", result.InsertedID), map[string]interface{}{"attack_type": req.AttackType, "samples": req.SampleCount}, "success", "")
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":      fmt.Sprintf("%v", result.InsertedID),
@@ -2868,7 +2162,6 @@ func GenerateDataset(c *gin.Context) {
 func DeleteDataset(c *gin.Context) {
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
-		LogAction(c, "dataset_delete", "dataset", "", nil, "failure", "dataset id is required")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "dataset id is required"})
 		return
 	}
@@ -2880,24 +2173,20 @@ func DeleteDataset(c *gin.Context) {
 
 	oid, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		LogAction(c, "dataset_delete", "dataset", id, nil, "failure", "invalid dataset id")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dataset id"})
 		return
 	}
 
 	result, err := collection.DeleteOne(ctx, bson.M{"_id": oid})
 	if err != nil {
-		LogAction(c, "dataset_delete", "dataset", id, nil, "failure", "failed to delete dataset")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete dataset"})
 		return
 	}
 	if result.DeletedCount == 0 {
-		LogAction(c, "dataset_delete", "dataset", id, nil, "failure", "dataset not found")
 		c.JSON(http.StatusNotFound, gin.H{"error": "dataset not found"})
 		return
 	}
 
-	LogAction(c, "dataset_delete", "dataset", id, nil, "success", "")
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
@@ -2909,19 +2198,16 @@ type MergeDatasetsRequest struct {
 func MergeDatasets(c *gin.Context) {
 	var req MergeDatasetsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		LogAction(c, "dataset_merge", "dataset", "", nil, "failure", "invalid request payload")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
 		return
 	}
 
 	if len(req.IDs) < 2 {
-		LogAction(c, "dataset_merge", "dataset", "", map[string]interface{}{"ids": req.IDs, "name": req.Name}, "failure", "at least 2 dataset IDs are required")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least 2 dataset IDs are required"})
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" {
-		LogAction(c, "dataset_merge", "dataset", "", map[string]interface{}{"ids": req.IDs}, "failure", "name is required")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
 		return
 	}
@@ -2931,20 +2217,20 @@ func MergeDatasets(c *gin.Context) {
 
 	collection := db.GetCollection("modintel", "datasets")
 
+	// Convert IDs to ObjectIDs
 	var objectIDs []primitive.ObjectID
 	for _, id := range req.IDs {
 		oid, err := primitive.ObjectIDFromHex(strings.TrimSpace(id))
 		if err != nil {
-			LogAction(c, "dataset_merge", "dataset", id, map[string]interface{}{"ids": req.IDs, "name": req.Name}, "failure", "invalid dataset ID")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dataset ID: " + id})
 			return
 		}
 		objectIDs = append(objectIDs, oid)
 	}
 
+	// Fetch datasets to merge
 	cursor, err := collection.Find(ctx, bson.M{"_id": bson.M{"$in": objectIDs}})
 	if err != nil {
-		LogAction(c, "dataset_merge", "dataset", "", map[string]interface{}{"ids": req.IDs, "name": req.Name}, "failure", "failed to fetch datasets")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch datasets"})
 		return
 	}
@@ -2952,17 +2238,16 @@ func MergeDatasets(c *gin.Context) {
 
 	var datasets []bson.M
 	if err := cursor.All(ctx, &datasets); err != nil {
-		LogAction(c, "dataset_merge", "dataset", "", map[string]interface{}{"ids": req.IDs, "name": req.Name}, "failure", "failed to decode datasets")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode datasets"})
 		return
 	}
 
 	if len(datasets) != len(objectIDs) {
-		LogAction(c, "dataset_merge", "dataset", "", map[string]interface{}{"ids": req.IDs, "name": req.Name}, "failure", "some datasets not found")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "some datasets not found"})
 		return
 	}
 
+	// Calculate merged stats
 	totalSamples := 0
 	attackSamples := 0
 	for _, ds := range datasets {
@@ -2983,6 +2268,7 @@ func MergeDatasets(c *gin.Context) {
 		mergedAttackPct = float64(attackSamples) / float64(totalSamples) * 100
 	}
 
+	// Create merged dataset
 	now := time.Now().UTC()
 	mergedDoc := bson.M{
 		"name":       strings.TrimSpace(req.Name),
@@ -2994,19 +2280,19 @@ func MergeDatasets(c *gin.Context) {
 		"status":     "ready",
 	}
 
+	// Insert merged dataset
 	insertResult, err := collection.InsertOne(ctx, mergedDoc)
 	if err != nil {
-		LogAction(c, "dataset_merge", "dataset", "", map[string]interface{}{"ids": req.IDs, "name": req.Name}, "failure", "failed to create merged dataset")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create merged dataset"})
 		return
 	}
 
+	// Delete original datasets
 	_, err = collection.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": objectIDs}})
 	if err != nil {
+		// Note: merged dataset is already created, but originals not deleted
 		log.Printf("Warning: failed to delete original datasets after merge: %v", err)
 	}
-
-	LogAction(c, "dataset_merge", "dataset", insertResult.InsertedID.(primitive.ObjectID).Hex(), map[string]interface{}{"ids": req.IDs, "name": req.Name, "samples": totalSamples, "attack_pct": mergedAttackPct}, "success", "")
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":    true,
@@ -3015,57 +2301,4 @@ func MergeDatasets(c *gin.Context) {
 		"samples":    totalSamples,
 		"attack_pct": mergedAttackPct,
 	})
-}
-
-
-
-func ProxyToAuthService(c *gin.Context) {
-	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
-	if authServiceURL == "" {
-		authServiceURL = "http://auth-service:8084"
-	}
-
-	
-	targetURL := authServiceURL + c.Request.URL.Path
-	if c.Request.URL.RawQuery != "" {
-		targetURL += "?" + c.Request.URL.RawQuery
-	}
-
-	
-	proxyReq, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, targetURL, c.Request.Body)
-	if err != nil {
-		log.Printf("failed creating proxy request: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to proxy request"})
-		return
-	}
-
-	
-	for key, values := range c.Request.Header {
-		for _, value := range values {
-			proxyReq.Header.Add(key, value)
-		}
-	}
-
-	
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(proxyReq)
-	if err != nil {
-		log.Printf("failed proxying to auth-service: %v", err)
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "authentication service unavailable"})
-		return
-	}
-	defer resp.Body.Close()
-
-	
-	for key, values := range resp.Header {
-		for _, value := range values {
-			c.Writer.Header().Add(key, value)
-		}
-	}
-
-	
-	c.Status(resp.StatusCode)
-	if _, err := io.Copy(c.Writer, resp.Body); err != nil {
-		log.Printf("failed copying response body: %v", err)
-	}
 }

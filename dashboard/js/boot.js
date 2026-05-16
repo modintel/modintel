@@ -1,7 +1,7 @@
-(async function () {
+(function () {
     'use strict';
     if (typeof requireAuth === 'function') {
-        const ok = await requireAuth();
+        const ok = requireAuth();
         if (!ok) {
             return;
         }

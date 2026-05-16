@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test</title>
+</head>
+<body>
+    <h1>Testing API</h1>
+    <pre id="output">Loading...</pre>
+    <script>
+        fetch('http://localhost:8082/api/logs')
+            .then(r => r.json())
+            .then(d => {
+                document.getElementById('output').textContent = JSON.stringify(d, null, 2);
+            })
+            .catch(e => document.getElementById('output').textContent = 'Error: ' + e);
+    </script>
+</body>
+</html>

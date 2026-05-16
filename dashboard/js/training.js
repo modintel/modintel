@@ -1,7 +1,8 @@
 const API_BASE = '/api';
 let trainingPollInterval = null;
 let selectedTrainingVersions = new Set();
-let allTrainingHistory = [];
+let trainingPage = 1;
+let trainingTotalPages = 1;
 
 async function loadModelTypes() {
     var select = document.getElementById('model-type');
@@ -69,40 +70,51 @@ async function loadTrainingStatus() {
     }
 }
 
-async function loadTrainingHistory() {
+async function loadTrainingHistory(page) {
+    if (page !== undefined) trainingPage = page;
     try {
-        const res = await apiFetch(`${API_BASE}/training/history`);
+        const res = await apiFetch(`${API_BASE}/training/history?page=${trainingPage}&page_size=10`);
         const data = await res.json();
-        allTrainingHistory = data || [];
-
-        const activeBtn = document.querySelector('.panel-right-header .view-btn.active');
-        const view = activeBtn ? activeBtn.dataset.view : 'layer1';
-
-        let filtered = allTrainingHistory;
-        if (view === 'layer1') {
-            filtered = allTrainingHistory.filter(item => item.target_layer === 'layer1');
-        } else if (view === 'layer2') {
-            filtered = allTrainingHistory.filter(item => item.target_layer === 'layer2');
-        }
-
-        renderHistory(filtered);
-        if (filtered.length > 0) {
-            updateEvalMetrics(filtered[0]);
+        trainingTotalPages = data.total_pages || 1;
+        renderHistory(data.items || []);
+        renderTrainingPagination(trainingPage, trainingTotalPages, data.total_count || 0);
+        if (data.items && data.items.length > 0) {
+            updateEvalMetrics(data.items[0]);
         }
     } catch (e) {
         console.error('Error loading training history:', e);
     }
 }
 
-function getCurrentView() {
-    const activeBtn = document.querySelector('.panel-right-header .view-btn.active');
-    return activeBtn ? activeBtn.dataset.view : 'layer1';
+function renderTrainingPagination(page, totalPages, totalCount) {
+    let container = document.getElementById('training-pagination');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'training-pagination';
+        container.className = 'pagination-bar';
+        const table = document.querySelector('#training-history').closest('table');
+        table.parentNode.insertBefore(container, table.nextSibling);
+    }
+    const runLabel = `${totalCount} run${totalCount !== 1 ? 's' : ''}`;
+    if (totalPages <= 1) {
+        container.innerHTML = `<span class="pagination-info">${runLabel}</span>`;
+        return;
+    }
+    container.innerHTML = `
+        <span class="pagination-info">${runLabel}</span>
+        <div class="pagination-controls">
+            <button class="btn-page" id="tr-prev-btn" ${page <= 1 ? 'disabled' : ''}>&#8592; Prev</button>
+            <span class="page-label">Page ${page} of ${totalPages}</span>
+            <button class="btn-page" id="tr-next-btn" ${page >= totalPages ? 'disabled' : ''}>Next &#8594;</button>
+        </div>`;
+    const prev = document.getElementById('tr-prev-btn');
+    const next = document.getElementById('tr-next-btn');
+    if (prev) prev.addEventListener('click', () => loadTrainingHistory(trainingPage - 1));
+    if (next) next.addEventListener('click', () => loadTrainingHistory(trainingPage + 1));
 }
 
 function renderHistory(items) {
     const tbody = document.getElementById('training-history');
-    const view = getCurrentView();
-    const isLayer1 = view === 'layer1';
     if (!items.length) {
         tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--fg-muted);padding:20px;">No training history yet.</td></tr>';
         updateTrainingActions();
@@ -110,12 +122,12 @@ function renderHistory(items) {
     }
     tbody.innerHTML = items.map(item => `
         <tr>
-            <td><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;" ${item.active || isLayer1 ? 'disabled' : ''}>${item.version}</td>
+            <td><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;">${item.version}</td>
             <td>${item.model_type}</td>
             <td>${item.dataset}</td>
-            <td>${(item.precision).toFixed(2)}%</td>
-            <td>${(item.recall).toFixed(2)}%</td>
-            <td style="color:var(--accent);">${(item.fpr).toFixed(2)}%</td>
+            <td>${item.precision}%</td>
+            <td>${item.recall}%</td>
+            <td style="color:var(--accent);">${item.fpr}%</td>
             <td>${new Date(item.trained_at).toLocaleDateString()}</td>
             <td>
                 ${item.active
@@ -123,9 +135,9 @@ function renderHistory(items) {
                     : `<button class="btn btn-sm deploy-btn" data-version="${item.version}">Deploy</button>`}
             </td>
             <td>
-                ${!item.active && !isLayer1
+                ${!item.active
                     ? `<button class="btn btn-sm btn-danger delete-model-btn" data-version="${item.version}">Delete</button>`
-                    : `<button class="btn btn-sm btn-danger" disabled style="opacity:0.35;cursor:not-allowed;">Delete</button>`}
+                    : ''}
             </td>
         </tr>
     `).join('');
@@ -136,6 +148,12 @@ function renderHistory(items) {
 
     document.querySelectorAll('.delete-model-btn').forEach(btn => {
         btn.addEventListener('click', () => deleteModel(btn.dataset.version));
+    });
+
+    document.querySelectorAll('.training-checkbox').forEach(cb => {
+        cb.addEventListener('change', () => {
+            toggleTrainingSelection(cb.dataset.version, cb.checked);
+        });
     });
 
     updateSelectAllTraining();
@@ -154,23 +172,14 @@ function toggleTrainingSelection(version, checked) {
 
 function updateSelectAllTraining() {
     const selectAll = document.getElementById('select-all-training');
-    const allCheckboxes = document.querySelectorAll('.training-checkbox');
-    const selectableCheckboxes = Array.from(allCheckboxes).filter(cb => {
-        const row = cb.closest('tr');
-        return row && !row.querySelector('.badge-active');
-    });
-    const checkedBoxes = selectableCheckboxes.filter(cb => cb.checked);
-    selectAll.checked = selectableCheckboxes.length > 0 && checkedBoxes.length === selectableCheckboxes.length;
-    selectAll.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < selectableCheckboxes.length;
+    const checkboxes = document.querySelectorAll('.training-checkbox');
+    const checkedBoxes = document.querySelectorAll('.training-checkbox:checked');
+    selectAll.checked = checkboxes.length > 0 && checkboxes.length === checkedBoxes.length;
+    selectAll.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < checkboxes.length;
 }
 
 function updateTrainingActions() {
     const actions = document.getElementById('training-actions');
-    const isLayer1 = getCurrentView() === 'layer1';
-    if (isLayer1) {
-        actions.style.display = 'none';
-        return;
-    }
     actions.style.display = selectedTrainingVersions.size > 0 ? 'block' : 'none';
 }
 
@@ -291,19 +300,19 @@ function updateEvalMetrics(item) {
     metrics.innerHTML = `
         <div class="metric">
             <div class="metric-label">Precision</div>
-            <div class="metric-value">${(item.precision).toFixed(2)}%</div>
+            <div class="metric-value">${item.precision}%</div>
         </div>
         <div class="metric">
             <div class="metric-label">Recall</div>
-            <div class="metric-value">${(item.recall).toFixed(2)}%</div>
+            <div class="metric-value">${item.recall}%</div>
         </div>
         <div class="metric">
             <div class="metric-label">FPR</div>
-            <div class="metric-value" style="color:var(--accent);">${(item.fpr).toFixed(2)}%</div>
+            <div class="metric-value" style="color:var(--accent);">${item.fpr}%</div>
         </div>
         <div class="metric">
             <div class="metric-label">F1</div>
-            <div class="metric-value">${(item.f1_score).toFixed(2)}%</div>
+            <div class="metric-value">${item.f1_score}%</div>
         </div>
     `;
 }
@@ -357,27 +366,12 @@ if (trainModelBtn) {
 document.getElementById('select-all-training').addEventListener('change', function() {
     const checked = this.checked;
     document.querySelectorAll('.training-checkbox').forEach(cb => {
-        const row = cb.closest('tr');
-        if (row && row.querySelector('.badge-active')) {
-            return;
-        }
         cb.checked = checked;
-        toggleTrainingSelection(cb.dataset.version, checked);
+        toggleTrainingSelection(cb.closest('td').querySelector('input').dataset.version, checked);
     });
 });
 
 document.getElementById('delete-selected-training-btn').addEventListener('click', deleteSelectedTraining);
-
-function initViewToggle() {
-    document.querySelectorAll('.panel-right-header .view-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.panel-right-header .view-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            loadTrainingHistory();
-        });
-    });
-}
-initViewToggle();
 
 (async () => {
     await requireAuth();

@@ -1,5 +1,9 @@
-.latest-evaluation {
-    margin-top: auto;
+.section {
+    margin-bottom: 24px;
+    padding: 16px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
 }
 
 .section h3 {
@@ -96,11 +100,11 @@
     color: var(--fg-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
 
 .metric-value {
-    font-size: 0.875rem;
+    font-size: 1.125rem;
     font-weight: 600;
     color: var(--fg);
 }
@@ -126,6 +130,11 @@
     border-radius: 4px;
     font-size: 0.6875rem;
     font-weight: 500;
+}
+
+.badge.active {
+    background: var(--success-subtle);
+    color: var(--success);
 }
 
 .badge-active {
@@ -218,33 +227,64 @@ input[type="checkbox"] {
     top: 2px;
 }
 
-.header-left-group {
+/* ── Pagination ─────────────────────────────────────────────────────────────── */
+.pagination-bar {
     display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-top: 0.8px solid var(--border);
+    background: var(--bg-panel);
+    font-size: 0.75rem;
+    color: var(--fg-subtle);
+    flex-shrink: 0;
 }
 
-.view-toggle {
+.pagination-info {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fg-subtle);
+}
+
+.pagination-controls {
     display: flex;
-    gap: 0;
-    border: 0.8px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
+    align-items: center;
+    gap: 4px;
 }
 
-.view-btn {
-    padding: 4px 10px;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    border: none;
-    background: transparent;
+.pagination-controls .btn-page {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 26px;
+    padding: 0 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-family: var(--font);
+    border: 0.8px solid var(--border);
+    background: var(--bg);
     color: var(--fg-muted);
     cursor: pointer;
-    transition: all 0.15s;
-    font-family: var(--font);
+    transition: all 0.12s;
+    letter-spacing: 0.02em;
 }
 
-.view-btn.active {
-    background: var(--accent);
-    color: var(--accent-fg);
+.pagination-controls .btn-page:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(255, 87, 10, 0.04);
+}
+
+.pagination-controls .btn-page:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.pagination-controls .page-label {
+    padding: 0 10px;
+    font-size: 0.72rem;
+    color: var(--fg-muted);
+    white-space: nowrap;
 }

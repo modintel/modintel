@@ -1,6 +1,8 @@
 const API_BASE = '/api';
 
 let selectedDatasets = new Set();
+let datasetsPage = 1;
+let datasetsTotalPages = 1;
 
 function updateDatasetActions() {
     const actionsDiv = document.getElementById('dataset-actions');
@@ -25,6 +27,15 @@ function updateSelectAllCheckbox() {
     selectAllCheckbox.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < checkboxes.length;
 }
 
+function handleSelectAllChange() {
+    const selectAllCheckbox = document.getElementById('select-all-datasets');
+    const checkboxes = document.querySelectorAll('.dataset-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = selectAllCheckbox.checked;
+        toggleDatasetSelection(cb.dataset.id, selectAllCheckbox.checked);
+    });
+}
+
 function deleteSelectedDatasets() {
     const selectedIds = Array.from(selectedDatasets);
     if (selectedIds.length === 0) return;
@@ -34,6 +45,7 @@ function deleteSelectedDatasets() {
         `Are you sure you want to delete ${selectedIds.length} dataset(s)? This action cannot be undone.`,
         async () => {
             try {
+                // Delete each selected dataset
                 const deletePromises = selectedIds.map(id =>
                     apiFetch(`${API_BASE}/datasets/${id}`, { method: 'DELETE' })
                 );
@@ -89,25 +101,50 @@ function mergeSelectedDatasets() {
     );
 }
 
-async function loadDatasets() {
+async function loadDatasets(page) {
+    if (page !== undefined) datasetsPage = page;
     try {
-        const res = await apiFetch(`${API_BASE}/datasets`);
+        const res = await apiFetch(`${API_BASE}/datasets?page=${datasetsPage}&limit=10`);
         if (!res.ok) {
             console.error('Failed to load datasets:', res.status, res.statusText);
             return;
         }
         const data = await res.json();
-        const items = (data.items || []).slice().sort((a, b) => {
-            const aTime = Date.parse(a.created_at || a.createdAt || '') || 0;
-            const bTime = Date.parse(b.created_at || b.createdAt || '') || 0;
-            return bTime - aTime;
-        });
-        renderDatasets(items);
+        datasetsTotalPages = data.total_pages || 1;
+        renderDatasets(data.items || []);
+        renderDatasetsPagination(datasetsPage, datasetsTotalPages, data.total_count || 0);
         updateSelectAllCheckbox();
         updateDatasetActions();
     } catch (e) {
         console.error('Error loading datasets:', e);
     }
+}
+
+function renderDatasetsPagination(page, totalPages, totalCount) {
+    let container = document.getElementById('datasets-pagination');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'datasets-pagination';
+        container.className = 'pagination-bar';
+        const table = document.querySelector('#datasets-list').closest('table');
+        table.parentNode.insertBefore(container, table.nextSibling);
+    }
+    const itemLabel = `${totalCount} dataset${totalCount !== 1 ? 's' : ''}`;
+    if (totalPages <= 1) {
+        container.innerHTML = `<span class="pagination-info">${itemLabel}</span>`;
+        return;
+    }
+    container.innerHTML = `
+        <span class="pagination-info">${itemLabel}</span>
+        <div class="pagination-controls">
+            <button class="btn-page" id="ds-prev-btn" ${page <= 1 ? 'disabled' : ''}>&#8592; Prev</button>
+            <span class="page-label">Page ${page} of ${totalPages}</span>
+            <button class="btn-page" id="ds-next-btn" ${page >= totalPages ? 'disabled' : ''}>Next &#8594;</button>
+        </div>`;
+    const prev = document.getElementById('ds-prev-btn');
+    const next = document.getElementById('ds-next-btn');
+    if (prev) prev.addEventListener('click', () => loadDatasets(datasetsPage - 1));
+    if (next) next.addEventListener('click', () => loadDatasets(datasetsPage + 1));
 }
 
 async function loadDatasetSources() {
@@ -123,7 +160,7 @@ async function loadDatasetSources() {
 function renderDatasets(items) {
     const tbody = document.getElementById('datasets-list');
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--fg-muted);padding:20px;">No datasets yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--fg-muted);padding:20px;">No datasets yet.</td></tr>';
         return;
     }
     tbody.innerHTML = items.map(d => `
@@ -132,16 +169,7 @@ function renderDatasets(items) {
             <td>${d.type || '—'}</td>
             <td>${d.samples || 0}</td>
             <td>${d.attack_pct || 0}%</td>
-            <td>${d.created_at ? new Date(d.created_at).toLocaleDateString() : '—'}</td>
-            <td>
-                <button class="btn btn-sm process-dataset-btn" data-id="${d._id}">
-                    <svg class="process-circle" viewBox="0 0 20 20" width="14" height="14">
-                        <circle cx="10" cy="10" r="8" fill="none" stroke="var(--border)" stroke-width="2.5"/>
-                        <circle class="process-fill" cx="10" cy="10" r="8" fill="none" stroke="#ff570a" stroke-width="2.5" stroke-dasharray="50.27" stroke-dashoffset="50.27" stroke-linecap="round" transform="rotate(-90 10 10)"/>
-                    </svg>
-                    Process
-                </button>
-            </td>
+            <td>${d.created_at || '—'}</td>
             <td><button class="btn btn-sm btn-danger delete-dataset-btn" data-id="${d._id}">Delete</button></td>
         </tr>
     `).join('');
@@ -155,17 +183,10 @@ function renderDatasets(items) {
             toggleDatasetSelection(cb.dataset.id, cb.checked);
         });
     });
-
-    document.querySelectorAll('.process-dataset-btn').forEach(btn => {
-        btn.addEventListener('click', () => processDataset(btn));
-    });
 }
 
 function renderSources(sources) {
     const container = document.querySelector('.source-list');
-    if (!container) {
-        return;
-    }
     const icons = {
         sqli: 'sqli',
         xss: 'xss',
@@ -265,48 +286,28 @@ async function deleteDataset(id) {
     );
 }
 
-function processDataset(btn) {
-    const fill = btn.querySelector('.process-fill');
-    if (!fill || fill.classList.contains('processing')) return;
-
-    btn.disabled = true;
-    btn.classList.add('is-processing');
-    fill.classList.add('processing');
-    fill.style.strokeDashoffset = '0';
-
-    setTimeout(() => {
-        btn.disabled = false;
-        btn.classList.remove('is-processing');
-        fill.classList.remove('processing');
-        fill.style.strokeDashoffset = '50.27';
-    }, 2000);
-}
-
 const generateDatasetBtn = document.getElementById('generate-dataset-btn');
 if (generateDatasetBtn) {
     generateDatasetBtn.addEventListener('click', generateDataset);
-}
-
-document.getElementById('select-all-datasets').addEventListener('change', function() {
-    const checked = this.checked;
-    document.querySelectorAll('.dataset-checkbox').forEach(cb => {
-        cb.checked = checked;
-        toggleDatasetSelection(cb.dataset.id, checked);
-    });
-});
-
-const deleteSelectedBtn = document.getElementById('delete-selected-btn');
-if (deleteSelectedBtn) {
-    deleteSelectedBtn.addEventListener('click', deleteSelectedDatasets);
-}
-
-const mergeSelectedBtn = document.getElementById('merge-selected-btn');
-if (mergeSelectedBtn) {
-    mergeSelectedBtn.addEventListener('click', mergeSelectedDatasets);
 }
 
 (async () => {
     await requireAuth();
     await loadDatasets();
     loadDatasetSources();
+
+    const selectAllCheckbox = document.getElementById('select-all-datasets');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', handleSelectAllChange);
+    }
+
+    const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+    if (deleteSelectedBtn) {
+        deleteSelectedBtn.addEventListener('click', deleteSelectedDatasets);
+    }
+
+    const mergeSelectedBtn = document.getElementById('merge-selected-btn');
+    if (mergeSelectedBtn) {
+        mergeSelectedBtn.addEventListener('click', mergeSelectedDatasets);
+    }
 })();

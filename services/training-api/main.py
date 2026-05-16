@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 import re
@@ -35,23 +34,24 @@ def get_db():
     return db
 
 
+# TrainingRequest and TrainingResult models
 class TrainingRequest(BaseModel):
     dataset: str
     model_type: str
-    val_split: int
+    val_split: int = 20
 
 
-class TrainingResult(BaseModel):
-    version: str
-    model_type: str
-    dataset: str
-    precision: float
-    recall: float
-    fpr: float
-    f1_score: float
-    auroc: float
-    trained_at: str
-    active: bool = False
+# class TrainingResult(BaseModel):
+#     version: str
+#     model_type: str
+#     dataset: str
+#     precision: float
+#     recall: float
+#     fpr: float
+#     f1_score: float
+#     auroc: float
+#     trained_at: str
+#     active: bool = False
 
 
 class ModelStatus(BaseModel):
@@ -83,6 +83,7 @@ class TrainingJob:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # get_db()
     yield
     if client:
         client.close()
@@ -104,6 +105,11 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/test")
+async def test():
+    return {"ok": True}
+
+
 @app.get("/api/training/status", response_model=ModelStatus)
 async def get_training_status():
     collection = get_db()["training_history"]
@@ -116,15 +122,6 @@ async def get_training_status():
         training_active=training_active,
         current_job_id=current_job_id,
     )
-
-
-@app.get("/api/training/history")
-async def get_training_history():
-    collection = get_db()["training_history"]
-    records = list(collection.find().sort("trained_at", -1).limit(50))
-    for r in records:
-        r["_id"] = str(r["_id"])
-    return records
 
 
 @app.get("/api/training/model-types")
@@ -277,9 +274,6 @@ async def start_training(req: TrainingRequest):
     t = threading.Thread(target=_run_training, args=(job,), daemon=True)
     t.start()
 
-    from audit_client import log_audit
-    asyncio.create_task(log_audit("training_start", "started", {"version": new_version, "dataset": req.dataset, "model_type": req.model_type}))
-
     return {
         "status": "started",
         "job_id": current_job_id,
@@ -306,9 +300,6 @@ async def activate_model(version: str):
 
     collection.update_many({"active": True}, {"$set": {"active": False}})
     collection.update_one({"version": version}, {"$set": {"active": True}})
-
-    from audit_client import log_audit
-    asyncio.create_task(log_audit("model_activate", "success", {"version": version, "model_path": model_path}))
 
     try:
         _restart_inference_engine(version)
@@ -466,7 +457,7 @@ async def cut_reviewed_dataset(body: dict = Body({})):
         }
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
         raise HTTPException(status_code=500, detail="Internal error during export")
 
 
@@ -511,8 +502,30 @@ async def export_dataset():
         }
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
         raise HTTPException(status_code=500, detail="Internal error during export")
+
+
+@app.get("/api/training/history")
+async def get_training_history(page: int = 1, page_size: int = 20):
+    if page < 1:
+        page = 1
+    if page_size < 1 or page_size > 100:
+        page_size = 20
+    collection = get_db()["training_history"]
+    total_count = collection.count_documents({})
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    skip = (page - 1) * page_size
+    items = list(collection.find().sort("trained_at", -1).skip(skip).limit(page_size))
+    for item in items:
+        item["_id"] = str(item["_id"])
+    return {
+        "items": items,
+        "page": page,
+        "page_size": page_size,
+        "total_count": total_count,
+        "total_pages": total_pages,
+    }
 
 
 @app.delete("/api/training/history/{version}")

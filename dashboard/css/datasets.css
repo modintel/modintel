@@ -42,12 +42,6 @@
     color: var(--fg);
 }
 
-.section-note {
-    margin-top: 12px;
-    font-size: 0.6875rem;
-    color: var(--fg-muted);
-}
-
 .source-list {
     display: flex;
     flex-direction: column;
@@ -141,28 +135,64 @@ input[type="checkbox"] {
     top: 2px;
 }
 
-.process-dataset-btn {
-    display: inline-flex;
+/* ── Pagination ─────────────────────────────────────────────────────────────── */
+.pagination-bar {
+    display: flex;
     align-items: center;
-    gap: 5px;
-    cursor: pointer;
-}
-
-.process-circle {
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-top: 0.8px solid var(--border);
+    background: var(--bg-panel);
+    font-size: 0.75rem;
+    color: var(--fg-subtle);
     flex-shrink: 0;
 }
 
-.process-fill {
-    transition: stroke-dashoffset 2s ease-in-out;
+.pagination-info {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fg-subtle);
 }
 
-.process-dataset-btn:hover {
-    background: var(--accent);
-    color: var(--accent-fg);
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.pagination-controls .btn-page {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 26px;
+    padding: 0 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-family: var(--font);
+    border: 0.8px solid var(--border);
+    background: var(--bg);
+    color: var(--fg-muted);
+    cursor: pointer;
+    transition: all 0.12s;
+    letter-spacing: 0.02em;
+}
+
+.pagination-controls .btn-page:hover:not(:disabled) {
     border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(255, 87, 10, 0.04);
 }
 
-.process-dataset-btn.is-processing {
-    color: #ff570a;
-    border-color: rgba(255, 87, 10, 0.3);
+.pagination-controls .btn-page:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.pagination-controls .page-label {
+    padding: 0 10px;
+    font-size: 0.72rem;
+    color: var(--fg-muted);
+    white-space: nowrap;
 }
