@@ -1943,6 +1943,10 @@ func GetTotalErrors() uint64 {
 var LastRequestsPerMin float64
 
 func GetRequestsPerMin() float64 {
+	live := requestStats.liveRPM(time.Now())
+	if live > 0 {
+		return live
+	}
 	return LastRequestsPerMin
 }
 
