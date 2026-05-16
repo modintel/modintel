@@ -9,6 +9,7 @@
     <meta name="description" content="Attack analysis and reporting for ModIntel">
     <link rel="stylesheet" href="css/main.css">
     <link rel="stylesheet" href="css/reports.css">
+    <link rel="stylesheet" href="css/settings.css">
 </head>
 
 <body data-attach-logout="false">
@@ -36,77 +37,115 @@
         <div class="panel-left">
             <div class="hero-eyebrow">Analytics</div>
             <h1>Attack Reports</h1>
-            <p>Analyze attack patterns and generate reports.</p>
-            
-                <div class="stats-grid">
-                    <div class="stat-cell">
-                        <div class="stat-label">Total Attacks</div>
-                        <div class="stat-value" id="total-attacks">0</div>
-                    </div>
-                    <div class="stat-cell">
-                        <div class="stat-label">Blocked</div>
-                        <div class="stat-value" id="blocked-attacks">0%</div>
-                    </div>
-                </div>
+            <p>Analyze attack patterns, false positives, and IP origins.</p>
 
-            <div class="section">
-                <h3>Generate Report</h3>
-                <p>Create PDF or CSV reports of attack data.</p>
-                
-                <div class="form-group">
-                    <label>Report Type</label>
-                    <select id="report-type">
-                        <option value="summary">Summary</option>
-                        <option value="detailed">Detailed Analysis</option>
-                        <option value="rule-trigger">Rule Trigger Report</option>
-                        <option value="ml-performance">ML Performance</option>
-                    </select>
+            <div class="stats-grid reports-stats">
+                <div class="stat-cell">
+                    <div class="stat-label">Total Attacks</div>
+                    <div class="stat-value" id="total-attacks">—</div>
                 </div>
-                
-                <div class="form-group">
-                    <label>Date Range</label>
-                    <select id="date-range">
-                        <option value="today">Today</option>
-                        <option value="24h" selected>Last 24 Hours</option>
-                        <option value="7d">Last 7 Days</option>
-                        <option value="30d">Last 30 Days</option>
-                    </select>
+                <div class="stat-cell stat-blocked">
+                    <div class="stat-label">Blocked</div>
+                    <div class="stat-value" id="blocked-attacks">—</div>
+                    <button class="stat-arrow" id="paranoia-settings-btn" title="WAF Paranoia Settings">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="7" y1="17" x2="17" y2="7"></line>
+                            <polyline points="7 7 17 7 17 17"></polyline>
+                        </svg>
+                    </button>
                 </div>
-
-                <button class="btn btn-primary" id="generate-report-btn" type="button">Download CSV</button>
             </div>
 
             <div class="section">
                 <h3>Top Attack Vectors</h3>
-                <div class="attack-vector-list" id="attack-vectors"></div>
+                <div class="pie-section">
+                    <canvas id="attack-pie" width="160" height="160"></canvas>
+                    <div class="pie-legend" id="pie-legend"></div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Frequently False Positive Rules</h3>
+                <div class="fp-scroll">
+                    <table class="fp-table">
+                        <thead>
+                            <tr>
+                                <th>Rule ID</th>
+                                <th>Message</th>
+                                <th>FP Count</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fp-rules-body">
+                            <tr><td colspan="3" class="empty-row">Loading&hellip;</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
-        <div class="panel-right" style="overflow-y: auto;">
-            <div class="panel-right-header">
-                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Recent Attacks</div>
+        <div class="panel-right reports-right">
+<div class="panel-right-header" style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">Reports Overview</div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <a href="/audit-logs" class="btn btn-sm" id="audit-link-btn" style="color: var(--accent); border-color: var(--accent); text-decoration: none;">AUDIT TRAIL</a>
+                </div>
             </div>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>IP</th>
-                        <th>Type</th>
-                        <th>Rule</th>
-                        <th>AI Score</th>
-                    </tr>
-                </thead>
-                <tbody id="attacks-list"></tbody>
-            </table>
+            <div class="reports-right-body">
+                <div class="right-section right-trend">
+                    <h3>Attack Trend</h3>
+                    <div class="trend-chart" id="trend-chart">
+                        <div class="trend-loading">Loading&hellip;</div>
+                    </div>
+                </div>
+                <div class="right-section right-ips">
+                    <h3>Top Attacking IPs</h3>
+                    <div class="right-scroll">
+                        <table class="ip-table">
+                            <thead>
+                                <tr>
+                                    <th>IP</th>
+                                    <th>Country</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tbody id="top-ips-body">
+                                <tr><td colspan="3" class="empty-row">Loading&hellip;</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="right-section right-bottom">
+                    <div class="right-geo">
+                        <h3>Attack Origin</h3>
+                        <div class="geo-distribution" id="geo-dist">
+                            <div class="geo-loading">Resolving IP locations&hellip;</div>
+                        </div>
+                    </div>
+                    <div class="right-export">
+                        <h3>Export</h3>
+                        <div class="export-controls">
+                            <select id="report-type">
+                                <option value="summary">Summary</option>
+                                <option value="detailed">Detailed Analysis</option>
+                                <option value="rule-trigger">Rule Trigger Report</option>
+                            </select>
+                            <select id="date-range">
+                                <option value="today">Today</option>
+                                <option value="24h" selected>Last 24 Hours</option>
+                                <option value="7d">Last 7 Days</option>
+                                <option value="30d">Last 30 Days</option>
+                            </select>
+                             <button class="btn btn-primary" id="generate-report-btn" type="button">Download CSV</button>
+                        </div>
+                    </div>
+</div>
+            </div>
         </div>
     </div>
+
     <script src="js/auth.js"></script>
     <script src="js/boot.js"></script>
+    <script src="js/modal.js"></script>
     <script src="js/reports.js"></script>
 </body>
 
 </html>
-
-
-
-
-

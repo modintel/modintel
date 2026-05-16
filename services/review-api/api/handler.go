@@ -19,6 +19,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"io"
 
 	"modintel/services/review-api/db"
 
@@ -1942,11 +1943,47 @@ func GetTotalErrors() uint64 {
 var LastRequestsPerMin float64
 
 func GetRequestsPerMin() float64 {
-	live := requestStats.liveRPM(time.Now())
-	if live > 0 {
-		return live
-	}
 	return LastRequestsPerMin
+}
+
+type wafTrafficSnapshot struct {
+	Timestamp      time.Time `json:"timestamp"`
+	RequestsPerMin float64   `json:"requests_per_minute"`
+	BlockedPerMin  float64   `json:"blocked_per_minute"`
+	AllowedPerMin  float64   `json:"allowed_per_minute"`
+}
+
+func GetWAFTrafficSnapshot() (wafTrafficSnapshot, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://log-collector:8081/api/waf/traffic", nil)
+	if err != nil {
+		return wafTrafficSnapshot{}, false
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return wafTrafficSnapshot{}, false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return wafTrafficSnapshot{}, false
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return wafTrafficSnapshot{}, false
+	}
+
+	var snapshot wafTrafficSnapshot
+	if err := json.Unmarshal(body, &snapshot); err != nil {
+		return wafTrafficSnapshot{}, false
+	}
+
+	return snapshot, true
 }
 
 func GetSystemMetrics(ctx context.Context) systemMetricsData {
