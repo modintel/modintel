@@ -64,7 +64,7 @@ func (pf *Prefilter) Evaluate(method, uri, body string, headers map[string]strin
 			text += " " + v
 		}
 	}
-	textLower := text
+	textLower := strings.ToLower(text)
 
 	matched := []string{}
 	for _, p := range pf.patterns {
