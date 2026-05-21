@@ -33,7 +33,7 @@ function showModal(title, message, type = 'info') {
     const closeBtn = document.getElementById('modal-close');
 
     titleEl.textContent = title;
-    messageEl.textContent = message;
+    messageEl.innerHTML = message;
 
     titleEl.className = type === 'error' ? 'modal-title-error' : '';
     closeBtn.className = type === 'error' ? 'btn btn-danger' : 'btn btn-primary';
