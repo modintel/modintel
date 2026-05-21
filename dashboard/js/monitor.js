@@ -322,8 +322,8 @@ function applyMetricsData(data) {
     updateRequestRateChart(requestRates, maxRate);
     updateInferenceRateChart(inferenceRates, maxRate);
     updateRequestLegend({
-        waf: requestRates[requestRates.length - 1] || 0,
-        inference: inferenceRates[inferenceRates.length - 1] || 0,
+        waf: data.requests_per_minute || requestRates[requestRates.length - 1] || 0,
+        inference: data.predictions_per_minute || inferenceRates[inferenceRates.length - 1] || 0,
     });
 
     applyRequestSeriesMode();
