@@ -126,14 +126,20 @@
 }
 
 .fp-scroll {
-    max-height: 500px;
+    max-height: 250px;
     overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.fp-scroll::-webkit-scrollbar {
+    display: none;
 }
 
 .fp-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: 0.8125rem;   
 }
 
 .fp-table thead th {
@@ -142,7 +148,7 @@
     text-transform: uppercase;
     color: var(--fg-subtle);
     letter-spacing: 0.04em;
-    padding: 0.5rem 0.75rem;
+    padding: 0.5rem 0.85rem;
     text-align: left;
     border-bottom: 0.8px solid var(--border);
 }
