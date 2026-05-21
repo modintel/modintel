@@ -109,7 +109,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./proxy-waf/overrides:/waf-overrides
-      - ./proxy-waf/custom_rules.conf:/waf-overrides/custom_rules.conf:ro
+      - ./proxy-waf/custom_rules.conf:/waf-overrides/custom_rules.conf
       - .:/project:rw
       - ./dashboard:/srv/dashboard:ro
       - modintel_crs-rules:/crs-rules:ro
