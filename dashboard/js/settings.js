@@ -447,6 +447,9 @@ document.addEventListener('DOMContentLoaded', () => {
             loadUsers();
             const smtpSection = document.getElementById('section-smtp');
             if (smtpSection) { smtpSection.style.removeProperty('display'); loadSMTPSettings(); }
+        } else {
+            const inviteEl = document.querySelector('.account-invite');
+            if (inviteEl) inviteEl.style.display = 'none';
         }
     }
 });
@@ -656,7 +659,7 @@ async function saveParanoiaConfig() {
     }
 
     try {
-        await saveLayer2Threshold();
+        await saveLayer2Threshold(true);
     } catch (e) {
         console.error('Failed to update layer2 threshold', e);
     } finally {
