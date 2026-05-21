@@ -440,6 +440,17 @@ def _run_balance_job(dataset_name: str, job_id: str):
     try:
         db = get_db()
 
+        dataset = db["datasets"].find_one({"name": dataset_name})
+        existing_attack_pct = (dataset or {}).get("attack_pct", 0)
+        if existing_attack_pct >= 60:
+            _update_balance_job(dataset_name, job_id, {
+                "status": "error",
+                "message": "dataset already at or above 60% attacks",
+                "attack_pct": existing_attack_pct,
+                "samples": (dataset or {}).get("samples", 0),
+            })
+            return
+
         parquet_path = os.path.join(DATA_DIR, "processed", f"{dataset_name}.parquet")
         if not os.path.isfile(parquet_path):
             _update_balance_job(dataset_name, job_id, {
@@ -449,13 +460,16 @@ def _run_balance_job(dataset_name: str, job_id: str):
             return
 
         df = pd.read_parquet(parquet_path)
-        attack_count = len(df)
+        attack_df = df[df["source"] != "benign"] if "source" in df.columns else df
+        attack_count = len(attack_df)
 
         benign_needed = int(attack_count / 0.6 - attack_count)
         if benign_needed <= 0:
             _update_balance_job(dataset_name, job_id, {
                 "status": "error",
                 "message": "dataset already at or above 60% attacks",
+                "attack_pct": existing_attack_pct,
+                "samples": (dataset or {}).get("samples", 0),
             })
             return
 
@@ -560,7 +574,7 @@ def _run_balance_job(dataset_name: str, job_id: str):
         actual_attack_pct = round((attack_count / (attack_count + actual_benign)) * 100)
 
         benign_df = pd.DataFrame(benign_rows)
-        balanced_df = pd.concat([df, benign_df], ignore_index=True)
+        balanced_df = pd.concat([attack_df, benign_df], ignore_index=True)
         balanced_df.to_parquet(parquet_path, index=False)
 
         total = len(balanced_df)
