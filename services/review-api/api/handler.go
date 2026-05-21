@@ -123,6 +123,7 @@ type updateRuleRequest struct {
 	Description string `json:"description"`
 	Severity    string `json:"severity"`
 	Phase       int    `json:"phase"`
+	Signature   string `json:"signature"`
 }
 
 func SetupRouter() *gin.Engine {
@@ -154,7 +155,6 @@ func SetupRouter() *gin.Engine {
 	r.GET("/api/events/stream", SSEAuth(jwtSecret), SSEStreamHandler)
 	r.GET("/api/whoami", AuthMiddleware(jwtSecret), GetWhoAmI)
 
-	
 	authProxy := r.Group("/api/v1/auth")
 	{
 		authProxy.POST("/login", ProxyToAuthService)
@@ -176,6 +176,7 @@ func SetupRouter() *gin.Engine {
 		api.POST("/rules", RequireRoles("admin"), CreateRule)
 		api.DELETE("/rules/:id", RequireRoles("admin"), DeleteRule)
 		api.GET("/rules/regex", RequireRoles("admin", "analyst", "viewer"), GetRegexRules)
+		api.GET("/rules/regex/all", RequireRoles("admin", "analyst", "viewer"), GetRegexSignatures)
 		api.GET("/alerts", RequireRoles("admin", "analyst", "viewer"), GetAlerts)
 		api.GET("/alerts/review", RequireRoles("admin", "analyst"), GetReviewAlerts)
 		api.GET("/admin/audit-logs", RequireRoles("admin"), func(c *gin.Context) {
@@ -442,12 +443,12 @@ func requestTracker() gin.HandlerFunc {
 }
 
 func GetRules(c *gin.Context) {
-	
-	ruleType := strings.TrimSpace(c.Query("type"))        
-	category := strings.TrimSpace(c.Query("category"))    
-	search := strings.TrimSpace(c.Query("search"))        
-	paranoiaStr := c.Query("paranoia_level")              
-	
+
+	ruleType := strings.TrimSpace(c.Query("type"))
+	category := strings.TrimSpace(c.Query("category"))
+	search := strings.TrimSpace(c.Query("search"))
+	paranoiaStr := c.Query("paranoia_level")
+
 	params, err := parseOffsetParams(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -459,8 +460,7 @@ func GetRules(c *gin.Context) {
 
 	ruleColl := db.GetCollection("modintel", "waf_rules")
 
-	
-	filter := bson.M{"archived": bson.M{"$ne": true}} 
+	filter := bson.M{"archived": bson.M{"$ne": true}}
 
 	if ruleType != "" {
 		if ruleType != "crs" && ruleType != "custom" {
@@ -497,20 +497,17 @@ func GetRules(c *gin.Context) {
 		}
 	}
 
-	
 	totalCount, err := ruleColl.CountDocuments(ctx, filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count rules"})
 		return
 	}
 
-	
 	totalPages := int((totalCount + int64(params.Limit) - 1) / int64(params.Limit))
 	skip := (params.Page - 1) * params.Limit
 
-	
 	opts := options.Find().
-		SetSort(bson.D{{Key: "id", Value: 1}}). 
+		SetSort(bson.D{{Key: "id", Value: 1}}).
 		SetSkip(int64(skip)).
 		SetLimit(int64(params.Limit))
 
@@ -601,6 +598,65 @@ func GetRegexRules(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func GetRegexSignatures(c *gin.Context) {
+	signaturesPath := os.Getenv("MODINTEL_SIGNATURES_FILE")
+	if signaturesPath == "" {
+		signaturesPath = "/app/signatures/modintel_regex.signatures"
+	}
+
+	data, err := os.ReadFile(signaturesPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read signatures file"})
+		return
+	}
+
+	var signatures []map[string]interface{}
+	if err := json.Unmarshal(data, &signatures); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse signatures"})
+		return
+	}
+
+	type RegexSignature struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Category string `json:"category"`
+		Severity string `json:"severity"`
+		Enabled  bool   `json:"enabled"`
+		Patterns int    `json:"patterns"`
+	}
+
+	result := make([]RegexSignature, 0, len(signatures))
+	for _, sig := range signatures {
+		id, _ := sig["id"].(string)
+		if id == "" {
+			continue
+		}
+		enabled := true
+		if e, ok := sig["enabled"]; ok {
+			if b, ok := e.(bool); ok {
+				enabled = b
+			}
+		}
+		name, _ := sig["name"].(string)
+		category, _ := sig["category"].(string)
+		severity, _ := sig["severity"].(string)
+		patternCount := 0
+		if p, ok := sig["patterns"].([]interface{}); ok {
+			patternCount = len(p)
+		}
+		result = append(result, RegexSignature{
+			ID:       id,
+			Name:     name,
+			Category: category,
+			Severity: severity,
+			Enabled:  enabled,
+			Patterns: patternCount,
+		})
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 func UpdateRuleStatus(c *gin.Context) {
 	ruleID := strings.TrimSpace(c.Param("id"))
 	if ruleID == "" {
@@ -641,8 +697,9 @@ func UpdateRuleStatus(c *gin.Context) {
 
 	hasToggle := req.Enabled != nil
 	hasMetadata := req.Category != "" || req.Description != "" || req.Severity != "" || req.Phase != 0
+	hasSignature := req.Signature != ""
 
-	if !hasToggle && !hasMetadata {
+	if !hasToggle && !hasMetadata && !hasSignature {
 		LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "no fields to update")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no fields to update"})
 		return
@@ -654,10 +711,10 @@ func UpdateRuleStatus(c *gin.Context) {
 		setFields["enabled"] = *req.Enabled
 	}
 
-	if hasMetadata {
+	if hasMetadata || hasSignature {
 		if existingRule.Type != "custom" {
-			LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "cannot edit CRS rule metadata")
-			c.JSON(http.StatusForbidden, gin.H{"error": "cannot edit CRS rule metadata"})
+			LogAction(c, "rule_update", "rule", ruleID, nil, "failure", "cannot edit CRS rule")
+			c.JSON(http.StatusForbidden, gin.H{"error": "cannot edit CRS rule"})
 			return
 		}
 		if req.Category != "" {
@@ -685,6 +742,9 @@ func UpdateRuleStatus(c *gin.Context) {
 			}
 			setFields["phase"] = req.Phase
 		}
+		if hasSignature {
+			setFields["signature"] = sanitizeSignature(req.Signature)
+		}
 	}
 
 	_, err = ruleColl.UpdateOne(
@@ -705,6 +765,18 @@ func UpdateRuleStatus(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed syncing waf overrides"})
 			return
 		}
+	}
+
+	if hasSignature {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			if regenErr := regenerateCustomRulesConf(bgCtx); regenErr != nil {
+				log.Printf("failed regenerating custom rules conf: %v", regenErr)
+				return
+			}
+			restartProxyWAFAsync()
+		}()
 	}
 
 	LogAction(c, "rule_update", "rule", ruleID, map[string]interface{}{"enabled": req.Enabled, "type": existingRule.Type}, "success", "")
@@ -755,6 +827,16 @@ func DeleteRule(c *gin.Context) {
 		return
 	}
 
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if regenErr := regenerateCustomRulesConf(bgCtx); regenErr != nil {
+			log.Printf("failed regenerating custom rules conf: %v", regenErr)
+			return
+		}
+		restartProxyWAFAsync()
+	}()
+
 	LogAction(c, "rule_delete", "rule", ruleID, nil, "success", "")
 	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID})
 }
@@ -767,7 +849,7 @@ type createRuleRequest struct {
 	Severity    string `json:"severity" bson:"severity"`
 	Phase       int    `json:"phase" bson:"phase"`
 	Source      string `json:"source" bson:"source"`
-	Syntax      string `json:"syntax" bson:"-"`
+	Signature   string `json:"signature" bson:"signature"`
 }
 
 func CreateRule(c *gin.Context) {
@@ -821,6 +903,7 @@ func CreateRule(c *gin.Context) {
 		Archived:    false,
 		CreatedAt:   now,
 		UpdatedAt:   now,
+		Signature:   sanitizeSignature(req.Signature),
 	}
 
 	_, err := ruleColl.InsertOne(ctx, rule)
@@ -829,6 +912,16 @@ func CreateRule(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create rule"})
 		return
 	}
+
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if regenErr := regenerateCustomRulesConf(bgCtx); regenErr != nil {
+			log.Printf("failed regenerating custom rules conf: %v", regenErr)
+			return
+		}
+		restartProxyWAFAsync()
+	}()
 
 	LogAction(c, "rule_create", "rule", req.ID, map[string]interface{}{"category": req.Category}, "success", "")
 	c.JSON(http.StatusCreated, gin.H{"success": true, "id": req.ID})
@@ -885,6 +978,92 @@ func syncManagedWAFOverrides(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func getCustomRulesPath() string {
+	p := strings.TrimSpace(os.Getenv("CUSTOM_RULES_PATH"))
+	if p == "" {
+		p = "/waf-overrides/custom_rules.conf"
+	}
+	return p
+}
+
+func regenerateCustomRulesConf(ctx context.Context) error {
+	ruleColl := db.GetCollection("modintel", "waf_rules")
+
+	cur, err := ruleColl.Find(ctx, bson.M{
+		"source": "modintel-custom",
+	})
+	if err != nil {
+		return err
+	}
+	defer cur.Close(ctx)
+
+	type customRule struct {
+		ID        string `bson:"id"`
+		Signature string `bson:"signature"`
+		Enabled   bool   `bson:"enabled"`
+	}
+	rules := make([]customRule, 0)
+	for cur.Next(ctx) {
+		var rec customRule
+		if decodeErr := cur.Decode(&rec); decodeErr != nil {
+			continue
+		}
+		if rec.Signature == "" {
+			continue
+		}
+		rules = append(rules, rec)
+	}
+
+	sort.Slice(rules, func(i, j int) bool {
+		return rules[i].ID < rules[j].ID
+	})
+
+	buf := strings.Builder{}
+	buf.WriteString("# Auto-generated by review-api. Do not edit manually.\n")
+	buf.WriteString(fmt.Sprintf("# Generated at %s\n\n", time.Now().UTC().Format(time.RFC3339)))
+	buf.WriteString("SecRuleEngine On\n\n")
+
+	for _, r := range rules {
+		line := sanitizeSignature(r.Signature)
+		if line == "" {
+			continue
+		}
+		if !r.Enabled {
+			line = "# " + line
+		}
+		buf.WriteString(line + "\n")
+	}
+
+	customPath := filepath.Clean(getCustomRulesPath())
+	if err := os.MkdirAll(filepath.Dir(customPath), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(customPath, []byte(buf.String()), 0o644)
+}
+
+func sanitizeSignature(sig string) string {
+	sig = strings.TrimSpace(sig)
+	sig = strings.ReplaceAll(sig, "\r\n", " ")
+	sig = strings.ReplaceAll(sig, "\n", " ")
+	sig = strings.ReplaceAll(sig, "\r", " ")
+	return sig
+}
+
+func restartProxyWAFAsync() {
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		containerID, err := dockerFindComposeServiceContainer(bgCtx, "proxy-waf")
+		if err != nil {
+			log.Printf("failed to find proxy-waf container: %v", err)
+			return
+		}
+		if err := dockerRestartContainer(bgCtx, containerID); err != nil {
+			log.Printf("failed to restart proxy-waf: %v", err)
+		}
+	}()
 }
 
 func GetConfig(c *gin.Context) {
@@ -1042,7 +1221,7 @@ func UpdateLayer2Threshold(c *gin.Context) {
 		return
 	}
 
-	go notifyWafBlockerThresholdUpdate(threshold)
+	go func() { _ = notifyWafBlockerThresholdUpdate(threshold) }()
 
 	LogAction(c, "waf_layer2_threshold_update", "system", "waf", map[string]interface{}{"layer2_block_threshold": threshold}, "success", "")
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
@@ -3064,21 +3243,17 @@ func MergeDatasets(c *gin.Context) {
 	})
 }
 
-
-
 func ProxyToAuthService(c *gin.Context) {
 	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
 	if authServiceURL == "" {
 		authServiceURL = "http://auth-service:8084"
 	}
 
-	
 	targetURL := authServiceURL + c.Request.URL.Path
 	if c.Request.URL.RawQuery != "" {
 		targetURL += "?" + c.Request.URL.RawQuery
 	}
 
-	
 	proxyReq, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, targetURL, c.Request.Body)
 	if err != nil {
 		log.Printf("failed creating proxy request: %v", err)
@@ -3086,14 +3261,12 @@ func ProxyToAuthService(c *gin.Context) {
 		return
 	}
 
-	
 	for key, values := range c.Request.Header {
 		for _, value := range values {
 			proxyReq.Header.Add(key, value)
 		}
 	}
 
-	
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(proxyReq)
 	if err != nil {
@@ -3103,14 +3276,12 @@ func ProxyToAuthService(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	
 	for key, values := range resp.Header {
 		for _, value := range values {
 			c.Writer.Header().Add(key, value)
 		}
 	}
 
-	
 	c.Status(resp.StatusCode)
 	if _, err := io.Copy(c.Writer, resp.Body); err != nil {
 		log.Printf("failed copying response body: %v", err)

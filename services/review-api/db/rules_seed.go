@@ -102,9 +102,8 @@ func seedCustomRules(ctx context.Context) int {
 		for _, tagMatch := range tags {
 			if len(tagMatch) >= 2 {
 				tag := tagMatch[1]
-				// Skip 'custom' tag, use attack type tags
 				if tag != "custom" && tag != "" {
-					category = strings.ToUpper(tag)
+					category = normalizeCategory(tag)
 					break
 				}
 			}
@@ -124,18 +123,19 @@ func seedCustomRules(ctx context.Context) int {
 		filter := bson.M{"id": ruleID}
 		update := bson.M{
 			"$setOnInsert": bson.M{
-				"id":          ruleID,
-				"type":        "custom",
-				"source":      "modintel-custom",
-				"enabled":     true,
-				"archived":    false,
-				"created_at":  now,
+				"id":         ruleID,
+				"type":       "custom",
+				"source":     "modintel-custom",
+				"enabled":    true,
+				"archived":   false,
+				"created_at": now,
 			},
 			"$set": bson.M{
 				"description": description,
 				"category":    category,
 				"severity":    severity,
 				"phase":       phase,
+				"signature":   line,
 				"updated_at":  now,
 			},
 		}
@@ -331,11 +331,11 @@ func processCRSRule(ctx context.Context, coll *mongo.Collection, ruleText string
 	filter := bson.M{"id": ruleID}
 	update := bson.M{
 		"$setOnInsert": bson.M{
-			"id":          ruleID,
-			"source":      "owasp-crs",
-			"enabled":     true,
-			"archived":    false,
-			"created_at":  now,
+			"id":         ruleID,
+			"source":     "owasp-crs",
+			"enabled":    true,
+			"archived":   false,
+			"created_at": now,
 		},
 		"$set": bson.M{
 			"type":           ruleType,
@@ -344,6 +344,7 @@ func processCRSRule(ctx context.Context, coll *mongo.Collection, ruleText string
 			"severity":       severity,
 			"phase":          phase,
 			"paranoia_level": paranoiaLevel,
+			"signature":      ruleText,
 			"updated_at":     now,
 		},
 	}
@@ -365,26 +366,26 @@ func processCRSRule(ctx context.Context, coll *mongo.Collection, ruleText string
 // mapCRSTagToCategory maps CRS attack tags to categories
 func mapCRSTagToCategory(tag string) string {
 	tagMap := map[string]string{
-		"attack-sqli":           "SQLi",
-		"attack-xss":            "XSS",
-		"attack-lfi":            "LFI",
-		"attack-rfi":            "RFI",
-		"attack-rce":            "RCE",
-		"attack-execution":      "RCE",
-		"attack-injection-php":  "PHP",
-		"attack-protocol":       "Protocol",
-		"attack-generic":        "Generic",
-		"attack-session":        "Session Fixation",
-		"attack-java":           "Java",
-		"attack-scanner":        "Scanner Detection",
-		"attack-multipart":      "Multipart",
-		"leakage-":              "Data Leakage",
-		"web-shells":            "Web Shells",
-		"attack-cmdexec":        "CMDi",
-		"attack-injection":      "Injection",
-		"attack-disclosure":     "Information Disclosure",
-		"attack-fixation":       "Session Fixation",
-		"attack-automation":     "Automation",
+		"attack-sqli":          "SQLi",
+		"attack-xss":           "XSS",
+		"attack-lfi":           "LFI",
+		"attack-rfi":           "RFI",
+		"attack-rce":           "RCE",
+		"attack-execution":     "RCE",
+		"attack-injection-php": "PHP",
+		"attack-protocol":      "Protocol",
+		"attack-generic":       "Generic",
+		"attack-session":       "Session Fixation",
+		"attack-java":          "Java",
+		"attack-scanner":       "Scanner Detection",
+		"attack-multipart":     "Multipart",
+		"leakage-":             "Data Leakage",
+		"web-shells":           "Web Shells",
+		"attack-cmdexec":       "CMDi",
+		"attack-injection":     "Injection",
+		"attack-disclosure":    "Information Disclosure",
+		"attack-fixation":      "Session Fixation",
+		"attack-automation":    "Automation",
 	}
 
 	for prefix, category := range tagMap {
@@ -394,4 +395,41 @@ func mapCRSTagToCategory(tag string) string {
 	}
 
 	return "Generic"
+}
+
+// normalizeCategory maps a free-form tag to a standard category name.
+func normalizeCategory(tag string) string {
+	m := map[string]string{
+		"sqli":       "SQLi",
+		"sql":        "Injection",
+		"xss":        "XSS",
+		"lfi":        "LFI",
+		"rfi":        "RFI",
+		"rce":        "RCE",
+		"cmdi":       "CMDi",
+		"cmd":        "CMDi",
+		"ssrf":       "SSRF",
+		"nosqli":     "NoSQLi",
+		"ssti":       "SSTI",
+		"xxe":        "XXE",
+		"protocol":   "Protocol",
+		"php":        "PHP",
+		"java":       "Java",
+		"scanner":    "Scanner Detection",
+		"scan":       "Scanner Detection",
+		"injection":  "Injection",
+		"disclosure": "Information Disclosure",
+		"leakage":    "Data Leakage",
+		"webshells":  "Web Shells",
+		"fixation":   "Session Fixation",
+		"session":    "Session Fixation",
+		"multipart":  "Multipart",
+		"automation": "Automation",
+		"generic":    "Generic",
+	}
+	lower := strings.ToLower(tag)
+	if c, ok := m[lower]; ok {
+		return c
+	}
+	return "Custom"
 }
