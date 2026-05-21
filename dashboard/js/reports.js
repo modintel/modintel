@@ -511,7 +511,19 @@ function setAuditView(showAudit) {
         auditLogs.style.display = "none";
         panelHeader.textContent = "Reports Overview";
         auditToggleBtn.textContent = "AUDIT TRAIL";
-        if (auditActionFilter) auditActionFilter.style.display = "none";
+if (auditActionFilter) auditActionFilter.style.display = "none";
+
+(function checkAuditButton() {
+    var u = getUser();
+    if (u) {
+        if (u.role !== 'admin') {
+            var el = document.getElementById('audit-link-btn');
+            if (el) el.style.display = 'none';
+        }
+    } else {
+        setTimeout(checkAuditButton, 100);
+    }
+})();
     }
 }
 
@@ -580,3 +592,15 @@ setInterval(refreshReports, 30000);
 setAuditView(false);
 
 if (auditActionFilter) auditActionFilter.style.display = "none";
+
+(function checkAuditButton() {
+    var u = getUser();
+    if (u) {
+        if (u.role !== 'admin') {
+            var el = document.getElementById('audit-link-btn');
+            if (el) el.style.display = 'none';
+        }
+    } else {
+        setTimeout(checkAuditButton, 100);
+    }
+})();
