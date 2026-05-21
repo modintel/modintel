@@ -43,6 +43,7 @@
             </div>
             <div class="rule-editor" id="write-rule-section">
                 <h3>Write Custom Rule</h3>
+                <span class="readonly-badge">Read Only</span>
                 <div class="form-group">
                     <label>Rule ID</label>
                     <input type="text" id="rule-id" placeholder="990100">
@@ -50,13 +51,43 @@
                 <div class="form-group">
                     <label>Category</label>
                     <select id="rule-category">
-                        <option value="SQLi">SQL Injection</option>
-                        <option value="XSS">XSS Attack</option>
-                        <option value="RCE">RCE Attack</option>
-                        <option value="LFI">Path Traversal</option>
-                        <option value="RFI">RFI Attack</option>
-                        <option value="Protocol">Protocol</option>
-                        <option value="Custom">Custom</option>
+                        <optgroup label="Injection">
+                            <option value="SQLi">SQL Injection</option>
+                            <option value="NoSQLi">NoSQL Injection</option>
+                            <option value="Injection">Generic Injection</option>
+                            <option value="PHP">PHP Injection</option>
+                        </optgroup>
+                        <optgroup label="XSS / Scripting">
+                            <option value="XSS">XSS Attack</option>
+                            <option value="SSTI">SSTI Attack</option>
+                        </optgroup>
+                        <optgroup label="File / Path">
+                            <option value="LFI">Path Traversal</option>
+                            <option value="RFI">RFI Attack</option>
+                            <option value="XXE">XXE Attack</option>
+                        </optgroup>
+                        <optgroup label="Execution">
+                            <option value="RCE">RCE Attack</option>
+                            <option value="CMDi">Command Injection</option>
+                            <option value="SSRF">SSRF Attack</option>
+                            <option value="Java">Java Attack</option>
+                        </optgroup>
+                        <optgroup label="Protocol / Scanner">
+                            <option value="Protocol">Protocol Attack</option>
+                            <option value="Scanner Detection">Scanner Detection</option>
+                            <option value="Automation">Automation Attack</option>
+                        </optgroup>
+                        <optgroup label="Data / Leakage">
+                            <option value="Data Leakage">Data Leakage</option>
+                            <option value="Information Disclosure">Information Disclosure</option>
+                            <option value="Web Shells">Web Shells</option>
+                            <option value="Session Fixation">Session Fixation</option>
+                        </optgroup>
+                        <optgroup label="Other">
+                            <option value="Multipart">Multipart Attack</option>
+                            <option value="Generic">Generic</option>
+                            <option value="Custom">Custom</option>
+                        </optgroup>
                     </select>
                 </div>
                 <div class="form-group">
@@ -83,6 +114,10 @@
                         </select>
                     </div>
                 </div>
+                <div class="form-group">
+                    <label>Signature (SecRule line)</label>
+                    <textarea id="rule-signature" rows="3" placeholder="SecRule ARGS_NAMES|ARGS &quot;@rx ...&quot; &quot;id:990100,phase:2,deny,t:urlDecodeUni,t:lowercase,msg:'...',tag:'...'&quot;"></textarea>
+                </div>
                 <div class="form-actions">
                     <button class="btn btn-primary" id="save-rule-btn" type="button">Add Rule</button>
                     <button class="btn btn-secondary" id="clear-rule-btn" type="button">Clear</button>
@@ -90,16 +125,47 @@
             </div>
             <div class="rule-editor" id="edit-rule-section" style="display:none;">
                 <h3>Edit Custom Rule <span id="edit-rule-id-display" style="color:#ff570a;font-weight:600;"></span></h3>
+                <span class="readonly-badge">Read Only</span>
                 <div class="form-group">
                     <label>Category</label>
                     <select id="edit-rule-category">
-                        <option value="SQLi">SQL Injection</option>
-                        <option value="XSS">XSS Attack</option>
-                        <option value="RCE">RCE Attack</option>
-                        <option value="LFI">Path Traversal</option>
-                        <option value="RFI">RFI Attack</option>
-                        <option value="Protocol">Protocol</option>
-                        <option value="Custom">Custom</option>
+                        <optgroup label="Injection">
+                            <option value="SQLi">SQL Injection</option>
+                            <option value="NoSQLi">NoSQL Injection</option>
+                            <option value="Injection">Generic Injection</option>
+                            <option value="PHP">PHP Injection</option>
+                        </optgroup>
+                        <optgroup label="XSS / Scripting">
+                            <option value="XSS">XSS Attack</option>
+                            <option value="SSTI">SSTI Attack</option>
+                        </optgroup>
+                        <optgroup label="File / Path">
+                            <option value="LFI">Path Traversal</option>
+                            <option value="RFI">RFI Attack</option>
+                            <option value="XXE">XXE Attack</option>
+                        </optgroup>
+                        <optgroup label="Execution">
+                            <option value="RCE">RCE Attack</option>
+                            <option value="CMDi">Command Injection</option>
+                            <option value="SSRF">SSRF Attack</option>
+                            <option value="Java">Java Attack</option>
+                        </optgroup>
+                        <optgroup label="Protocol / Scanner">
+                            <option value="Protocol">Protocol Attack</option>
+                            <option value="Scanner Detection">Scanner Detection</option>
+                            <option value="Automation">Automation Attack</option>
+                        </optgroup>
+                        <optgroup label="Data / Leakage">
+                            <option value="Data Leakage">Data Leakage</option>
+                            <option value="Information Disclosure">Information Disclosure</option>
+                            <option value="Web Shells">Web Shells</option>
+                            <option value="Session Fixation">Session Fixation</option>
+                        </optgroup>
+                        <optgroup label="Other">
+                            <option value="Multipart">Multipart Attack</option>
+                            <option value="Generic">Generic</option>
+                            <option value="Custom">Custom</option>
+                        </optgroup>
                     </select>
                 </div>
                 <div class="form-group">
@@ -123,6 +189,10 @@
                         <option value="3">Phase 3 - Response Headers</option>
                         <option value="4">Phase 4 - Response Body</option>
                     </select>
+                </div>
+                <div class="form-group">
+                    <label>Signature (SecRule line)</label>
+                    <textarea id="edit-rule-signature" rows="3" placeholder="SecRule ARGS_NAMES|ARGS &quot;@rx ...&quot; &quot;id:...,phase:...,deny,...&quot;"></textarea>
                 </div>
                 <div class="form-actions">
                     <button class="btn btn-primary" id="save-edit-btn" type="button">Save Changes</button>

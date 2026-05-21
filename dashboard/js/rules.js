@@ -22,6 +22,7 @@
     let currentParanoiaLevel = '';
     let editingRuleId = null;
     let currentMode = 'write';
+    let regexSignatureLookup = {};
 
     function applyRuleDeepLink() {
         const params = new URLSearchParams(window.location.search);
@@ -29,14 +30,60 @@
         if (!ruleId) {
             return;
         }
-        const row = document.getElementById('rule-' + ruleId);
-        if (!row) {
+        
+        const expandRule = (rule) => {
+            const row = document.getElementById('rule-' + rule.id);
+            if (!row) return;
+            toggleRuleDetails(row);
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            row.classList.add('highlight-row');
+            setTimeout(() => row.classList.remove('highlight-row'), 4000);
+        };
+
+        const existingRow = document.getElementById('rule-' + ruleId);
+        if (existingRow) {
+            expandRule(existingRow._ruleData);
             return;
         }
-        toggleRuleDetails(row);
-        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        row.classList.add('highlight-row');
-        setTimeout(() => row.classList.remove('highlight-row'), 4000);
+
+        const tabSearchOrder = ['custom', 'crs'];
+        
+        (async () => {
+            for (const type of tabSearchOrder) {
+                try {
+                    const res = await apiFetch(`/api/rules?limit=1&type=${type}&search=${ruleId}`);
+                    if (!res.ok) continue;
+                    const data = await res.json();
+                    const rules = data.data || data;
+                    
+                    if (rules.length > 0) {
+                        setActiveTab(type, true);
+                        currentSearch = ruleId;
+                        await loadRules(1, true);
+                        
+                        const row = document.getElementById('rule-' + ruleId);
+                        if (row) {
+                            expandRule(row._ruleData);
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`Failed to search ${type} tab:`, e);
+                }
+            }
+            
+            if (!/^\d+$/.test(ruleId)) {
+                setActiveTab('regex', true);
+                return;
+            }
+        })();
+    }
+
+    function clearRuleQuery() {
+        const url = new URL(window.location.href);
+        if (!url.searchParams.has('rule')) return;
+        url.searchParams.delete('rule');
+        window.history.replaceState({}, '', url.toString());
     }
 
     function createDetailsRow(rule) {
@@ -54,6 +101,7 @@
                 <div class="rule-detail-item"><b>Paranoia Level</b><span>${escapeHtml(rule.paranoia_level) || 'N/A'}</span></div>
                 <div class="rule-detail-item"><b>Source</b><span>${escapeHtml(rule.source) || 'owasp-crs'}</span></div>
                 <div class="rule-detail-item"><b>Note</b><span class="text-muted">CRS rules are read-only. Only enable/disable is allowed.</span></div>
+                ${rule.signature ? `<div class="rule-detail-item" style="grid-column:1/-1;"><b>SecRule Line</b><code style="display:block;font-size:0.7rem;word-break:break-all;white-space:pre-wrap;max-height:200px;overflow-y:auto;background:var(--bg-panel);padding:0.5rem;border-radius:4px;margin-top:0.25rem;line-height:1.5;">${escapeHtml(rule.signature)}</code></div>` : ''}
             `;
         } else if (rule.type === 'crs-blocking') {
             detailsHTML += `
@@ -63,6 +111,7 @@
                 <div class="rule-detail-item"><b>Paranoia Level</b><span>${escapeHtml(rule.paranoia_level) || 'N/A'}</span></div>
                 <div class="rule-detail-item"><b>Source</b><span>${escapeHtml(rule.source) || 'owasp-crs'}</span></div>
                 <div class="rule-detail-item"><b>Note</b><span class="text-muted">Aggregate rule — fires when cumulative anomaly score exceeds the paranoia threshold. Links detection rules to the block decision. Read-only.</span></div>
+                ${rule.signature ? `<div class="rule-detail-item" style="grid-column:1/-1;"><b>SecRule Line</b><code style="display:block;font-size:0.7rem;word-break:break-all;white-space:pre-wrap;max-height:200px;overflow-y:auto;background:var(--bg-panel);padding:0.5rem;border-radius:4px;margin-top:0.25rem;line-height:1.5;">${escapeHtml(rule.signature)}</code></div>` : ''}
             `;
         } else if (rule.type === 'crs-init') {
             detailsHTML += `
@@ -72,9 +121,11 @@
                 <div class="rule-detail-item"><b>Paranoia Level</b><span>${escapeHtml(rule.paranoia_level) || 'N/A'}</span></div>
                 <div class="rule-detail-item"><b>Source</b><span>${escapeHtml(rule.source) || 'owasp-crs'}</span></div>
                 <div class="rule-detail-item"><b>Note</b><span class="text-muted">Initialization rule — sets up CRS variables, exclusions, and configuration on engine start. Read-only.</span></div>
+                ${rule.signature ? `<div class="rule-detail-item" style="grid-column:1/-1;"><b>SecRule Line</b><code style="display:block;font-size:0.7rem;word-break:break-all;white-space:pre-wrap;max-height:200px;overflow-y:auto;background:var(--bg-panel);padding:0.5rem;border-radius:4px;margin-top:0.25rem;line-height:1.5;">${escapeHtml(rule.signature)}</code></div>` : ''}
             `;
         } else {
             const source = rule.source || 'modintel-custom';
+            const sig = rule.signature || '';
             detailsHTML += `
                 <div class="rule-detail-item"><b>Type</b><span>Custom Rule</span></div>
                 <div class="rule-detail-item"><b>Severity</b><span>${escapeHtml(rule.severity) || 'N/A'}</span></div>
@@ -83,6 +134,7 @@
                     <div><b>Source</b><span>${escapeHtml(source)}</span></div>
                     <button class="btn-delete-rule" data-rule-id="${escapeHtml(rule.id)}" style="margin-left:auto;">Delete</button>
                 </div>
+                ${sig ? `<div class="rule-detail-item"><b>Signature</b><code style="font-size:0.75rem;word-break:break-all;white-space:pre-wrap;">${escapeHtml(sig)}</code></div>` : ''}
                 <div class="rule-detail-item"><b>Created</b><span>${rule.created_at ? escapeHtml(new Date(rule.created_at).toLocaleString()) : 'N/A'}</span></div>
                 <div class="rule-detail-item"><b>Updated</b><span>${rule.updated_at ? escapeHtml(new Date(rule.updated_at).toLocaleString()) : 'N/A'}</span></div>
             `;
@@ -131,7 +183,10 @@
         row.addEventListener('click', () => {
             toggleRuleDetails(row, rule);
             if (rule.type === 'custom') {
+                hideReadOnlyRule();
                 populateEditForm(rule);
+            } else if (rule.type === 'crs' || rule.type === 'crs-blocking' || rule.type === 'crs-init') {
+                showReadOnlyRule(rule);
             }
         });
         const actionBtn = row.querySelector('.rule-toggle-btn');
@@ -200,12 +255,14 @@
         return row;
     }
 
-    async function loadRules(page = 1) {
+    async function loadRules(page = 1, silent) {
         const tbody = document.getElementById('rules-tbody');
         if (!tbody) {
             return;
         }
-        tbody.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
+        if (!silent) {
+            tbody.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
+        }
 
         try {
             let queryParams = `page=${page}&limit=${pageSize}`;
@@ -283,32 +340,45 @@
         
         tbody.innerHTML = '<tr><td colspan="4" class="text-center">Loading regex signatures...</td></tr>';
         
+        regexSignatureLookup = {};
+
         try {
-            const response = await apiFetch('/api/rules/regex');
-            if (!response.ok) throw new Error('Failed to load');
-            const data = await response.json();
+            const sigResp = await apiFetch('/api/rules/regex/all');
+            if (!sigResp.ok) throw new Error('Failed to load');
+            const sigs = await sigResp.json();
             
-            if (!Array.isArray(data) || data.length === 0) {
+            if (!Array.isArray(sigs) || sigs.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="4">No regex signatures found.</td></tr>';
                 return;
             }
             
+            sigs.forEach(sig => {
+                regexSignatureLookup[sig.id] = sig;
+            });
+            
             tbody.innerHTML = '';
-            data.forEach(cat => {
+            sigs.forEach(sig => {
                 const row = document.createElement('tr');
-                row.className = 'rule-row';
+                row.id = `rule-${sig.id}`;
+                row.className = 'rule-row regex-sig-row';
+                const patternCount = sig.patterns || 1;
+                const sigData = { ...sig, type: 'regex', description: sig.name };
+                row._ruleData = sigData;
                 row.innerHTML = `
-                    <td><span class="rule-id-wrap"><span class="rule-toggle">&#8250;</span>${cat.category}</span></td>
-                    <td>${cat.severity.toUpperCase()}</td>
-                    <td>${cat.name}</td>
-                    <td><span class="rule-status enabled">${cat.patterns} patterns</span></td>
+                    <td><span class="rule-id-wrap"><span class="rule-toggle">&#8250;</span>${sig.id}</span></td>
+                    <td>${sig.category}</td>
+                    <td>${sig.name}</td>
+                    <td><span class="rule-status enabled">${patternCount} pattern${patternCount !== 1 ? 's' : ''}</span></td>
                 `;
-                row.style.cursor = 'default';
+                row.style.cursor = 'pointer';
+                row.addEventListener('click', () => toggleRuleDetails(row));
                 tbody.appendChild(row);
             });
             
-            const total = data.reduce((sum, c) => sum + c.patterns, 0);
-            updateRuleCount(total);
+            const totalPatterns = sigs.reduce((sum, sig) => sum + (sig.patterns || 0), 0);
+            updateRuleCount(totalPatterns);
+            
+            applyRuleDeepLink();
         } catch (err) {
             console.error('Failed to load regex rules:', err);
             tbody.innerHTML = '<tr><td colspan="4">Failed to load regex signatures.</td></tr>';
@@ -360,11 +430,13 @@
         document.getElementById('rule-id').value = '';
         document.getElementById('rule-category').value = 'SQLi';
         document.getElementById('rule-desc').value = '';
-        document.getElementById('rule-syntax').value = '';
+        const sigEl = document.getElementById('rule-signature');
+        if (sigEl) sigEl.value = '';
         const sevEl = document.getElementById('rule-severity');
         if (sevEl) sevEl.value = 'MEDIUM';
         const phaseEl = document.getElementById('rule-phase');
         if (phaseEl) phaseEl.value = '2';
+        syncCustomSelect('rule-category');
     };
 
     window.restartWAF = async function () {
@@ -431,9 +503,14 @@
         const desc = document.getElementById('rule-desc').value.trim();
         const severity = document.getElementById('rule-severity')?.value || 'MEDIUM';
         const phase = parseInt(document.getElementById('rule-phase')?.value, 10) || 2;
+        const signature = document.getElementById('rule-signature')?.value.trim() || '';
         
-        if (!id || !desc) {
-            showModal('Error', 'Rule ID and Description are required.', 'error');
+        if (!id || !desc || !signature) {
+            const missing = [];
+            if (!id) missing.push('Rule ID');
+            if (!desc) missing.push('Description');
+            if (!signature) missing.push('Signature (SecRule line)');
+            showModal('Error', `<b>Required fields:</b> ${missing.join(', ')}`, 'error');
             return;
         }
         
@@ -441,7 +518,7 @@
             const resp = await apiFetch('/api/rules', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({id, category, description: desc, severity, phase})
+                body: JSON.stringify({id, category, description: desc, severity, phase, signature})
             });
             if (!resp.ok) throw new Error('Failed');
             showModal('Success', 'Rule created. Toggle to enable.');
@@ -450,7 +527,7 @@
         } catch (e) {
             showModal('Error', 'Failed to create rule.', 'error');
         }
-};
+    };
 
     function populateEditForm(rule) {
         document.getElementById('edit-rule-id-display').textContent = `#${rule.id}`;
@@ -458,21 +535,64 @@
         document.getElementById('edit-rule-desc').value = rule.description || '';
         document.getElementById('edit-rule-severity').value = rule.severity || 'MEDIUM';
         document.getElementById('edit-rule-phase').value = String(rule.phase || 2);
+        const sigEl = document.getElementById('edit-rule-signature');
+        if (sigEl) sigEl.value = rule.signature || '';
         editingRuleId = rule.id;
         switchMode('edit');
+        syncCustomSelect('edit-rule-category');
     }
 
-    function switchMode(mode) {
+    function showReadOnlyRule(rule) {
+        document.getElementById('edit-rule-id-display').textContent = `#${rule.id}`;
+        document.getElementById('edit-rule-category').value = rule.category || '';
+        document.getElementById('edit-rule-desc').value = rule.description || '';
+        document.getElementById('edit-rule-severity').value = rule.severity || 'MEDIUM';
+        document.getElementById('edit-rule-phase').value = String(rule.phase || 2);
+        const sigEl = document.getElementById('edit-rule-signature');
+        if (sigEl) {
+            sigEl.value = rule.signature || '';
+            sigEl.readOnly = true;
+        }
+        editingRuleId = null;
+        switchMode('edit', true);
+        syncCustomSelect('edit-rule-category');
+    }
+
+    function hideReadOnlyRule() {
+        const editSection = document.getElementById('edit-rule-section');
+        if (editSection) editSection.classList.remove('readonly');
+        const writeSection = document.getElementById('write-rule-section');
+        if (writeSection) writeSection.classList.remove('readonly');
+        const sigEl = document.getElementById('edit-rule-signature');
+        if (sigEl) sigEl.readOnly = false;
+    }
+
+    function switchMode(mode, readonly) {
         currentMode = mode;
         document.querySelectorAll('.rule-mode-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.mode === mode);
         });
-        document.getElementById('write-rule-section').style.display = mode === 'write' ? 'block' : 'none';
-        document.getElementById('edit-rule-section').style.display = mode === 'edit' ? 'block' : 'none';
+        const writeSection = document.getElementById('write-rule-section');
+        const editSection = document.getElementById('edit-rule-section');
+        writeSection.style.display = mode === 'write' ? 'block' : 'none';
+        editSection.style.display = mode === 'edit' ? 'block' : 'none';
+        writeSection.classList.remove('readonly');
+        editSection.classList.remove('readonly');
+        if (!readonly) {
+            const sigEl = document.getElementById('edit-rule-signature');
+            if (sigEl) sigEl.readOnly = false;
+        }
+        if (mode === 'edit' && readonly) {
+            editSection.classList.add('readonly');
+        }
     }
 
     window.saveEditRule = async function () {
         if (!editingRuleId) {
+            if (document.getElementById('edit-rule-section').classList.contains('readonly')) {
+                switchMode('write');
+                return;
+            }
             showModal('Error', 'No rule selected for editing.', 'error');
             return;
         }
@@ -480,17 +600,21 @@
         const description = document.getElementById('edit-rule-desc').value.trim();
         const severity = document.getElementById('edit-rule-severity').value;
         const phase = parseInt(document.getElementById('edit-rule-phase').value, 10);
+        const signature = document.getElementById('edit-rule-signature')?.value.trim() || '';
 
         if (!description) {
-            showModal('Error', 'Description is required.', 'error');
+            showModal('Error', '<b>Required field:</b> Description', 'error');
             return;
         }
+
+        const body = { category, description, severity, phase };
+        if (signature) body.signature = signature;
 
         try {
             const resp = await apiFetch(`/api/rules/${editingRuleId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ category, description, severity, phase })
+                body: JSON.stringify(body)
             });
             if (!resp.ok) throw new Error('Failed to update rule');
             showModal('Success', 'Rule updated successfully.');
@@ -514,7 +638,14 @@
                     if (!resp.ok) {
                         if (resp.status === 403) {
                             showModal('Permission Denied', 'Cannot delete CRS rules.', 'error');
-                        } else {
+        } else if (rule.type === 'regex') {
+            detailsHTML += `
+                <div class="rule-detail-item"><b>Type</b><span>Regex Signature</span></div>
+                <div class="rule-detail-item"><b>Category</b><span>${escapeHtml(rule.category) || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Severity</b><span>${escapeHtml(rule.severity) || 'N/A'}</span></div>
+                <div class="rule-detail-item"><b>Source</b><span>modintel-regex</span></div>
+            `;
+        } else {
                             showModal('Error', 'Failed to delete rule.', 'error');
                         }
                         return;
@@ -531,33 +662,41 @@
         );
     };
 
-    function setupTabs() {
+    function setActiveTab(type, silent) {
         const tabs = document.querySelectorAll('.rules-tab');
         const paranoiaFilter = document.getElementById('paranoia-filter');
-        
+        tabs.forEach(tab => {
+            const isActive = tab.getAttribute('data-type') === type;
+            tab.classList.toggle('active', isActive);
+        });
+
+        if (type === 'regex') {
+            loadRegexRules();
+            return;
+        }
+
+        currentType = type;
+        currentPage = 1;
+
+        if (paranoiaFilter) {
+            if (type === 'crs') {
+                paranoiaFilter.style.display = 'block';
+            } else {
+                paranoiaFilter.style.display = 'none';
+                currentParanoiaLevel = '';
+                paranoiaFilter.value = '';
+            }
+        }
+
+        loadRules(1, silent);
+    }
+
+    function setupTabs() {
+        const tabs = document.querySelectorAll('.rules-tab');
         tabs.forEach(tab => {
             tab.addEventListener('click', () => {
-                tabs.forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                
                 const type = tab.getAttribute('data-type');
-                if (type === 'regex') {
-                    loadRegexRules();
-                    return;
-                }
-                currentType = type;
-                currentPage = 1;
-                
-                if (paranoiaFilter) {
-                    if (type === 'crs') {
-                        paranoiaFilter.style.display = 'block';
-                    } else {
-                        paranoiaFilter.style.display = 'none';
-                        currentParanoiaLevel = '';
-                    }
-                }
-                
-                loadRules(1);
+                setActiveTab(type);
             });
         });
     }
@@ -571,21 +710,31 @@
                 if (clearBtn) clearBtn.style.display = searchInput.value.trim() ? 'inline-block' : 'none';
             };
             searchInput.addEventListener('input', (e) => {
+                const val = e.target.value.trim();
                 toggleClear();
                 clearTimeout(searchTimeout);
+                if (val === currentSearch) return;
                 searchTimeout = setTimeout(() => {
-                    currentSearch = e.target.value.trim();
+                    currentSearch = val;
                     currentPage = 1;
                     loadRules(1);
                 }, 300);
             });
             if (clearBtn) {
                 clearBtn.addEventListener('click', () => {
-                    searchInput.value = '';
+                    clearTimeout(searchTimeout);
                     currentSearch = '';
+                    searchInput.value = '';
+                    currentCategory = '';
+                    currentParanoiaLevel = '';
                     currentPage = 1;
                     clearBtn.style.display = 'none';
-                    loadRules(1);
+                    const categorySelect = document.getElementById('category-filter');
+                    if (categorySelect) categorySelect.value = '';
+                    const paranoiaSelect = document.getElementById('paranoia-filter');
+                    if (paranoiaSelect) paranoiaSelect.value = '';
+                    clearRuleQuery();
+                    setActiveTab('crs', true);
                 });
             }
             if (searchInput.value.trim()) toggleClear();
@@ -636,6 +785,7 @@
     const cancelEditBtn = document.getElementById('cancel-edit-btn');
     if (cancelEditBtn) {
         cancelEditBtn.addEventListener('click', () => {
+            hideReadOnlyRule();
             switchMode('write');
             editingRuleId = null;
         });
@@ -665,4 +815,91 @@
     }
     loadRules();
     updateRestartButtonState();
+
+    const customSelects = {};
+
+    function buildCustomSelect(selectId) {
+        const select = document.getElementById(selectId);
+        if (!select || select.dataset.customBuilt) return;
+        select.dataset.customBuilt = '1';
+
+        const wrap = document.createElement('div');
+        wrap.className = 'custom-select-wrap';
+        select.parentNode.insertBefore(wrap, select);
+        wrap.appendChild(select);
+
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'custom-select-trigger';
+        wrap.appendChild(trigger);
+
+        const dropdown = document.createElement('div');
+        dropdown.className = 'custom-select-dropdown';
+
+        function addOpt(label, value, selected) {
+            const div = document.createElement('div');
+            div.className = 'custom-select-option';
+            if (selected) div.classList.add('selected');
+            div.textContent = label;
+            div.dataset.value = value;
+            div.addEventListener('click', (e) => {
+                e.stopPropagation();
+                select.value = value;
+                trigger.textContent = label;
+                dropdown.querySelectorAll('.custom-select-option').forEach(o => o.classList.remove('selected'));
+                div.classList.add('selected');
+                dropdown.classList.remove('open');
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+            dropdown.appendChild(div);
+        }
+
+        for (const child of select.children) {
+            if (child.tagName === 'OPTGROUP') {
+                const lbl = document.createElement('div');
+                lbl.className = 'custom-select-optgroup';
+                lbl.textContent = child.label;
+                dropdown.appendChild(lbl);
+                for (const opt of child.children) {
+                    addOpt(opt.textContent, opt.value, opt.selected);
+                }
+            } else if (child.tagName === 'OPTION') {
+                addOpt(child.textContent, child.value, child.selected);
+            }
+        }
+
+        wrap.appendChild(dropdown);
+
+        trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdown.classList.toggle('open');
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!wrap.contains(e.target)) {
+                dropdown.classList.remove('open');
+            }
+        });
+
+        const selectedOpt = select.options[select.selectedIndex];
+        trigger.textContent = selectedOpt ? selectedOpt.text : '';
+
+        customSelects[selectId] = { wrap, trigger, dropdown };
+    }
+
+    function syncCustomSelect(selectId) {
+        const select = document.getElementById(selectId);
+        const cs = customSelects[selectId];
+        if (!select || !cs) return;
+        const selectedOpt = select.options[select.selectedIndex];
+        if (selectedOpt) {
+            cs.trigger.textContent = selectedOpt.text;
+            cs.dropdown.querySelectorAll('.custom-select-option').forEach(o => {
+                o.classList.toggle('selected', o.dataset.value === select.value);
+            });
+        }
+    }
+
+    buildCustomSelect('rule-category');
+    buildCustomSelect('edit-rule-category');
 })();

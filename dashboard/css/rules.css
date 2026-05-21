@@ -231,6 +231,92 @@
     transition: border-color 0.2s ease;
 }
 
+.custom-select-wrap {
+    position: relative;
+}
+
+.custom-select-trigger {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.82rem;
+    font-family: inherit;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--fg);
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.custom-select-trigger::after {
+    content: '\25BE';
+    font-size: 0.7rem;
+    color: var(--fg-muted);
+    flex-shrink: 0;
+}
+
+.custom-select-trigger:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.custom-select-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    margin-top: 2px;
+}
+
+.custom-select-dropdown.open {
+    display: block;
+}
+
+.custom-select-optgroup {
+    padding: 0.4rem 0.75rem 0.2rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--fg-subtle);
+    cursor: default;
+    user-select: none;
+}
+
+.custom-select-option {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.82rem;
+    color: var(--fg);
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.custom-select-option:hover {
+    background: rgba(255, 87, 10, 0.08);
+}
+
+.custom-select-option.selected {
+    background: rgba(255, 87, 10, 0.15);
+    color: #ff570a;
+    font-weight: 600;
+}
+
+.custom-select-wrap select {
+    display: none;
+}
+
 .rule-editor input:focus,
 .rule-editor select:focus,
 .rule-editor textarea:focus {
@@ -431,4 +517,60 @@
 .btn-delete-rule:hover {
     background: #dc2626;
     color: white;
+}
+
+.rule-editor.readonly {
+    position: relative;
+    user-select: none;
+}
+
+.rule-editor.readonly h3,
+.rule-editor.readonly .form-group:not(:has(#edit-rule-signature)),
+.rule-editor.readonly .form-actions {
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.rule-editor.readonly .form-group:has(#edit-rule-signature) {
+    opacity: 1;
+    pointer-events: auto;
+    user-select: text;
+}
+
+.rule-editor.readonly input,
+.rule-editor.readonly select,
+.rule-editor.readonly textarea {
+    background: var(--bg-panel);
+    color: var(--fg-muted);
+    border-color: var(--border);
+}
+
+.rule-editor.readonly #edit-rule-signature {
+    background: var(--bg);
+    color: var(--fg);
+    border-color: var(--accent);
+}
+
+.rule-editor.readonly .readonly-badge {
+    pointer-events: none;
+}
+
+.rule-editor .readonly-badge {
+    display: none;
+}
+
+.rule-editor.readonly .readonly-badge {
+    display: inline-block;
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: #888;
+    color: #fff;
+    border-radius: 4px;
+    pointer-events: none;
 }
