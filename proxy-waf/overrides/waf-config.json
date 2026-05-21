@@ -1,7 +1,7 @@
 {
-  "paranoia": 4,
-  "blocking_paranoia": 4,
-  "anomaly_inbound": 3,
+  "paranoia": 2,
+  "blocking_paranoia": 2,
+  "anomaly_inbound": 8,
   "rule_engine": "On",
-  "layer2_block_threshold": 0.96
+  "layer2_block_threshold": 0.9
 }
