@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/netip"
@@ -18,6 +19,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/nxadm/tail"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"modintel.local/log-collector/api"
 	"modintel.local/log-collector/db"
@@ -35,6 +37,46 @@ var (
 	bodyCacheMu sync.RWMutex
 )
 
+type circuitBreaker struct {
+	mu          sync.Mutex
+	failures    int
+	lastFailure time.Time
+	state       string // closed, open, half-open
+}
+
+func (cb *circuitBreaker) call(fn func() error) error {
+	cb.mu.Lock()
+	if cb.state == "open" {
+		if time.Since(cb.lastFailure) < 10*time.Second {
+			cb.mu.Unlock()
+			return fmt.Errorf("circuit breaker open")
+		}
+		cb.state = "half-open"
+	}
+	cb.mu.Unlock()
+
+	err := fn()
+
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	if err != nil {
+		cb.failures++
+		cb.lastFailure = time.Now()
+		if cb.failures >= 5 {
+			cb.state = "open"
+			log.Printf("Circuit breaker tripped (open) after %d failures", cb.failures)
+		}
+		return err
+	}
+	cb.failures = 0
+	if cb.state == "half-open" {
+		cb.state = "closed"
+		log.Println("Circuit breaker reset (closed)")
+	}
+	return nil
+}
+
+var inferenceCB = &circuitBreaker{}
 var httpClient = &http.Client{
 	Timeout: 10 * time.Second,
 	Transport: &http.Transport{
@@ -45,6 +87,7 @@ var httpClient = &http.Client{
 }
 
 var aiWorkers = make(chan struct{}, 20)
+var missWorkers = make(chan struct{}, 3)
 
 func cacheKey(method, uri string) string {
 	h := sha256.New()
@@ -168,43 +211,35 @@ func enrichWithAI(doc *parsers.AlertDocument) bool {
 		"body":              doc.Body,
 	}
 
+	if err := inferenceCB.call(func() error { return doEnrichRequest(payload, doc) }); err != nil {
+		log.Printf("AI enrichment: circuit breaker or failure: %v", err)
+		doc.AIStatus = "unavailable"
+		return false
+	}
+	return true
+}
+
+func doEnrichRequest(payload map[string]interface{}, doc *parsers.AlertDocument) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("AI enrichment: failed to marshal request: %v", err)
-		doc.AIStatus = "unavailable"
-		return false
+		return err
 	}
 
-	maxRetries := 1
-	var resp *http.Response
-	for i := 0; i < maxRetries; i++ {
-		req, _ := http.NewRequest("POST", inferenceEngineURL()+"/predict", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err = httpClient.Do(req)
-		if err == nil {
-			break
-		}
-		log.Printf("AI enrichment: request failed (attempt %d/%d): %v", i+1, maxRetries, err)
-		time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
-	}
+	req, _ := http.NewRequest("POST", inferenceEngineURL()+"/predict", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		log.Printf("AI enrichment: failed after retries: %v", err)
-		doc.AIStatus = "unavailable"
-		return false
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		log.Printf("AI enrichment: got status %d", resp.StatusCode)
-		doc.AIStatus = "unavailable"
-		return false
+		return fmt.Errorf("AI enrichment: got status %d", resp.StatusCode)
 	}
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Printf("AI enrichment: failed to decode response: %v", err)
-		doc.AIStatus = "unavailable"
-		return false
+		return err
 	}
 
 	doc.AIStatus = "enriched"
@@ -232,7 +267,7 @@ func enrichWithAI(doc *parsers.AlertDocument) bool {
 		doc.AIConfidenceInterval = map[string]float64{"low": low, "high": high}
 	}
 
-	return true
+	return nil
 }
 
 func _enrichMiss(doc *parsers.AlertDocument) bool {
@@ -406,6 +441,25 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 			continue
 		}
 
+		corazaTs, corazaTsErr := time.Parse(time.RFC3339, doc.Timestamp)
+		if corazaTsErr == nil {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			delResult, _ := collection.DeleteOne(cleanupCtx, bson.M{
+				"uri":       doc.URI,
+				"method":    doc.Method,
+				"client_ip": doc.ClientIP,
+				"source":    "ml_miss_detector",
+				"timestamp": bson.M{
+					"$gte": corazaTs.Add(-2 * time.Second).Format(time.RFC3339),
+					"$lte": corazaTs.Add(2 * time.Second).Format(time.RFC3339),
+				},
+			})
+			if delResult != nil && delResult.DeletedCount > 0 {
+				log.Printf("Dedup: cleaned up %d ml_miss alert(s) for %s %s (replaced by coraza alert)", delResult.DeletedCount, doc.Method, doc.URI)
+			}
+			cleanupCancel()
+		}
+
 		aiWorkers <- struct{}{}
 		docCopy := *doc
 		key := alertKey
@@ -513,38 +567,87 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 		}
 
 		if wafPassed {
+			dedupCtx, dedupCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			existing, err := findExistingAlert(dedupCtx, collection, doc.URI, doc.Method, ts, doc.ClientIP)
+			dedupCancel()
+			if err == nil && existing != nil {
+				log.Printf("Dedup: skipping ml_miss for %s %s (existing %s alert)", doc.Method, doc.URI, existing["source"])
+				continue
+			}
+
 			doc.Source = "ml_miss_detector"
 			doc.Status = "generated"
 			doc.TriggeredRules = matchedSigs
-			_enrichMiss(doc)
 
-			docJSON, err := json.Marshal(doc)
-			if err != nil {
-				log.Printf("Failed to marshal miss doc: %v", err)
-				continue
-			}
-			var docMap map[string]interface{}
-			if err := json.Unmarshal(docJSON, &docMap); err != nil {
-				log.Printf("Failed to unmarshal miss doc: %v", err)
-				continue
-			}
-			docMap["alert_key"] = alertKey
-			docMap["matched_signatures"] = matchedSigs
+			missWorkers <- struct{}{}
+			docCopy := *doc
+			key := alertKey
+			sigs := matchedSigs
+			go func() {
+				defer func() { <-missWorkers }()
+				_enrichMiss(&docCopy)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_, err = collection.UpdateOne(
-				ctx,
-				bson.M{"alert_key": alertKey},
-				bson.M{"$set": docMap},
-				options.Update().SetUpsert(true),
-			)
-			cancel()
+				// Re-check for existing coraza alert (created concurrently while _enrichMiss ran)
+				reTs, err := time.Parse(time.RFC3339, docCopy.Timestamp)
+				if err != nil {
+					reTs = time.Now().UTC()
+				}
+				reCtx, reCancel := context.WithTimeout(context.Background(), 3*time.Second)
+				existing, err := findExistingAlert(reCtx, collection, docCopy.URI, docCopy.Method, reTs, docCopy.ClientIP)
+				reCancel()
+				if err == nil && existing != nil {
+					log.Printf("Dedup (post-inference): skipping ml_miss upsert for %s %s (existing %s alert)", docCopy.Method, docCopy.URI, existing["source"])
+					return
+				}
 
-			if err != nil {
-				log.Printf("Failed to upsert miss alert to MongoDB: %v", err)
-			}
+				docJSON, err := json.Marshal(docCopy)
+				if err != nil {
+					log.Printf("Failed to marshal miss doc: %v", err)
+					return
+				}
+				var docMap map[string]interface{}
+				if err := json.Unmarshal(docJSON, &docMap); err != nil {
+					log.Printf("Failed to unmarshal miss doc: %v", err)
+					return
+				}
+				docMap["alert_key"] = key
+				docMap["matched_signatures"] = sigs
+
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_, err = collection.UpdateOne(
+					ctx,
+					bson.M{"alert_key": key},
+					bson.M{"$set": docMap},
+					options.Update().SetUpsert(true),
+				)
+				if err != nil {
+					log.Printf("Failed to upsert miss alert to MongoDB: %v", err)
+				}
+			}()
 		}
 	}
+}
+
+func findExistingAlert(ctx context.Context, collection *mongo.Collection, uri, method string, ts time.Time, clientIP string) (bson.M, error) {
+	var existing bson.M
+	err := collection.FindOne(ctx, bson.M{
+		"uri":       uri,
+		"method":    method,
+		"source":    bson.M{"$in": []string{"coraza", "ml_miss_detector"}},
+		"client_ip": clientIP,
+		"timestamp": bson.M{
+			"$gte": ts.Add(-2 * time.Second).Format(time.RFC3339),
+			"$lte": ts.Add(2 * time.Second).Format(time.RFC3339),
+		},
+	}).Decode(&existing)
+	if err == mongo.ErrNoDocuments {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return existing, nil
 }
 
 func backfillPendingAlerts() {
@@ -632,6 +735,12 @@ func main() {
 		for {
 			time.Sleep(5 * time.Minute)
 			cleanupBodyCache()
+		}
+	}()
+	go func() {
+		for {
+			time.Sleep(1 * time.Minute)
+			backfillPendingAlerts()
 		}
 	}()
 	go processCorazaAuditLogs(sigPrefilter)

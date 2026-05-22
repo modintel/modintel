@@ -1,7 +1,3 @@
-{
-	order coraza_waf first
-}
-
 :8080 {
 	log {
 		output file /var/log/caddy/waf-access.json {
@@ -17,20 +13,27 @@
 		Referrer-Policy no-referrer
 		Permissions-Policy geolocation=(), microphone=(), camera=()
 	}
+	header X-Request-Body "{http.request.body}"
 
-	coraza_waf {
-		include /opt/coraza/config/coraza.conf
-		include /opt/coraza/config.d/user.conf
-		include /opt/coraza/config/crs-setup.conf
-		include /opt/coraza/owasp-crs/rules/*.conf
-		include /opt/coraza/config.d/custom.conf
-		include /opt/coraza/rules/*.conf
-		include /opt/coraza/rules.d/*.conf
-		include /opt/coraza/overrides/*.conf
-	}
+	route {
+		request_body {
+			max_size 2mb
+		}
 
-	reverse_proxy waf-blocker:8086 {
-		trusted_proxies private_ranges
+		coraza_waf {
+			include /opt/coraza/config/coraza.conf
+			include /opt/coraza/config.d/user.conf
+			include /opt/coraza/config/crs-setup.conf
+			include /opt/coraza/owasp-crs/rules/*.conf
+			include /opt/coraza/config.d/custom.conf
+			include /opt/coraza/rules/*.conf
+			include /opt/coraza/rules.d/*.conf
+			include /opt/coraza/overrides/*.conf
+		}
+
+		reverse_proxy waf-blocker:8086 {
+			trusted_proxies private_ranges
+		}
 	}
 }
 
