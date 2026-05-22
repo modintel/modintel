@@ -653,7 +653,13 @@ async function saveParanoiaConfig() {
             throw new Error(err.error || `HTTP ${res.status}`);
         }
         const payload = await res.json();
-        showModal('WAF Updated', `Paranoia level set to ${payload.data.paranoia}. WAF restarting...`);
+        var msg = `Paranoia level set to ${payload.data.paranoia}. WAF restarting...`;
+        var l2El = document.getElementById('layer2-threshold');
+        var l2Val = l2El ? Math.round(parseInt(l2El.value, 10)) : null;
+        if (l2Val !== null) {
+            msg += ` Layer-2 threshold set to ${l2Val}%.`;
+        }
+        showModal('WAF Updated', msg);
     } catch (e) {
         showModal('Error', e.message || 'Failed to save WAF config.', 'error');
     }

@@ -18,7 +18,7 @@ $benignRequests = @(
     @{ Name = "GET /rest/products/2"; URI = "/rest/products/2" },
     @{ Name = "GET /rest/products/3"; URI = "/rest/products/3" },
     @{ Name = "GET /rest/categories"; URI = "/rest/categories" },
-    @{ Name = "GET /rest quantity"; URI = "/rest/quantitys" },
+    @{ Name = "GET /rest quantity"; URI = "/rest/quantity" },
     @{ Name = "GET /rest/user"; URI = "/rest/user" },
     @{ Name = "GET /assets"; URI = "/assets" },
     @{ Name = "GET /assets/public"; URI = "/assets/public" },
@@ -220,7 +220,7 @@ do {
     foreach ($atk in $attacks) {
         $result = Invoke-Attack $atk
         if ($result -eq "blocked") { $blocked++ } else { $passed++ }
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Milliseconds 100
     }
 
     Write-Host "  --- Benign ---" -ForegroundColor Green
