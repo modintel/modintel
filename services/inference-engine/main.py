@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import asynccontextmanager
 import math
 import os
 import re
 import threading
 import time
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -113,6 +113,23 @@ def _live_predictions_per_minute(now: float) -> float:
     return total / count
 
 
+def _piecewise_interpolate(xp: list, fp: list, x: float) -> float:
+    """Linear interpolation without scipy dependency. xp must be sorted ascending."""
+    if x <= xp[0]:
+        return float(fp[0])
+    if x >= xp[-1]:
+        return float(fp[-1])
+    lo, hi = 0, len(xp) - 1
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if x < xp[mid]:
+            hi = mid
+        else:
+            lo = mid
+    t = (x - xp[lo]) / (xp[hi] - xp[lo])
+    return float(fp[lo] + t * (fp[hi] - fp[lo]))
+
+
 def _resolve_model_dir() -> Path:
     model_version = os.getenv("MODEL_VERSION", "latest")
     models_root = Path(os.getenv("MODELS_DIR", "/app/models"))
@@ -130,8 +147,6 @@ def _load_artifacts() -> None:
         return
 
     try:
-        _model_state["model"] = joblib.load(model_dir / "model.joblib")
-        _model_state["calibrator"] = joblib.load(model_dir / "calibrator.joblib")
         _model_state["feature_extractor"] = joblib.load(
             model_dir / "feature_extractor.joblib"
         )
@@ -148,10 +163,56 @@ def _load_artifacts() -> None:
         _model_state["model_version"] = _model_state["model_metadata"].get(
             "model_version", "unknown"
         )
+
+        # Try ONNX path first (faster, no sklearn thread contention)
+        onnx_path = Path(
+            "models/modintel_{}.onnx".format(_model_state["model_version"])
+        )
+        if not onnx_path.exists():
+            onnx_path = Path("models/modintel.onnx")
+            logger.warning(
+                "Version-specific ONNX model not found at %s, trying legacy path %s",
+                Path("models/modintel_{}.onnx".format(_model_state["model_version"])),
+                onnx_path,
+            )
+
+        if onnx_path.exists():
+            import onnxruntime as ort
+
+            session = ort.InferenceSession(
+                str(onnx_path), providers=["CPUExecutionProvider"]
+            )
+            _model_state["onnx_session"] = session
+            _model_state["onnx_input_name"] = session.get_inputs()[0].name
+            logger.info("ONNX model loaded from %s", onnx_path)
+
+            iso_path = model_dir / "isotonic_calibration.json"
+            if iso_path.exists():
+                with open(iso_path) as f:
+                    iso = json.load(f)
+                _model_state["isotonic_x"] = iso["x"]
+                _model_state["isotonic_y"] = iso["y"]
+                logger.info("Isotonic calibration loaded (%d points)", len(iso["x"]))
+            else:
+                _model_state["isotonic_x"] = None
+                logger.warning(
+                    "Isotonic calibration not found at %s — using raw ONNX output",
+                    iso_path,
+                )
+        else:
+            logger.warning(
+                "ONNX model not found at %s — falling back to joblib", onnx_path
+            )
+
+        # Always load joblib models as fallback
+        _model_state["model"] = joblib.load(model_dir / "model.joblib")
+        _model_state["calibrator"] = joblib.load(model_dir / "calibrator.joblib")
+
         _model_state["loaded"] = True
         logger.info(
-            "Model artifacts loaded successfully (version=%s)",
+            "Model artifacts loaded successfully (version=%s, onnx=%s)",
             _model_state["model_version"],
+            "yes" if _model_state.get("onnx_session") else "no",
         )
     except Exception as exc:
         logger.error("Failed to load model artifacts: %s", exc)
@@ -188,13 +249,6 @@ class CorazaAuditEvent(BaseModel):
     model_config = {"extra": "allow"}
 
 
-class ShapContribution(BaseModel):
-    name: str
-    group: str
-    shap_value: float
-    direction: str  # "positive" | "negative"
-
-
 class ConfidenceInterval(BaseModel):
     low: float
     high: float
@@ -203,15 +257,14 @@ class ConfidenceInterval(BaseModel):
 
 class AdvisoryResponse(BaseModel):
     attack_probability: float
-    confidence_score: float  # 0–100
-    confidence_interval: ConfidenceInterval
-    entropy: float
-    entropy_normalized: float
-    recommended_priority: str  # P1 | P2 | P3
-    priority_reasoning: str
-    explanation: List[ShapContribution]
-    conformal_prediction_set: List[str]
-    advisory_only: bool = True  # Req 8.4 — hardcoded, never configurable
+    confidence_score: float = 0.0
+    confidence_interval: ConfidenceInterval = None
+    entropy: float = 0.0
+    entropy_normalized: float = 0.0
+    recommended_priority: str = "P3"
+    priority_reasoning: str = ""
+    conformal_prediction_set: List[str] = []
+    advisory_only: bool = True
 
 
 def _validate_input(event: CorazaAuditEvent) -> Optional[str]:
@@ -298,35 +351,6 @@ def _assign_priority(prob: float, ci_width: float, h_norm: float) -> tuple[str, 
     return band, reason
 
 
-def _top5_shap(
-    feature_vector: np.ndarray, feature_names: List[str], schema: Dict
-) -> List[ShapContribution]:
-
-    features_dict = schema.get("features", {})
-
-    sv = np.zeros(feature_vector.shape[1])
-
-    pairs = list(zip(feature_names, sv))
-    pairs.sort(key=lambda x: abs(x[1]), reverse=True)
-    top5 = pairs[:5]
-
-    contributions: List[ShapContribution] = []
-    for name, val in top5:
-        feat_meta = features_dict.get(name, {})
-        group = feat_meta.get("group", "unknown")
-        val_scalar = float(val) if np.ndim(val) > 0 else val
-        direction = "positive" if val_scalar >= 0 else "negative"
-        contributions.append(
-            ShapContribution(
-                name=name,
-                group=group,
-                shap_value=round(float(val_scalar), 6),
-                direction=direction,
-            )
-        )
-    return contributions
-
-
 def _conformal_prediction_set(prob: float) -> List[str]:
 
     labels: List[str] = []
@@ -362,7 +386,6 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
         extractor = _model_state["feature_extractor"]
         calibrator = _model_state["calibrator"]
         quantiles = _model_state["bootstrap_quantiles"]
-        schema = _model_state["feature_schema"]
 
         record = {
             "method": event.method,
@@ -376,11 +399,25 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
             "inbound_threshold": event.inbound_threshold or 0.0,
         }
 
-        feature_vector = extractor.transform(record)  # shape (1, n_features)
-        feature_names: List[str] = extractor.get_feature_names_out()
+        feature_vector = extractor.transform(record)
 
-        prob_raw = calibrator.predict_proba(feature_vector)[0][1]
-        attack_probability = float(round(prob_raw, 6))
+        session = _model_state.get("onnx_session")
+        if session is not None:
+            X_onnx = np.asarray(feature_vector, dtype=np.float32)
+            raw = session.run(None, {_model_state["onnx_input_name"]: X_onnx})[1]
+            raw_prob = float(raw[0, 1])
+            iso_x = _model_state.get("isotonic_x")
+            if iso_x is not None:
+                attack_probability = _piecewise_interpolate(
+                    iso_x, _model_state["isotonic_y"], raw_prob
+                )
+            else:
+                attack_probability = raw_prob
+        else:
+            prob_raw = calibrator.predict_proba(feature_vector)[0][1]
+            attack_probability = float(prob_raw)
+
+        attack_probability = round(max(0.0, min(1.0, attack_probability)), 6)
 
         ci = _compute_ci(attack_probability, quantiles)
         ci_width = round(ci.high - ci.low, 4)
@@ -390,8 +427,6 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
         confidence_score = round((1.0 - h_norm) * 100.0, 2)
 
         band, reasoning = _assign_priority(attack_probability, ci_width, h_norm)
-
-        top5 = _top5_shap(feature_vector, feature_names, schema)
 
         conf_set = _conformal_prediction_set(attack_probability)
 
@@ -411,7 +446,6 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
             entropy_normalized=h_norm,
             recommended_priority=band,
             priority_reasoning=reasoning,
-            explanation=top5,
             conformal_prediction_set=conf_set,
             advisory_only=True,  # Req 8.4 — hardcoded
         )
