@@ -97,7 +97,11 @@ services:
     environment:
       - MODEL_VERSION=v3
       - MISS_ONNX_MODEL_PATH=/app/models/modintel.onnx
-    mem_limit: 1g
+      - OMP_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - NUMEXPR_NUM_THREADS=1
+    mem_limit: 2g
     restart: always
     networks:
       - modintel-net
