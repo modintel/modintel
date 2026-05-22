@@ -60,7 +60,14 @@ func ParseCaddyAccessLog(data []byte) (*AlertDocument, error) {
 	if capturedBody != "" {
 		doc.Body = capturedBody
 		doc.BodyLength = len(capturedBody)
-	} else if caddy.Request.Method == "GET" || caddy.Request.Method == "HEAD" {
+	} else if caddy.RespHeaders != nil {
+		if vals, ok := caddy.RespHeaders["X-Request-Body"]; ok && len(vals) > 0 {
+			doc.Body = vals[0]
+			doc.BodyLength = len(vals[0])
+		}
+	}
+
+	if doc.Body == "" && (caddy.Request.Method == "GET" || caddy.Request.Method == "HEAD") {
 		if u, err := url.Parse(caddy.Request.URI); err == nil {
 			doc.Body = u.RawQuery
 		}
@@ -126,9 +133,9 @@ func flattenHeaders(headers map[string][]string) map[string]string {
 }
 
 func IsBlockedByWAF(status int) bool {
-	return status == 403 || status == 406 || status == 500
+	return status == 403 || status == 406
 }
 
 func IsWAFPassed(status int) bool {
-	return status >= 200 && status < 400
+	return status >= 200 && status <= 500
 }

@@ -26,7 +26,13 @@ func Serve() {
 	http.HandleFunc("/health", handleHealth)
 	http.HandleFunc("/metrics", handleMetrics)
 
-	if err := http.ListenAndServe(":8081", nil); err != nil {
+	srv := &http.Server{
+		Addr:         ":8081",
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
