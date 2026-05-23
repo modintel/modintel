@@ -2149,14 +2149,65 @@ func ClearStorageCollections(c *gin.Context) {
 
 	deleted := map[string]int64{}
 	for _, name := range collections {
-		collection := db.GetCollection("modintel", name)
-		result, err := collection.DeleteMany(ctx, bson.M{})
-		if err != nil {
-			log.Printf("Error clearing collection %s: %v", name, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to clear " + name})
-			return
+		if name == "alerts" {
+			alertColl := db.GetCollection("modintel", "alerts")
+			countBefore, _ := alertColl.CountDocuments(ctx, bson.M{})
+			if err := alertColl.Drop(ctx); err != nil {
+				log.Printf("Error dropping collection %s: %v", name, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to drop " + name})
+				return
+			}
+			stored := int64(countBefore)
+			deleted[name] = stored
+
+			alertIndexes := []mongo.IndexModel{
+				{Keys: bson.D{{Key: "timestamp", Value: 1}}, Options: options.Index().SetName("idx_alerts_timestamp")},
+				{Keys: bson.D{{Key: "ai_status", Value: 1}}, Options: options.Index().SetName("idx_alerts_ai_status")},
+				{Keys: bson.D{{Key: "anomaly_score", Value: 1}}, Options: options.Index().SetName("idx_alerts_anomaly_score")},
+				{Keys: bson.D{{Key: "human_label", Value: 1}}, Options: options.Index().SetName("idx_alerts_human_label")},
+				{Keys: bson.D{{Key: "ai_priority", Value: 1}}, Options: options.Index().SetName("idx_alerts_ai_priority")},
+				{Keys: bson.D{{Key: "source", Value: 1}, {Key: "timestamp", Value: -1}}, Options: options.Index().SetName("idx_source_ts")},
+				{Keys: bson.D{{Key: "ai_status", Value: 1}, {Key: "timestamp", Value: -1}}, Options: options.Index().SetName("idx_ai_status_ts")},
+				{Keys: bson.D{{Key: "status", Value: 1}}, Options: options.Index().SetName("idx_alerts_status")},
+				{Keys: bson.D{{Key: "alert_key", Value: 1}}, Options: options.Index().SetUnique(true).SetSparse(true).SetName("idx_alerts_alert_key")},
+			}
+			if _, err := alertColl.Indexes().CreateMany(ctx, alertIndexes); err != nil {
+				log.Printf("Warning: could not recreate indexes on alerts: %v", err)
+			}
+
+			go func() {
+				lcCtx, lcCancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer lcCancel()
+				lcID, err := dockerFindComposeServiceContainer(lcCtx, "log-collector")
+				if err == nil {
+					if rErr := dockerRestartContainer(lcCtx, lcID); rErr == nil {
+						log.Printf("Restarted log-collector to pick up clear guard")
+					}
+				}
+			}()
+		} else {
+			collection := db.GetCollection("modintel", name)
+			result, err := collection.DeleteMany(ctx, bson.M{})
+			if err != nil {
+				log.Printf("Error clearing collection %s: %v", name, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to clear " + name})
+				return
+			}
+			deleted[name] = result.DeletedCount
 		}
-		deleted[name] = result.DeletedCount
+
+		sysColl := db.GetCollection("modintel", "system_events")
+		_, _ = sysColl.UpdateOne(
+			ctx,
+			bson.M{"event": "storage_clear", "collection": name},
+			bson.M{"$set": bson.M{
+				"event":      "storage_clear",
+				"collection": name,
+				"cleared_at": time.Now().UTC().Format(time.RFC3339),
+				"deleted":    deleted[name],
+			}},
+			options.Update().SetUpsert(true),
+		)
 	}
 
 	LogAction(c, "storage_clear", "system", "database", map[string]interface{}{"collections": collections, "deleted": deleted}, "success", "")

@@ -36,5 +36,6 @@ modintel_regex.signatures
 concurrency.md
 agents.md
 after.md
+production-deployment.md
 
 *.onnx

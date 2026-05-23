@@ -46,7 +46,7 @@
             </div>
 
         </div>
-            <div class="panel-right" style="overflow-y: auto;">
+            <div class="panel-right" style="overflow: hidden;">
                 <div class="panel-right-header" style="display: flex; justify-content: space-between; align-items: center;">
                     <div
                         style="font-size: 0.75rem; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; letter-spacing: 0.05em;">
@@ -56,24 +56,26 @@
                         <button class="btn btn-sm" id="merge-selected-btn" type="button">Merge Selected</button>
                     </div>
                 </div>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th><input type="checkbox" id="select-all-datasets" style="margin-right: 8px;">Name</th>
-                        <th>Type</th>
-                        <th>Samples</th>
-                        <th>Attack %</th>
-                        <th>Created</th>
-                        <th>Process</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="datasets-list">
-                    <tr>
-                        <td colspan="7" style="text-align:center;color:var(--fg-muted);padding:20px;">Loading datasets...</td>
-                    </tr>
-                </tbody>
-            </table>
+                <div class="log-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all-datasets" style="margin-right: 8px;">Name</th>
+                            <th>Type</th>
+                            <th>Samples</th>
+                            <th>Attack %</th>
+                            <th>Created</th>
+                            <th>Process</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="datasets-list">
+                        <tr>
+                            <td colspan="7" style="text-align:center;color:var(--fg-muted);padding:20px;">Loading datasets...</td>
+                        </tr>
+                    </tbody>
+                </table>
+                </div>
         </div>
     </div>
     <script src="js/auth.js"></script>

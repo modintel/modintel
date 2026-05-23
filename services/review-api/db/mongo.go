@@ -46,6 +46,7 @@ func Connect() {
 		{Keys: bson.D{{Key: "source", Value: 1}, {Key: "timestamp", Value: -1}}, Options: options.Index().SetName("idx_source_ts")},
 		{Keys: bson.D{{Key: "ai_status", Value: 1}, {Key: "timestamp", Value: -1}}, Options: options.Index().SetName("idx_ai_status_ts")},
 		{Keys: bson.D{{Key: "status", Value: 1}}, Options: options.Index().SetName("idx_alerts_status")},
+		{Keys: bson.D{{Key: "alert_key", Value: 1}}, Options: options.Index().SetUnique(true).SetSparse(true).SetName("idx_alerts_alert_key")},
 	}
 	_, err = alertsColl.Indexes().CreateMany(ctx, indexes)
 	if err != nil {

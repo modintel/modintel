@@ -343,6 +343,30 @@ func _enrichMiss(doc *parsers.AlertDocument) bool {
 	return true
 }
 
+func loadClearGuard() time.Time {
+	collection := db.GetCollection("modintel", "system_events")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var ev bson.M
+	err := collection.FindOne(ctx,
+		bson.M{"event": "storage_clear", "collection": "alerts"},
+		options.FindOne().SetSort(bson.D{{Key: "cleared_at", Value: -1}}),
+	).Decode(&ev)
+	if err != nil {
+		return time.Time{}
+	}
+	ts, ok := ev["cleared_at"].(string)
+	if !ok {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return time.Time{}
+	}
+	log.Printf("Clear guard: last storage_clear at %s", ts)
+	return t
+}
+
 func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 	logFile := "/var/log/coraza/audit.json"
 	if envLog := os.Getenv("CORAZA_LOG_PATH"); envLog != "" {
@@ -359,6 +383,8 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 		}
 		break
 	}
+
+	clearGuard := loadClearGuard()
 
 	t, err := tail.TailFile(logFile, tail.Config{
 		Follow:    true,
@@ -390,6 +416,12 @@ func processCorazaAuditLogs(sigPrefilter *signatures.Prefilter) {
 
 		if strings.Contains(doc.URI, "/socket.io/") {
 			continue
+		}
+
+		if !clearGuard.IsZero() {
+			if ts, parseErr := time.Parse(time.RFC3339, doc.Timestamp); parseErr == nil && ts.Before(clearGuard) {
+				continue
+			}
 		}
 
 		alertKey := uniqueAlertKey(doc)
@@ -500,6 +532,8 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 		break
 	}
 
+	clearGuard := loadClearGuard()
+
 	t, err := tail.TailFile(logFile, tail.Config{
 		Follow:    true,
 		ReOpen:    true,
@@ -527,6 +561,12 @@ func processCaddyAccessLogs(sigPrefilter *signatures.Prefilter) {
 		if err != nil {
 			log.Printf("Failed to parse Caddy log line: %v", err)
 			continue
+		}
+
+		if !clearGuard.IsZero() {
+			if ts, parseErr := time.Parse(time.RFC3339, doc.Timestamp); parseErr == nil && ts.Before(clearGuard) {
+				continue
+			}
 		}
 
 		ts, err := time.Parse(time.RFC3339, doc.Timestamp)
