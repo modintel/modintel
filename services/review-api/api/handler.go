@@ -779,7 +779,15 @@ func UpdateRuleStatus(c *gin.Context) {
 		}()
 	}
 
-	LogAction(c, "rule_update", "rule", ruleID, map[string]interface{}{"enabled": req.Enabled, "type": existingRule.Type}, "success", "")
+	action := "rule_update"
+	if hasToggle && !hasMetadata && !hasSignature {
+		if *req.Enabled {
+			action = "rule_enable"
+		} else {
+			action = "rule_disable"
+		}
+	}
+	LogAction(c, action, "rule", ruleID, map[string]interface{}{"enabled": req.Enabled, "type": existingRule.Type}, "success", "")
 	c.JSON(http.StatusOK, gin.H{"success": true, "id": ruleID, "type": existingRule.Type})
 }
 
