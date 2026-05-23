@@ -63,3 +63,51 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/review-api:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: build and push auth service
+        uses: docker/build-push-action@v7
+        with:
+          context: ./services/auth-service
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/auth-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: build and push proxy waf custom
+        uses: docker/build-push-action@v7
+        with:
+          context: ./services/proxy-waf-custom
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/proxy-waf-custom:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: build and push health aggregator
+        uses: docker/build-push-action@v7
+        with:
+          context: ./services/health-aggregator
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/health-aggregator:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: build and push training api
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: services/training-api/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/training-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: build and push waf blocker
+        uses: docker/build-push-action@v7
+        with:
+          context: ./services/waf-blocker
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/waf-blocker:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

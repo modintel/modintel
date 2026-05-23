@@ -83,14 +83,14 @@ services:
       - MODINTEL_SIGNATURES_FILE=/app/signatures/modintel_regex.signatures
     networks:
       - modintel-net
-    ports:
-      - "8081:8081"
+    expose:
+      - "8081"
     restart: always
 
   inference-engine:
     build: ./services/inference-engine
-    ports:
-      - "8083:8083"
+    expose:
+      - "8083"
     volumes:
       - ./models:/app/models:ro
       - ./services/inference-engine:/app
@@ -108,8 +108,8 @@ services:
 
   review-api:
     build: ./services/review-api
-    ports:
-      - "8082:8082"
+    expose:
+      - "8082"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./proxy-waf/overrides:/waf-overrides
@@ -135,8 +135,8 @@ services:
 
   health-aggregator:
     build: ./services/health-aggregator
-    ports:
-      - "8090:8090"
+    expose:
+      - "8090"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
@@ -151,8 +151,8 @@ services:
     build:
       context: .
       dockerfile: services/training-api/Dockerfile
-    ports:
-      - "8085:8085"
+    expose:
+      - "8085"
     volumes:
       - ./models:/app/models
       - ./data:/app/data
@@ -173,17 +173,17 @@ services:
 
   mailpit:
     image: axllent/mailpit:latest
-    ports:
-      - "8025:8025"
-      - "1025:1025"
+    expose:
+      - "8025"
+      - "1025"
     networks:
       - modintel-net
     restart: always
 
   auth-service:
     build: ./services/auth-service
-    ports:
-      - "8084:8084"
+    expose:
+      - "8084"
     environment:
       - AUTH_PORT=${AUTH_PORT}
       - MONGO_URI=${MONGO_URI}

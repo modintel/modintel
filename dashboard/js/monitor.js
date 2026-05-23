@@ -90,7 +90,7 @@ function addChartHoverDots(svgId, values, width, height, padding, unit, dotClass
             } else {
                 const waf = Number.isFinite(_seriesRequestData[i]) ? _seriesRequestData[i].toFixed(1) : '0.0';
                 const inf = Number.isFinite(_seriesInferenceData[i]) ? _seriesInferenceData[i].toFixed(1) : '0.0';
-                tooltip.innerHTML = '<div style="line-height:1.6"><span style="color:#ff570a">●</span> WAF: ' + waf + ' req/min<br><span style="color:#2563eb">●</span> Inference: ' + inf + ' inf/min</div>';
+                tooltip.innerHTML = '<div style="line-height:1.6"><span style="color:#ff570a">\u25cf</span> WAF: ' + waf + ' req/min<br><span style="color:#2563eb">\u25cf</span> Inference: ' + inf + ' inf/min</div>';
             }
             tooltip.style.display = 'block';
         });
@@ -597,6 +597,8 @@ document.querySelectorAll('.metric-toggle .toggle-btn').forEach(btn => {
     });
 });
 
+let storageClearOriginalContent = null;
+
 const storageClearBtn = document.getElementById('storage-clear-btn');
 const storageClearModal = document.getElementById('storage-clear-modal');
 const storageClearCancel = document.getElementById('storage-clear-cancel');
@@ -615,15 +617,48 @@ function updateStorageClearState() {
     storageClearConfirm.disabled = getSelectedCollections().length === 0;
 }
 
+function getModalContent() {
+    return storageClearModal ? storageClearModal.querySelector('.modal-content') : null;
+}
+
 function showStorageClearModal() {
     if (!storageClearModal) return;
+    const content = getModalContent();
+    if (content) {
+        if (storageClearOriginalContent === null) {
+            storageClearOriginalContent = content.innerHTML;
+        } else {
+            content.innerHTML = storageClearOriginalContent;
+        }
+    }
     storageClearModal.classList.add('open');
     updateStorageClearState();
+    const confirmBtn = document.getElementById('storage-clear-confirm');
+    const cancelBtn = document.getElementById('storage-clear-cancel');
+    const list = document.getElementById('storage-clear-list');
+    if (confirmBtn) confirmBtn.addEventListener('click', confirmStorageClear);
+    if (cancelBtn) cancelBtn.addEventListener('click', hideStorageClearModal);
+    if (list) list.addEventListener('change', updateStorageClearState);
 }
 
 function hideStorageClearModal() {
     if (!storageClearModal) return;
     storageClearModal.classList.remove('open');
+}
+
+function dismissStorageClearResult() {
+    if (!storageClearModal) return;
+    const content = getModalContent();
+    if (content && storageClearOriginalContent !== null) {
+        content.innerHTML = storageClearOriginalContent;
+    }
+    storageClearModal.classList.remove('open');
+    const confirmBtn = document.getElementById('storage-clear-confirm');
+    const cancelBtn = document.getElementById('storage-clear-cancel');
+    const list = document.getElementById('storage-clear-list');
+    if (confirmBtn) confirmBtn.addEventListener('click', confirmStorageClear);
+    if (cancelBtn) cancelBtn.addEventListener('click', hideStorageClearModal);
+    if (list) list.addEventListener('change', updateStorageClearState);
 }
 
 async function confirmStorageClear() {
@@ -640,23 +675,49 @@ async function confirmStorageClear() {
             body: JSON.stringify({ collections }),
         });
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const result = res.ok ? await res.json() : null;
 
-        hideStorageClearModal();
+        if (!res.ok || !result) throw new Error(result ? result.error : `HTTP ${res.status}`);
+
         if (storageClearList) {
             storageClearList.querySelectorAll('input[type="checkbox"]').forEach((input) => {
                 input.checked = false;
             });
         }
-        updateStorageClearState();
+
+        const content = getModalContent();
+        if (!content) return;
+
+        const rows = Object.entries(result.deleted || {}).map(([col, count]) =>
+            `<div class="clear-result-row"><span class="clear-result-label">${col}: </span><span class="clear-result-count">${Number(count).toLocaleString()} deleted</span></div>`
+        ).join('');
+
+        content.innerHTML = `
+            <h3 style="color:var(--fg, #121212);margin:0 0 8px 0;">Clear Complete</h3>
+            <div style="margin:16px 0;">${rows}</div>
+            <div class="modal-actions" style="margin-top:20px;">
+                <button class="btn btn-primary" id="storage-clear-dismiss-btn" type="button">Done</button>
+            </div>
+        `;
+
+        document.getElementById('storage-clear-dismiss-btn').addEventListener('click', dismissStorageClearResult);
+
         fetchMetrics();
     } catch (e) {
         console.error('Error clearing storage:', e);
-    } finally {
-        if (storageClearConfirm) {
-            storageClearConfirm.textContent = 'Delete Selected';
-            updateStorageClearState();
-        }
+
+        const content = getModalContent();
+        if (!content) return;
+
+        content.innerHTML = `
+            <h3 style="color:var(--fg, #121212);margin:0 0 8px 0;">Clear Failed</h3>
+            <p style="color:var(--color-danger, #dc2626);font-size:0.85rem;margin:12px 0;">${e.message}</p>
+            <div class="modal-actions" style="margin-top:20px;">
+                <button class="btn btn-danger" id="storage-clear-dismiss-btn" type="button">Close</button>
+            </div>
+        `;
+
+        document.getElementById('storage-clear-dismiss-btn').addEventListener('click', dismissStorageClearResult);
     }
 }
 
