@@ -228,7 +228,7 @@ do {
     foreach ($req in $benignRequests) {
         $result = Invoke-Benign $req
         if ($result -eq "blocked") { $benignBlocked++ } else { $benignPassed++ }
-        Start-Sleep -Milliseconds 200
+        Start-Sleep -Milliseconds 100
     }
 
     $totalBlocked += $blocked

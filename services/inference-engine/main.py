@@ -204,9 +204,9 @@ def _load_artifacts() -> None:
                 "ONNX model not found at %s — falling back to joblib", onnx_path
             )
 
-        # Always load joblib models as fallback
-        _model_state["model"] = joblib.load(model_dir / "model.joblib")
-        _model_state["calibrator"] = joblib.load(model_dir / "calibrator.joblib")
+        if _model_state.get("onnx_session") is None:
+            _model_state["model"] = joblib.load(model_dir / "model.joblib")
+            _model_state["calibrator"] = joblib.load(model_dir / "calibrator.joblib")
 
         _model_state["loaded"] = True
         logger.info(
@@ -384,7 +384,6 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
 
     try:
         extractor = _model_state["feature_extractor"]
-        calibrator = _model_state["calibrator"]
         quantiles = _model_state["bootstrap_quantiles"]
 
         record = {
@@ -414,6 +413,9 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
             else:
                 attack_probability = raw_prob
         else:
+            calibrator = _model_state.get("calibrator")
+            if calibrator is None:
+                raise ValueError("No ONNX session or joblib calibrator loaded")
             prob_raw = calibrator.predict_proba(feature_vector)[0][1]
             attack_probability = float(prob_raw)
 
