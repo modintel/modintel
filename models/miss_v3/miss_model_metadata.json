@@ -1,0 +1,252 @@
+{
+  "model_version": 3,
+  "model_type": "miss_model",
+  "model_name": "gradient_boosting_miss",
+  "composite_score": 0.9698776624509129,
+  "metrics": {
+    "accuracy": 0.9551478083588175,
+    "precision": 0.9308641975308642,
+    "recall": 0.9964757709251101,
+    "f1": 0.9625531914893617,
+    "auroc": 0.9873445232223045,
+    "pr_auc": 0.9874266010050065,
+    "fpr": 0.10157194679564692,
+    "fnr": 0.003524229074889868,
+    "confusion_matrix": {
+      "tp": 1131,
+      "fp": 84,
+      "tn": 743,
+      "fn": 4
+    }
+  },
+  "all_candidates": [
+    {
+      "name": "gradient_boosting_miss",
+      "metrics": {
+        "accuracy": 0.9551478083588175,
+        "precision": 0.9308641975308642,
+        "recall": 0.9964757709251101,
+        "f1": 0.9625531914893617,
+        "auroc": 0.9873445232223045,
+        "pr_auc": 0.9874266010050065,
+        "fpr": 0.10157194679564692,
+        "fnr": 0.003524229074889868,
+        "confusion_matrix": {
+          "tp": 1131,
+          "fp": 84,
+          "tn": 743,
+          "fn": 4
+        }
+      },
+      "composite_score": 0.9698776624509129,
+      "best_params": {
+        "n_estimators": 200,
+        "max_depth": 10,
+        "learning_rate": 0.1205712628744377,
+        "subsample": 0.8394633936788146,
+        "min_samples_split": 16,
+        "min_samples_leaf": 9
+      }
+    },
+    {
+      "name": "lightgbm_miss",
+      "metrics": {
+        "accuracy": 0.9551478083588175,
+        "precision": 0.9308641975308642,
+        "recall": 0.9964757709251101,
+        "f1": 0.9625531914893617,
+        "auroc": 0.987306702747045,
+        "pr_auc": 0.9876306865660056,
+        "fpr": 0.10157194679564692,
+        "fnr": 0.003524229074889868,
+        "confusion_matrix": {
+          "tp": 1131,
+          "fp": 84,
+          "tn": 743,
+          "fn": 4
+        }
+      },
+      "composite_score": 0.969870098355861,
+      "best_params": {
+        "n_estimators": 250,
+        "max_depth": 7,
+        "learning_rate": 0.06333268775321843,
+        "num_leaves": 32,
+        "min_child_samples": 42,
+        "subsample": 0.6298202574719083,
+        "colsample_bytree": 0.9947547746402069
+      }
+    },
+    {
+      "name": "random_forest_miss",
+      "metrics": {
+        "accuracy": 0.954638124362895,
+        "precision": 0.9293924466338259,
+        "recall": 0.9973568281938326,
+        "f1": 0.96217594560136,
+        "auroc": 0.9863121840525438,
+        "pr_auc": 0.9862220175088405,
+        "fpr": 0.10399032648125756,
+        "fnr": 0.0026431718061674008,
+        "confusion_matrix": {
+          "tp": 1132,
+          "fp": 86,
+          "tn": 741,
+          "fn": 3
+        }
+      },
+      "composite_score": 0.969481452508702,
+      "best_params": {
+        "n_estimators": 200,
+        "max_depth": 13,
+        "min_samples_split": 16,
+        "min_samples_leaf": 7
+      }
+    },
+    {
+      "name": "xgboost_miss",
+      "metrics": {
+        "accuracy": 0.9510703363914373,
+        "precision": 0.9220146222583265,
+        "recall": 1.0,
+        "f1": 0.959425190194421,
+        "auroc": 0.9870680608749847,
+        "pr_auc": 0.9874001827936676,
+        "fpr": 0.11608222490931076,
+        "fnr": 0.0,
+        "confusion_matrix": {
+          "tp": 1135,
+          "fp": 96,
+          "tn": 731,
+          "fn": 0
+        }
+      },
+      "composite_score": 0.967931777381658,
+      "best_params": {
+        "n_estimators": 250,
+        "max_depth": 16,
+        "learning_rate": 0.1205712628744377,
+        "subsample": 0.8394633936788146,
+        "colsample_bytree": 0.6624074561769746,
+        "min_child_weight": 2,
+        "gamma": 0.05808361216819946,
+        "scale_pos_weight": 4.46470458309974
+      }
+    },
+    {
+      "name": "logistic_l1_miss",
+      "metrics": {
+        "accuracy": 0.8562691131498471,
+        "precision": 0.9295065458207452,
+        "recall": 0.813215859030837,
+        "f1": 0.8674812030075187,
+        "auroc": 0.9231290850108401,
+        "pr_auc": 0.915703651083754,
+        "fpr": 0.08464328899637243,
+        "fnr": 0.186784140969163,
+        "confusion_matrix": {
+          "tp": 923,
+          "fp": 70,
+          "tn": 757,
+          "fn": 212
+        }
+      },
+      "composite_score": 0.8782255118603124,
+      "best_params": {
+        "C": 1.5702970884055387,
+        "max_iter": 3500
+      }
+    }
+  ],
+  "training_config": {
+    "random_state": 42,
+    "calibration_method": "isotonic",
+    "source": "parquet",
+    "total_samples": 13079,
+    "attack_count": 7565,
+    "benign_count": 5514,
+    "feature_dim": 57,
+    "composite_weights": {
+      "recall": 0.35,
+      "precision": 0.3,
+      "f1": 0.15,
+      "auroc": 0.2
+    },
+    "candidates_trained": [
+      "gradient_boosting_miss",
+      "lightgbm_miss",
+      "random_forest_miss",
+      "xgboost_miss",
+      "logistic_l1_miss"
+    ],
+    "optuna_enabled": true,
+    "optuna_trials": 10
+  },
+  "regex_signatures_sha256": "0c39c5b5f715ab4bc0c5896fb97630b9b2ffe1345cb94f4c283101665c0a2725",
+  "trained_at": "2026-05-25T15:53:36.059274+00:00",
+  "composite_weights": {
+    "recall": 0.35,
+    "precision": 0.3,
+    "f1": 0.15,
+    "auroc": 0.2
+  },
+  "optuna_results": [
+    {
+      "name": "xgboost_miss",
+      "best_params": {
+        "n_estimators": 250,
+        "max_depth": 16,
+        "learning_rate": 0.1205712628744377,
+        "subsample": 0.8394633936788146,
+        "colsample_bytree": 0.6624074561769746,
+        "min_child_weight": 2,
+        "gamma": 0.05808361216819946,
+        "scale_pos_weight": 4.46470458309974
+      },
+      "best_value": 0.9760310109559268
+    },
+    {
+      "name": "lightgbm_miss",
+      "best_params": {
+        "n_estimators": 250,
+        "max_depth": 7,
+        "learning_rate": 0.06333268775321843,
+        "num_leaves": 32,
+        "min_child_samples": 42,
+        "subsample": 0.6298202574719083,
+        "colsample_bytree": 0.9947547746402069
+      },
+      "best_value": 0.9760403861723292
+    },
+    {
+      "name": "gradient_boosting_miss",
+      "best_params": {
+        "n_estimators": 200,
+        "max_depth": 10,
+        "learning_rate": 0.1205712628744377,
+        "subsample": 0.8394633936788146,
+        "min_samples_split": 16,
+        "min_samples_leaf": 9
+      },
+      "best_value": 0.9757033730301199
+    },
+    {
+      "name": "random_forest_miss",
+      "best_params": {
+        "n_estimators": 200,
+        "max_depth": 13,
+        "min_samples_split": 16,
+        "min_samples_leaf": 7
+      },
+      "best_value": 0.9738523697798229
+    },
+    {
+      "name": "logistic_l1_miss",
+      "best_params": {
+        "C": 1.5702970884055387,
+        "max_iter": 3500
+      },
+      "best_value": 0.8774040373742329
+    }
+  ]
+}

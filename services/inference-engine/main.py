@@ -726,7 +726,7 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
 
             entropy, h_norm = _compute_entropy(attack_probability)
             confidence_score = round((1.0 - h_norm) * 100.0, 2)
-            band, reasoning = _assign_priority(attack_probability, 0.5, h_norm)
+            band, reasoning = _assign_priority(attack_probability, 0.0, h_norm)
 
             elapsed_ms = (time.perf_counter() - t_start) * 1000.0
             _prediction_count += 1
