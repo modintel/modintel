@@ -33,7 +33,7 @@ function showModal(title, message, type = 'info') {
     const closeBtn = document.getElementById('modal-close');
 
     titleEl.textContent = title;
-    messageEl.innerHTML = message;
+    messageEl.textContent = message;
 
     titleEl.className = type === 'error' ? 'modal-title-error' : '';
     closeBtn.className = type === 'error' ? 'btn btn-danger' : 'btn btn-primary';
@@ -110,7 +110,7 @@ function showPrompt(title, message, defaultValue, onConfirm, onCancel) {
     const inputEl = document.getElementById('modal-input');
 
     titleEl.textContent = title;
-    messageEl.innerHTML = message;
+    messageEl.textContent = message;
 
     modal.classList.add('open');
 

@@ -7,7 +7,8 @@ function normalizeHistory(data) {
     const items = Array.isArray(data) ? data : (data && data.items ? data.items : []);
     return items.map((item) => {
         const safe = item && typeof item === 'object' ? item : {};
-        const targetLayer = safe.target_layer || safe.targetLayer || 'layer1';
+        const targetLayer = safe.model_family === 'miss' ? 'layer2'
+            : safe.target_layer || safe.targetLayer || 'layer1';
         return { ...safe, target_layer: targetLayer };
     });
 }
@@ -23,25 +24,6 @@ function formatDate(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '—';
     return date.toLocaleDateString();
-}
-
-async function loadModelTypes() {
-    var select = document.getElementById('model-type');
-    try {
-        var res = await apiFetch(API_BASE + '/training/model-types');
-        var data = await res.json();
-        var models = data.models || [];
-        select.innerHTML = '';
-        models.forEach(function (model) {
-            var opt = document.createElement('option');
-            opt.value = model.value;
-            opt.textContent = model.label;
-            select.appendChild(opt);
-        });
-        select.value = 'random_forest';
-    } catch (e) {
-        select.innerHTML = '<option value="random_forest" selected>Random Forest</option><option value="xgboost">XGBoost</option><option value="logistic">Logistic Regression</option><option value="svm">SVM</option>';
-    }
 }
 
 async function loadDatasets() {
@@ -65,14 +47,6 @@ async function loadDatasets() {
         select.innerHTML = '<option value="">Failed to load datasets</option>';
     }
 }
-
-document.getElementById('val-split').addEventListener('input', function() {
-    document.getElementById('val-split-val').textContent = this.value + '%';
-});
-
-document.getElementById('hp-toggle-check').addEventListener('change', function() {
-    document.getElementById('hp-advanced').style.display = this.checked ? 'block' : 'none';
-});
 
 async function loadTrainingStatus() {
     try {
@@ -111,9 +85,39 @@ async function loadTrainingHistory() {
         if (filtered.length > 0) {
             updateEvalMetrics(filtered[0]);
         }
+        updateActiveStatus();
     } catch (e) {
         console.error('Error loading training history:', e);
     }
+}
+
+function updateActiveStatus() {
+    const container = document.getElementById('active-status');
+    if (!container) return;
+
+    const layer1 = allTrainingHistory.find(item => item.active && item.target_layer === 'layer1');
+    const layer2 = allTrainingHistory.find(item => item.active && item.target_layer === 'layer2');
+
+    const fmt = (v) => v != null ? Number(v).toFixed(1) + '%' : '—';
+
+    container.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            <div class="metric" style="padding:6px;">
+                <div class="metric-label">Layer 1</div>
+                <div class="metric-value" style="font-size:0.75rem;">${layer1 ? layer1.version : '—'}</div>
+                <div style="font-size:0.65rem;color:var(--fg-muted);margin-top:6px;">
+                    ${layer1 ? `P:${fmt(layer1.precision)} | R:${fmt(layer1.recall)} | F1:${fmt(layer1.f1_score)}` : 'No active model'}
+                </div>
+            </div>
+            <div class="metric" style="padding:6px;">
+                <div class="metric-label">Layer 2</div>
+                <div class="metric-value" style="font-size:0.75rem;">${layer2 ? layer2.version : '—'}</div>
+                <div style="font-size:0.65rem;color:var(--fg-muted);margin-top:6px;">
+                    ${layer2 ? `P:${fmt(layer2.precision)} | R:${fmt(layer2.recall)} | F1:${fmt(layer2.f1_score)}` : 'No active model'}
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 function getCurrentView() {
@@ -130,27 +134,31 @@ function renderHistory(items) {
         updateTrainingActions();
         return;
     }
-    tbody.innerHTML = items.map(item => `
+    tbody.innerHTML = items.map(item => {
+        const isMiss = (item.model_family === 'miss');
+        const composite = isMiss && item.composite_score != null ? item.composite_score.toFixed(4) : '—';
+        return `
         <tr>
-            <td><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;" ${item.active || isLayer1 ? 'disabled' : ''}>${item.version}</td>
-            <td>${item.model_type}</td>
-            <td>${item.dataset}</td>
-            <td>${formatPct(item.precision)}</td>
-            <td>${formatPct(item.recall)}</td>
-            <td style="color:var(--accent);">${formatPct(item.fpr)}</td>
-            <td>${formatDate(item.trained_at)}</td>
-            <td>
+            <td style="white-space: nowrap;"><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;" ${item.active || isLayer1 ? 'disabled' : ''}>${item.version}</td>
+            <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.model_type}</td>
+            <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.dataset}</td>
+            <td style="white-space: nowrap;">${formatPct(item.precision)}</td>
+            <td style="white-space: nowrap;">${formatPct(item.recall)}</td>
+            <td style="color:var(--accent); white-space: nowrap;">${formatPct(item.fpr)}</td>
+            <td style="white-space: nowrap;">${isMiss ? composite : formatPct(item.f1_score)}</td>
+            <td style="white-space: nowrap;">${formatDate(item.trained_at)}</td>
+            <td style="white-space: nowrap;">
                 ${item.active
                     ? '<span class="badge-active">Active</span>'
                     : `<button class="btn btn-sm deploy-btn" data-version="${item.version}">Deploy</button>`}
             </td>
-            <td>
+            <td style="white-space: nowrap;">
                 ${!item.active && !isLayer1
                     ? `<button class="btn btn-sm btn-danger delete-model-btn" data-version="${item.version}">Delete</button>`
                     : `<button class="btn btn-sm btn-danger" disabled style="opacity:0.35;cursor:not-allowed;">Delete</button>`}
             </td>
-        </tr>
-    `).join('');
+        </tr>`;
+    }).join('');
 
     document.querySelectorAll('.deploy-btn').forEach(btn => {
         btn.addEventListener('click', () => deployModel(btn.dataset.version));
@@ -260,8 +268,6 @@ async function trainModel() {
     if (document.getElementById('train-model-btn').disabled) return;
 
     const dataset = document.getElementById('train-dataset').value;
-    const modelType = document.getElementById('model-type').value;
-    const valSplit = parseInt(document.getElementById('val-split').value);
 
     const btn = document.getElementById('train-model-btn');
     btn.textContent = 'Starting...';
@@ -271,11 +277,7 @@ async function trainModel() {
         const res = await apiFetch(`${API_BASE}/training/start`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                dataset,
-                model_type: modelType,
-                val_split: valSplit
-            })
+            body: JSON.stringify({ dataset })
         });
 
         if (!res.ok) {
@@ -286,7 +288,6 @@ async function trainModel() {
             return;
         }
 
-        const result = await res.json();
         btn.textContent = 'Training...';
 
         trainingPollInterval = setInterval(pollTrainingJob, 5000);
@@ -300,6 +301,7 @@ async function trainModel() {
 
 function updateEvalMetrics(item) {
     const metrics = document.getElementById('eval-metrics');
+    const isMiss = item && (item.model_family === 'miss');
     if (!item) {
         metrics.innerHTML = `
             <div class="metric"><div class="metric-label">Precision</div><div class="metric-value">—</div></div>
@@ -310,7 +312,13 @@ function updateEvalMetrics(item) {
         return;
     }
 
-    metrics.innerHTML = `
+    const composite = isMiss && item.composite_score != null ? item.composite_score.toFixed(4) : '—';
+    const samples = isMiss && item.samples ? item.samples.toLocaleString() : '—';
+    const attBen = isMiss && item.attacks != null && item.benign != null
+        ? `${item.attacks.toLocaleString()} / ${item.benign.toLocaleString()}`
+        : '—';
+
+    const core = `
         <div class="metric">
             <div class="metric-label">Precision</div>
             <div class="metric-value">${formatPct(item.precision)}</div>
@@ -328,23 +336,53 @@ function updateEvalMetrics(item) {
             <div class="metric-value">${formatPct(item.f1_score)}</div>
         </div>
     `;
+
+    const extra = isMiss ? `
+        <div class="metric">
+            <div class="metric-label">AUROC</div>
+            <div class="metric-value">${formatPct(item.auroc)}</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">Composite</div>
+            <div class="metric-value">${composite}</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">Samples</div>
+            <div class="metric-value">${samples}</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">Attack/Benign</div>
+            <div class="metric-value">${attBen}</div>
+        </div>
+    ` : '';
+
+    metrics.innerHTML = core + extra;
 }
 
 async function deployModel(version) {
-    try {
-        const res = await apiFetch(`${API_BASE}/training/${version}/activate`, {
-            method: 'POST'
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            showModal('Deploy Failed', err.detail || 'Failed to deploy model', 'error');
-            return;
+    showConfirm(
+        'Switch Model',
+        `Are you sure you want to activate model ${version}? This will switch the active model and restart the inference engine.`,
+        async () => {
+            try {
+                const endpoint = version.startsWith('miss_')
+                    ? `/training/miss/${version}/activate`
+                    : `/training/${version}/activate`;
+                const res = await apiFetch(`${API_BASE}${endpoint}`, {
+                    method: 'POST'
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    showModal('Deploy Failed', err.detail || 'Failed to deploy model', 'error');
+                    return;
+                }
+                loadTrainingStatus();
+                loadTrainingHistory();
+            } catch (e) {
+                console.error('Deploy error:', e);
+            }
         }
-        loadTrainingStatus();
-        loadTrainingHistory();
-    } catch (e) {
-        console.error('Deploy error:', e);
-    }
+    );
 }
 
 async function deleteModel(version) {
@@ -371,9 +409,87 @@ async function deleteModel(version) {
     );
 }
 
+let missTrainingPollInterval = null;
+
+async function loadMissTrainingStatus() {
+    try {
+        const res = await apiFetch(`${API_BASE}/training/miss/status`);
+        const data = await res.json();
+        if (data.training_active) {
+            const btn = document.getElementById('miss-train-btn');
+            if (btn) {
+                btn.textContent = 'Training...';
+                btn.disabled = true;
+            }
+            if (!missTrainingPollInterval) {
+                missTrainingPollInterval = setInterval(pollMissTrainingJob, 5000);
+            }
+        }
+    } catch (e) {
+        console.error('Error loading miss training status:', e);
+    }
+}
+
+async function pollMissTrainingJob() {
+    try {
+        const res = await apiFetch(`${API_BASE}/training/miss/status`);
+        const data = await res.json();
+        if (!data.training_active) {
+            clearInterval(missTrainingPollInterval);
+            missTrainingPollInterval = null;
+            const btn = document.getElementById('miss-train-btn');
+            if (btn) {
+                btn.textContent = 'Miss Training Complete';
+                btn.disabled = false;
+                setTimeout(() => { btn.textContent = 'Start Miss Training'; }, 3000);
+            }
+            loadTrainingHistory();
+        }
+    } catch (e) {
+        clearInterval(missTrainingPollInterval);
+        missTrainingPollInterval = null;
+    }
+}
+
+async function startMissTraining() {
+    const btn = document.getElementById('miss-train-btn');
+    if (!btn || btn.disabled) return;
+
+    btn.textContent = 'Starting...';
+    btn.disabled = true;
+
+    try {
+        const res = await apiFetch(`${API_BASE}/training/miss/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source: 'mongo' })
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showModal('Miss Training Failed', err.detail || err.error || 'An error occurred', 'error');
+            btn.textContent = 'Start Miss Training';
+            btn.disabled = false;
+            return;
+        }
+
+        btn.textContent = 'Training...';
+        missTrainingPollInterval = setInterval(pollMissTrainingJob, 5000);
+    } catch (e) {
+        console.error('Miss training error:', e);
+        btn.textContent = 'Start Miss Training';
+        btn.disabled = false;
+    }
+}
+
 const trainModelBtn = document.getElementById('train-model-btn');
 if (trainModelBtn) {
     trainModelBtn.addEventListener('click', trainModel);
+}
+
+const missTrainBtn = document.getElementById('miss-train-btn');
+if (missTrainBtn) {
+    missTrainBtn.addEventListener('click', startMissTraining);
 }
 
 document.getElementById('select-all-training').addEventListener('change', function() {
@@ -403,8 +519,8 @@ initViewToggle();
 
 (async () => {
     await requireAuth();
-    await loadModelTypes();
     await loadDatasets();
     await loadTrainingStatus();
+    await loadMissTrainingStatus();
     await loadTrainingHistory();
 })();

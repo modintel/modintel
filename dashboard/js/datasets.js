@@ -176,17 +176,15 @@ async function checkActiveBalanceJob(name) {
     try {
         const res = await apiFetch(`${API_BASE}/training/datasets/${encodeURIComponent(name)}/balance/status`);
         if (!res.ok) {
-            console.debug('Balance status for', name, 'returned', res.status);
             return;
         }
         const job = await res.json();
-        console.debug('Balance job for', name, ':', job);
         if (!job || job.status === 'idle' || !job.needed) return;
 
         const btn = Array.from(document.querySelectorAll('.process-dataset-btn')).find(b => b.dataset.name === name);
-        if (!btn) { console.debug('Button not found for', name); return; }
+        if (!btn) { return; }
         const fill = btn.querySelector('.process-fill');
-        if (!fill) { console.debug('Fill not found for', name); return; }
+        if (!fill) { return; }
 
         const pct = Math.min(1, job.collected / job.needed);
         fill.style.strokeDashoffset = String(50.27 * (1 - pct));
@@ -199,11 +197,9 @@ async function checkActiveBalanceJob(name) {
             btn.disabled = true;
             btn.classList.add('is-processing');
             fill.classList.add('processing');
-            console.debug('Restored balance animation for', name, 'at', Math.round(pct * 100) + '%');
             resumeBalancePolling(name, btn, fill, job);
         }
     } catch (e) {
-        console.debug('checkActiveBalanceJob error for', name, ':', e);
     }
 }
 
@@ -287,9 +283,7 @@ function renderSources(sources) {
                     <div class="source-name">${s.name}</div>
                     <div class="source-meta">${s.samples.toLocaleString()} samples • ${attackPct}% attack</div>
                 </div>
-                <div class="source-actions">
-                    <button class="btn btn-sm">View</button>
-                </div>
+
             </div>
         `;
     }).join('');
@@ -495,5 +489,4 @@ if (mergeSelectedBtn) {
 (async () => {
     await requireAuth();
     await loadDatasets();
-    loadDatasetSources();
 })();
