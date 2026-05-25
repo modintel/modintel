@@ -97,6 +97,7 @@ services:
     environment:
       - MODEL_VERSION=v3
       - MISS_ONNX_MODEL_PATH=/app/models/modintel.onnx
+      - MISS_MODEL_VERSION=${MISS_MODEL_VERSION:-}
       - OMP_NUM_THREADS=1
       - OPENBLAS_NUM_THREADS=1
       - MKL_NUM_THREADS=1
@@ -158,6 +159,7 @@ services:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
       - modintel_caddy_logs:/var/log/caddy:ro
+      - ./services/log-collector/signatures:/app/services/log-collector/signatures:ro
     environment:
       - MONGO_URI=${MONGO_URI}
       - MONGO_DB_NAME=${MONGO_DB_NAME}
@@ -166,6 +168,8 @@ services:
       - ML_PIPELINE_DATA_DIR=/app/data
       - ML_PIPELINE_MODELS_DIR=/app/models
       - TRAIN_SCRIPT=/app/ml-pipeline/train_model.py
+      - MISS_TRAIN_SCRIPT=/app/ml-pipeline/train_miss_from_review.py
+      - REGEX_SIGNATURES_PATH=/app/services/log-collector/signatures/modintel_regex.signatures
     networks:
       - modintel-net
     restart: always
