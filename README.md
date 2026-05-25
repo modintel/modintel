@@ -72,7 +72,7 @@ A 17-page interface served statically via the review-api (Caddy reverse-proxies 
 ## Directory Structure
 
 ```text
-joab/
+modintel/
 ├── proxy-waf/                 # Caddy + Coraza WAF configuration
 │   ├── Caddyfile              # Reverse proxy, routing
 │   ├── coraza.conf            # Coraza WAF base config (SecRuleEngine On)
@@ -152,19 +152,4 @@ docker compose up -d
 ```
 
 The WAF proxy will be available at `http://localhost:8080` and the dashboard at `http://localhost:3000`.
-
-### Attack Testing
-
-Run the 47-payload attack suite against the WAF:
-
-```powershell
-.\scripts\attack_suite.ps1 -RunCount 1
-```
-
-## Roadmap
-
-See [todo.md](todo.md):
-
-## License
-
-This project is licensed under the MIT License.
+`
