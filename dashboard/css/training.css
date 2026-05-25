@@ -80,12 +80,12 @@
 .eval-metrics {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
+    gap: 6px;
 }
 
 .metric {
     background: var(--bg);
-    padding: 12px;
+    padding: 8px;
     border-radius: 4px;
     border: 1px solid var(--border);
     text-align: center;
@@ -142,25 +142,6 @@
     cursor: default;
 }
 
-#hp-advanced {
-    display: none;
-}
-
-.hp-item label {
-    font-size: 0.6875rem;
-    color: var(--fg-muted);
-}
-
-.hp-toggle {
-    font-size: 0.75rem;
-    color: var(--fg-muted);
-    cursor: pointer;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
 .fpr-value {
     color: var(--accent);
 }
@@ -179,36 +160,6 @@
 .btn-sm:hover {
     background: var(--accent);
     color: var(--accent-fg);
-}
-
-.hp-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin-top: 10px;
-    margin-bottom: 8px;
-}
-
-#hp-advanced > label {
-    color: var(--accent);
-}
-
-.hp-item input {
-    width: 100%;
-    padding: 6px 8px;
-    font-size: 0.75rem;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg);
-    color: var(--fg);
-}
-
-.hp-toggle input[type="checkbox"] {
-    accent-color: var(--accent);
-}
-
-.hp-toggle {
-    margin-bottom: 12px;
 }
 
 input[type="checkbox"] {

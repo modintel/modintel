@@ -126,6 +126,7 @@
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
     color: var(--fg);
+    white-space: nowrap;
 }
 
 .data-table tr:hover td {
