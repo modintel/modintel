@@ -1,8 +1,5 @@
 name: docker-build-publish
 
-permissions:
-  contents: read
-
 on:
   push:
     branches: [modintel-base]
@@ -10,7 +7,6 @@ on:
     branches: [modintel-base]
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
