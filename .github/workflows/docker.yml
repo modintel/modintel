@@ -9,6 +9,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  COSIGN_YES: true
 
 jobs:
   build:
@@ -16,6 +17,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
 
     steps:
       - name: checkout repository
@@ -32,12 +34,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@v3
+
       - name: build and push log collector
         uses: docker/build-push-action@v7
         with:
           context: ./services/log-collector
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/log-collector:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:log-collector-latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:log-collector-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -47,7 +55,8 @@ jobs:
           context: ./services/inference-engine
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/inference-engine:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:inference-engine-latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:inference-engine-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -56,7 +65,9 @@ jobs:
         with:
           context: ./services/review-api
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/review-api:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:review-api-latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:review-api-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -65,7 +76,9 @@ jobs:
         with:
           context: ./services/auth-service
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/auth-service:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:auth-service-latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:auth-service-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -75,7 +88,8 @@ jobs:
           context: ./services/proxy-waf-custom
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/proxy-waf-custom:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:proxy-waf-custom-latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:proxy-waf-custom-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -85,7 +99,8 @@ jobs:
           context: ./services/health-aggregator
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/health-aggregator:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:health-aggregator-latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:health-aggregator-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -95,7 +110,9 @@ jobs:
           context: .
           file: services/training-api/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/training-api:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:training-api-latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:training-api-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -104,6 +121,20 @@ jobs:
         with:
           context: ./services/waf-blocker
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/waf-blocker:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:waf-blocker-latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:waf-blocker-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: sign published images
+        if: github.event_name != 'pull_request'
+        run: |
+          cosign sign ghcr.io/${{ github.repository }}:log-collector-${{ github.sha }}
+          cosign sign ghcr.io/${{ github.repository }}:inference-engine-${{ github.sha }}
+          cosign sign ghcr.io/${{ github.repository }}:review-api-${{ github.sha }}
+          cosign sign ghcr.io/${{ github.repository }}:auth-service-${{ github.sha }}
+          cosign sign ghcr.io/${{ github.repository }}:proxy-waf-custom-${{ github.sha }}
+          cosign sign ghcr.io/${{ github.repository }}:health-aggregator-${{ github.sha }}
+          cosign sign ghcr.io/${{ github.repository }}:training-api-${{ github.sha }}
+          cosign sign ghcr.io/${{ github.repository }}:waf-blocker-${{ github.sha }}
