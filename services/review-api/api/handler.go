@@ -283,7 +283,6 @@ func SetupRouter() *gin.Engine {
 		api.POST("/system/restart/proxy-waf", RequireRoles("admin"), RestartProxyWAF)
 		api.DELETE("/logs", RequireRoles("admin", "analyst"), ClearLogs)
 		api.GET("/datasets", RequireRoles("admin", "analyst", "viewer"), GetDatasets)
-		api.GET("/datasets/sources", RequireRoles("admin", "analyst", "viewer"), GetDatasetSources)
 		api.POST("/datasets/generate", RequireRoles("admin", "analyst"), GenerateDataset)
 		api.POST("/datasets/merge", RequireRoles("admin", "analyst"), MergeDatasets)
 		api.DELETE("/datasets/:id", RequireRoles("admin", "analyst"), DeleteDataset)
@@ -3047,50 +3046,6 @@ func GetDatasets(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"items": items})
-}
-
-func GetDatasetSources(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	collection := db.GetCollection("modintel", "alerts")
-
-	sources := []struct {
-		Key   string `json:"key"`
-		Label string `json:"label"`
-		Regex string `json:"regex"`
-	}{
-		{Key: "sqli", Label: "SQL Injection", Regex: "942"},
-		{Key: "xss", Label: "XSS", Regex: "941"},
-		{Key: "cmdi", Label: "Command Injection", Regex: "932"},
-		{Key: "lfi", Label: "LFI/Traversal", Regex: "930"},
-		{Key: "rfi", Label: "RFI", Regex: "931"},
-		{Key: "normal", Label: "Normal Traffic", Regex: ""},
-	}
-
-	var items []bson.M
-	for _, src := range sources {
-		filter := bson.M{}
-		if src.Regex != "" {
-			filter["triggered_rules"] = bson.M{"$elemMatch": bson.M{"$regex": "^" + src.Regex}}
-		} else {
-			filter["triggered_rules"] = bson.M{"$size": 0}
-		}
-		count, _ := collection.CountDocuments(ctx, filter)
-		items = append(items, bson.M{
-			"key":     src.Key,
-			"name":    src.Label + " Samples",
-			"samples": count,
-			"attackPct": func() int {
-				if count == 0 {
-					return 0
-				}
-				return 80 + int(count%21)
-			}(),
-		})
-	}
-
-	c.JSON(http.StatusOK, gin.H{"sources": items})
 }
 
 type GenerateDatasetRequest struct {
