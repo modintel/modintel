@@ -32,6 +32,11 @@ _model_state: Dict[str, Any] = {
     "model_metadata": None,
     "model_version": "unknown",
     "loaded": False,
+    "miss_model": None,
+    "miss_calibrator": None,
+    "miss_feature_extractor": None,
+    "miss_model_version": None,
+    "miss_model_loaded": False,
 }
 
 _startup_time: float = time.time()
@@ -60,6 +65,38 @@ _suspicious_ua = re.compile(
     r"(?:sqlmap|nikto|nmap|burp|acunetix|nessus|openvas|w3af|zap)",
     re.IGNORECASE,
 )
+_nosql_patterns = re.compile(r"\$(?:gt|lt|ne|where|regex|nin|exists)\b")
+_ssti_patterns = re.compile(r"\{\{|\$\{|\{%")
+_log4j_patterns = re.compile(r"\$\{jndi:")
+_xxe_patterns = re.compile(r"<!ENTITY|<!DOCTYPE|file:///|data://|php://")
+_encoding_pattern = re.compile(r"%[0-9A-Fa-f]{2}|\\u[0-9A-Fa-f]{4}|\\x[0-9A-Fa-f]{2}")
+_double_encoding = re.compile(r"%25[0-9A-Fa-f]{2}")
+
+_SQL_KEYWORDS = [
+    "select",
+    "union",
+    "insert",
+    "update",
+    "delete",
+    "drop",
+    "create",
+    "alter",
+    "exec",
+    "execute",
+    "cast",
+    "declare",
+]
+_XSS_TAGS = ["<script", "<iframe", "<object", "<embed", "<img", "<svg", "<meta"]
+_EVENT_HANDLERS = [
+    "onclick",
+    "onerror",
+    "onload",
+    "onmouseover",
+    "onfocus",
+    "onblur",
+    "onchange",
+    "onsubmit",
+]
 
 
 def _miss_heuristic_score(event: dict) -> float:
@@ -84,8 +121,26 @@ def _miss_heuristic_score(event: dict) -> float:
         score += 0.10
     if body and len(body) > 1024:
         score += 0.10
+    if _nosql_patterns.search(content):
+        score += 0.20
+    if _ssti_patterns.search(content):
+        score += 0.25
+    if _log4j_patterns.search(content):
+        score += 0.35
+    if _xxe_patterns.search(content):
+        score += 0.25
+    if _double_encoding.search(content):
+        score += 0.15
+    if not ua or ua == "-" or len(ua) < 10:
+        score += 0.10
+    if sum(1 for kw in _SQL_KEYWORDS if kw in content) >= 2:
+        score += 0.20
+    if sum(1 for tag in _XSS_TAGS if tag in content) >= 1:
+        score += 0.15
+    if sum(1 for h in _EVENT_HANDLERS if h in content) >= 1:
+        score += 0.15
 
-    return min(score, 0.95)
+    return min(score, 0.98)
 
 
 def _record_prediction(ts: float, count: int = 1) -> None:
@@ -164,7 +219,6 @@ def _load_artifacts() -> None:
             "model_version", "unknown"
         )
 
-        # Try ONNX path first (faster, no sklearn thread contention)
         onnx_path = Path(
             "models/modintel_{}.onnx".format(_model_state["model_version"])
         )
@@ -214,9 +268,97 @@ def _load_artifacts() -> None:
             _model_state["model_version"],
             "yes" if _model_state.get("onnx_session") else "no",
         )
+
+        _load_miss_model()
     except Exception as exc:
         logger.error("Failed to load model artifacts: %s", exc)
         _model_state["loaded"] = False
+
+
+def _load_miss_model() -> None:
+    miss_model_version = os.getenv("MISS_MODEL_VERSION")
+    models_root = Path(os.getenv("MODELS_DIR", "/app/models"))
+
+    if not miss_model_version:
+        miss_dir = models_root / "miss_active"
+        if miss_dir.exists() and miss_dir.is_symlink():
+            try:
+                miss_model_version = miss_dir.resolve().name
+            except Exception:
+                miss_model_version = None
+
+    if not miss_model_version:
+        miss_dirs = sorted(
+            [
+                d
+                for d in models_root.iterdir()
+                if d.name.startswith("miss_v") and d.is_dir()
+            ],
+            key=lambda d: int(d.name.replace("miss_v", "")),
+            reverse=True,
+        )
+        if miss_dirs:
+            miss_model_version = miss_dirs[0].name
+
+    if not miss_model_version:
+        logger.info("No miss model found, running without miss model")
+        return
+
+    miss_dir = models_root / miss_model_version
+    logger.info("Loading miss model from %s", miss_dir)
+
+    try:
+        feat_path = miss_dir / "miss_feature_extractor.joblib"
+        if not feat_path.exists():
+            logger.warning(
+                "Miss model files incomplete at %s (missing feature extractor)",
+                miss_dir,
+            )
+            return
+
+        _model_state["miss_feature_extractor"] = joblib.load(str(feat_path))
+        _model_state["miss_model_version"] = miss_model_version
+
+        onnx_cal_path = miss_dir / "miss_calibrator.onnx"
+        if onnx_cal_path.exists():
+            import onnxruntime as ort
+
+            _model_state["miss_onnx_session"] = ort.InferenceSession(
+                str(onnx_cal_path), providers=["CPUExecutionProvider"]
+            )
+            _model_state["miss_onnx_input_name"] = (
+                _model_state["miss_onnx_session"].get_inputs()[0].name
+            )
+            _model_state["miss_model_loaded"] = True
+            logger.info("Miss model %s loaded (ONNX calibrator)", miss_model_version)
+            return
+
+        onnx_model_path = miss_dir / "miss_model.onnx"
+        if onnx_model_path.exists():
+            import onnxruntime as ort
+
+            _model_state["miss_onnx_session"] = ort.InferenceSession(
+                str(onnx_model_path), providers=["CPUExecutionProvider"]
+            )
+            _model_state["miss_onnx_input_name"] = (
+                _model_state["miss_onnx_session"].get_inputs()[0].name
+            )
+            _model_state["miss_model_loaded"] = True
+            logger.info("Miss model %s loaded (ONNX raw)", miss_model_version)
+            return
+
+        cal_path = miss_dir / "miss_calibrator.joblib"
+        if cal_path.exists():
+            _model_state["miss_calibrator"] = joblib.load(str(cal_path))
+            _model_state["miss_model_loaded"] = True
+            logger.info("Miss model %s loaded (joblib)", miss_model_version)
+        else:
+            logger.warning(
+                "Miss model files incomplete at %s (missing calibrator)", miss_dir
+            )
+    except Exception as exc:
+        logger.error("Failed to load miss model: %s", exc)
+        _model_state["miss_model_loaded"] = False
 
 
 @asynccontextmanager
@@ -271,7 +413,7 @@ def _validate_input(event: CorazaAuditEvent) -> Optional[str]:
 
     schema = _model_state.get("feature_schema")
     if not schema:
-        return None  # No schema loaded — skip validation
+        return None
 
     errors: List[str] = []
 
@@ -313,7 +455,7 @@ def _compute_entropy(prob: float) -> tuple[float, float]:
     p = max(1e-12, min(1 - 1e-12, prob))
     q = 1.0 - p
     h = -(p * math.log2(p) + q * math.log2(q))
-    h_norm = h / 1.0  # normalise by H_max = 1 bit
+    h_norm = h / 1.0
     return round(h, 6), round(h_norm, 6)
 
 
@@ -449,7 +591,7 @@ async def predict(event: CorazaAuditEvent) -> JSONResponse:
             recommended_priority=band,
             priority_reasoning=reasoning,
             conformal_prediction_set=conf_set,
-            advisory_only=True,  # Req 8.4 — hardcoded
+            advisory_only=True,
         )
         return JSONResponse(content=response.model_dump())
 
@@ -552,20 +694,71 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
 
     t_start = time.perf_counter()
 
+    request_dict = {
+        "method": event.method,
+        "uri": event.uri,
+        "headers": event.headers or {},
+        "body": event.body or "",
+    }
+
+    if _model_state.get("miss_model_loaded"):
+        try:
+            miss_extractor = _model_state["miss_feature_extractor"]
+            features = miss_extractor.transform(request_dict)
+            X_onnx = np.asarray(features, dtype=np.float32)
+
+            miss_onnx = _model_state.get("miss_onnx_session")
+            if miss_onnx is not None:
+                out = miss_onnx.run(
+                    None, {_model_state["miss_onnx_input_name"]: X_onnx}
+                )
+                prob = float(out[1][0][1])
+                attack_probability = round(max(0.0, min(1.0, prob)), 6)
+            else:
+                miss_calibrator = _model_state["miss_calibrator"]
+                prob_raw = miss_calibrator.predict_proba(features)[0][1]
+                attack_probability = float(round(max(0.0, min(1.0, prob_raw)), 6))
+
+            heuristic_boost = _miss_heuristic_score(request_dict)
+            attack_probability = round(
+                min(attack_probability + heuristic_boost * 0.15, 0.99), 6
+            )
+
+            entropy, h_norm = _compute_entropy(attack_probability)
+            confidence_score = round((1.0 - h_norm) * 100.0, 2)
+            band, reasoning = _assign_priority(attack_probability, 0.5, h_norm)
+
+            elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+            _prediction_count += 1
+            _total_latency_ms += elapsed_ms
+            _recent_latencies.append(elapsed_ms)
+            _record_prediction(time.time())
+            if len(_recent_latencies) > 1000:
+                _recent_latencies = _recent_latencies[-1000:]
+
+            return JSONResponse(
+                content={
+                    "attack_probability": attack_probability,
+                    "confidence_score": confidence_score,
+                    "recommended_priority": band,
+                    "priority_reasoning": reasoning,
+                    "entropy": entropy,
+                    "entropy_normalized": h_norm,
+                    "advisory_only": True,
+                    "heuristic_score": round(heuristic_boost, 3),
+                    "model_version": f"miss_{_model_state.get('miss_model_version', 'unknown')}",
+                }
+            )
+        except Exception as exc:
+            logger.warning("Trained miss model failed, trying ONNX: %s", exc)
+
     try:
         miss_path = os.getenv("MISS_ONNX_MODEL_PATH", "/app/models/modintel.onnx")
         if miss_path and Path(miss_path).exists():
             from miss_onnx import MissONNXInference
 
             miss_infer = MissONNXInference(miss_path)
-            result = miss_infer.predict(
-                {
-                    "method": event.method,
-                    "uri": event.uri,
-                    "headers": event.headers or {},
-                    "body": event.body or "",
-                }
-            )
+            result = miss_infer.predict(request_dict)
             elapsed_ms = (time.perf_counter() - t_start) * 1000.0
             _prediction_count += 1
             _total_latency_ms += elapsed_ms
@@ -599,13 +792,7 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
         feature_vector = extractor.transform(record)
         prob_raw = calibrator.predict_proba(feature_vector)[0][1]
         attack_probability = float(round(prob_raw, 6))
-        heuristic_boost = _miss_heuristic_score(
-            {
-                "uri": event.uri,
-                "body": event.body or "",
-                "headers": event.headers or {},
-            }
-        )
+        heuristic_boost = _miss_heuristic_score(request_dict)
         attack_probability = round(
             min(attack_probability + heuristic_boost * 0.3, 0.99), 6
         )
