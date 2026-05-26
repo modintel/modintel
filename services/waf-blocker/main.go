@@ -73,7 +73,7 @@ func (pf *Prefilter) Evaluate(method, uri, body string, headers map[string]strin
 	text := method + " " + uri + " " + body
 	for k, v := range headers {
 		lk := strings.ToLower(k)
-		if lk != "user-agent" && lk != "cookie" {
+		if lk != "user-agent" && lk != "cookie" && !strings.HasPrefix(lk, "accept") && lk != "sec-fetch-site" && lk != "sec-fetch-mode" && lk != "sec-fetch-dest" {
 			text += " " + v
 		}
 	}
@@ -107,6 +107,25 @@ type inferResponse struct {
 	RecommendedPriority string  `json:"recommended_priority"`
 	AdvisoryOnly        bool    `json:"advisory_only"`
 	Error               string  `json:"error,omitempty"`
+}
+
+type evalMissRequest struct {
+	Method    string            `json:"method"`
+	URI       string            `json:"uri"`
+	Headers   map[string]string `json:"headers"`
+	Body      string            `json:"body"`
+	RateScore float64           `json:"rate_score"`
+	RepScore  float64           `json:"rep_score"`
+}
+
+type evalMissResponse struct {
+	MLScore     float64           `json:"ml_score"`
+	RateScore   float64           `json:"rate_score"`
+	RepScore    float64           `json:"rep_score"`
+	Composite   float64           `json:"composite"`
+	Decision    string            `json:"decision"`
+	Breakdown   map[string]float64 `json:"breakdown"`
+	ModelVersion string           `json:"model_version"`
 }
 
 type trafficBucket struct {
@@ -192,15 +211,43 @@ type blockEvent struct {
 	ClientIP    string            `json:"client_ip"`
 }
 
+type ipRateEntry struct {
+	Timestamps []time.Time
+}
+
+type ipBlockEntry struct {
+	ExpiresAt time.Time
+	Reason    string
+}
+
+type ipReputation struct {
+	RepScore float64
+	Updated  time.Time
+}
+
 type Blocker struct {
 	prefilter      *Prefilter
 	inferenceURL   string
+	evalMissURL    string
 	blockThreshold float64
 	reportURL      string
 	proxy          *httputil.ReverseProxy
 	client         *http.Client
 	traffic        *trafficStats
 	thresholdMu    sync.RWMutex
+
+	blocklistMu  sync.RWMutex
+	blocklist    map[string]ipBlockEntry
+
+	rateMu       sync.Mutex
+	rateTracker  map[string]*ipRateEntry
+
+	repMu        sync.RWMutex
+	repCache     map[string]ipReputation
+
+	maxRateRPM    float64
+	blockTTL      time.Duration
+	rateWindowSec int
 }
 
 func (b *Blocker) SetThreshold(t float64) {
@@ -233,6 +280,7 @@ func NewBlocker(prefilter *Prefilter, inferenceURL, backendURL, reportURL string
 	return &Blocker{
 		prefilter:      prefilter,
 		inferenceURL:   inferenceURL,
+		evalMissURL:    strings.Replace(inferenceURL, "/predict-miss", "/eval-miss", 1),
 		blockThreshold: blockThreshold,
 		reportURL:      reportURL,
 		proxy:          proxy,
@@ -241,6 +289,12 @@ func NewBlocker(prefilter *Prefilter, inferenceURL, backendURL, reportURL string
 			Timeout:   10 * time.Second,
 			Transport: transport,
 		},
+		blocklist:   make(map[string]ipBlockEntry),
+		rateTracker: make(map[string]*ipRateEntry),
+		repCache:    make(map[string]ipReputation),
+		maxRateRPM:  120.0,
+		blockTTL:    30 * time.Minute,
+		rateWindowSec: 60,
 	}
 }
 
@@ -265,6 +319,32 @@ func (b *Blocker) callInference(method, uri string, headers map[string]string, b
 	}
 
 	return result.AttackProbability, nil
+}
+
+func (b *Blocker) callEvalMiss(method, uri string, headers map[string]string, body string, rateScore, repScore float64) (*evalMissResponse, error) {
+	req := evalMissRequest{
+		Method: method, URI: uri, Headers: headers, Body: body,
+		RateScore: rateScore, RepScore: repScore,
+	}
+	data, _ := json.Marshal(req)
+
+	resp, err := b.client.Post(b.evalMissURL, "application/json", bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("eval-miss call failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("eval-miss returned %d: %s", resp.StatusCode, string(errBody))
+	}
+
+	var result evalMissResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode eval-miss response: %w", err)
+	}
+
+	return &result, nil
 }
 
 func (b *Blocker) reportBlock(r *http.Request, matchedIDs []string, probability float64, body string) {
@@ -319,10 +399,110 @@ func isWebSocket(r *http.Request) bool {
 		strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 }
 
+func (b *Blocker) getRateScore(ip string) float64 {
+	now := time.Now()
+	cutoff := now.Add(-time.Duration(b.rateWindowSec) * time.Second)
+
+	b.rateMu.Lock()
+	entry, exists := b.rateTracker[ip]
+	if !exists {
+		entry = &ipRateEntry{Timestamps: make([]time.Time, 0, 16)}
+		b.rateTracker[ip] = entry
+	}
+
+	entry.Timestamps = append(entry.Timestamps, now)
+
+	filtered := entry.Timestamps[:0]
+	for _, ts := range entry.Timestamps {
+		if ts.After(cutoff) {
+			filtered = append(filtered, ts)
+		}
+	}
+	entry.Timestamps = filtered
+	count := len(filtered)
+	b.rateMu.Unlock()
+
+	frequency := float64(count)
+	baseline := float64(count) * 0.9
+	if count < 2 {
+		baseline = 1.0
+	}
+
+	frequencyScore := frequency / b.maxRateRPM
+	if frequencyScore > 1.0 {
+		frequencyScore = 1.0
+	}
+
+	var burstScore float64
+	if baseline > 0.5 {
+		ratio := (frequency - baseline) / baseline
+		burstScore = ratio / (1.0 + ratio)
+		if burstScore > 1.0 {
+			burstScore = 1.0
+		}
+	} else {
+		burstScore = 0.0
+	}
+
+	return 0.6*frequencyScore + 0.4*burstScore
+}
+
+func (b *Blocker) getRepScore(ip string) float64 {
+	b.repMu.RLock()
+	rep, exists := b.repCache[ip]
+	b.repMu.RUnlock()
+	if exists && time.Since(rep.Updated) < 5*time.Minute {
+		return rep.RepScore
+	}
+	return 0.0
+}
+
+func (b *Blocker) isBlocked(ip string) bool {
+	b.blocklistMu.RLock()
+	entry, exists := b.blocklist[ip]
+	b.blocklistMu.RUnlock()
+
+	if !exists {
+		return false
+	}
+	if time.Now().After(entry.ExpiresAt) {
+		b.blocklistMu.Lock()
+		delete(b.blocklist, ip)
+		b.blocklistMu.Unlock()
+		return false
+	}
+	return true
+}
+
+func (b *Blocker) addToBlocklist(ip string, reason string) {
+	b.blocklistMu.Lock()
+	b.blocklist[ip] = ipBlockEntry{
+		ExpiresAt: time.Now().Add(b.blockTTL),
+		Reason:    reason,
+	}
+	b.blocklistMu.Unlock()
+	log.Printf("BLOCKLIST: added %s (reason: %s, TTL: %v)", ip, reason, b.blockTTL)
+}
+
 func (b *Blocker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if isWebSocket(r) {
 		b.traffic.record(time.Now(), false)
 		b.proxy.ServeHTTP(w, r)
+		return
+	}
+
+	clientIP := extractClientIP(r)
+
+	if b.isBlocked(clientIP) {
+		log.Printf("BLOCKED (blocklist) %s %s from %s", r.Method, r.URL.RequestURI(), clientIP)
+		b.traffic.record(time.Now(), true)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "blocked",
+			"reason":  "ip_blocklisted",
+			"message": "Your IP has been blocked by Layer 2 WAF",
+		})
 		return
 	}
 
@@ -352,30 +532,65 @@ func (b *Blocker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Regex matched [%s] for %s %s", strings.Join(matched, ", "), r.Method, r.URL.RequestURI())
 
-	probability, err := b.callInference(r.Method, r.URL.RequestURI(), headers, string(bodyBytes))
+	rateScore := b.getRateScore(clientIP)
+	repScore := b.getRepScore(clientIP)
+
+	evalResult, err := b.callEvalMiss(r.Method, r.URL.RequestURI(), headers, string(bodyBytes), rateScore, repScore)
 	if err != nil {
-		log.Printf("Inference error (fail-open): %v", err)
+		log.Printf("Eval-miss error (falling back to /predict-miss): %v", err)
+		probability, err2 := b.callInference(r.Method, r.URL.RequestURI(), headers, string(bodyBytes))
+		if err2 != nil {
+			log.Printf("Inference error (fail-open): %v", err2)
+			b.traffic.record(time.Now(), false)
+			b.proxy.ServeHTTP(w, r)
+			return
+		}
+		if probability >= b.GetThreshold() {
+			log.Printf("BLOCKED (fallback) %s %s (p=%.4f >= %.2f)", r.Method, r.URL.RequestURI(), probability, b.GetThreshold())
+			b.traffic.record(time.Now(), true)
+			go b.reportBlock(r, matched, probability, string(bodyBytes))
+			b.addToBlocklist(clientIP, fmt.Sprintf("ml_score=%.4f (fallback)", probability))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":  "blocked",
+				"reason":  "ml_layer2",
+				"score":   probability,
+				"message": "Blocked by ML-based Layer 2 WAF",
+			})
+			return
+		}
+		log.Printf("ALLOWED (fallback) %s %s (p=%.4f < %.2f)", r.Method, r.URL.RequestURI(), probability, b.GetThreshold())
 		b.traffic.record(time.Now(), false)
 		b.proxy.ServeHTTP(w, r)
 		return
 	}
 
-	if probability >= b.GetThreshold() {
-		log.Printf("BLOCKED %s %s (p=%.4f >= %.2f)", r.Method, r.URL.RequestURI(), probability, b.GetThreshold())
+	log.Printf("Eval: %s %s ml=%.4f rate=%.4f rep=%.4f composite=%.4f decision=%s",
+		r.Method, r.URL.RequestURI(), evalResult.MLScore, evalResult.RateScore, evalResult.RepScore,
+		evalResult.Composite, evalResult.Decision)
+
+	threshold := b.GetThreshold()
+	if evalResult.Composite >= threshold {
+		log.Printf("BLOCKED %s %s (composite=%.4f >= %.2f)", r.Method, r.URL.RequestURI(), evalResult.Composite, threshold)
 		b.traffic.record(time.Now(), true)
-		go b.reportBlock(r, matched, probability, string(bodyBytes))
+		go b.reportBlock(r, matched, evalResult.MLScore, string(bodyBytes))
+		b.addToBlocklist(clientIP, fmt.Sprintf("composite=%.4f ml=%.4f rate=%.4f rep=%.4f",
+			evalResult.Composite, evalResult.MLScore, evalResult.RateScore, evalResult.RepScore))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":  "blocked",
-			"reason":  "ml_layer2",
-			"score":   probability,
-			"message": "Blocked by ML-based Layer 2 WAF",
+			"status":    "blocked",
+			"reason":    "ml_layer2",
+			"score":     evalResult.MLScore,
+			"composite": evalResult.Composite,
+			"breakdown": evalResult.Breakdown,
+			"message":   "Blocked by ML-based Layer 2 WAF",
 		})
 		return
 	}
 
-	log.Printf("ALLOWED %s %s (p=%.4f < %.2f)", r.Method, r.URL.RequestURI(), probability, b.GetThreshold())
+	log.Printf("ALLOWED %s %s (composite=%.4f < %.2f)", r.Method, r.URL.RequestURI(), evalResult.Composite, threshold)
 	b.traffic.record(time.Now(), false)
 	b.proxy.ServeHTTP(w, r)
 }
@@ -422,6 +637,78 @@ func (b *Blocker) handleThreshold(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (b *Blocker) handleBlocklist(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	now := time.Now()
+
+	switch r.Method {
+	case http.MethodGet:
+		b.blocklistMu.RLock()
+		type entry struct {
+			IP        string `json:"ip"`
+			ExpiresIn string `json:"expires_in"`
+			Reason    string `json:"reason"`
+		}
+		var entries []entry
+		for ip, e := range b.blocklist {
+			if now.After(e.ExpiresAt) {
+				continue
+			}
+			entries = append(entries, entry{
+				IP:        ip,
+				ExpiresIn: e.ExpiresAt.Sub(now).Round(time.Second).String(),
+				Reason:    e.Reason,
+			})
+		}
+		b.blocklistMu.RUnlock()
+		if entries == nil {
+			entries = []entry{}
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"count":   len(entries),
+			"entries": entries,
+		})
+
+	case http.MethodDelete:
+		ip := strings.TrimPrefix(r.URL.Path, "/api/waf/blocklist/")
+		if ip == "" || ip == r.URL.Path {
+			http.Error(w, "IP required", http.StatusBadRequest)
+			return
+		}
+		b.blocklistMu.Lock()
+		delete(b.blocklist, ip)
+		b.blocklistMu.Unlock()
+		log.Printf("BLOCKLIST: removed %s (manual unblock)", ip)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "ip": ip})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (b *Blocker) handleReputation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		IP       string  `json:"ip"`
+		RepScore float64 `json:"rep_score"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	b.repMu.Lock()
+	b.repCache[req.IP] = ipReputation{
+		RepScore: req.RepScore,
+		Updated:  time.Now(),
+	}
+	b.repMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
 func env(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -435,7 +722,7 @@ func main() {
 	backendURL := env("BACKEND_URL", "http://juice-shop:3000")
 	reportURL := env("REPORT_URL", "http://log-collector:8081/api/waf/block-event")
 	listenAddr := env("LISTEN_ADDR", ":8086")
-	blockThreshold := 0.94
+	blockThreshold := 0.85
 
 	log.Printf("Loading signatures from %s", signaturesFile)
 	prefilter, err := LoadPrefilter(signaturesFile)
@@ -449,6 +736,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/waf/traffic", blocker.handleTraffic)
 	mux.HandleFunc("/api/waf/threshold", blocker.handleThreshold)
+	mux.HandleFunc("/api/waf/blocklist/", blocker.handleBlocklist)
+	mux.HandleFunc("/api/waf/blocklist", blocker.handleBlocklist)
+	mux.HandleFunc("/api/waf/reputation", blocker.handleReputation)
 	mux.HandleFunc("/health", blocker.handleHealth)
 	mux.Handle("/", blocker)
 
@@ -460,8 +750,8 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	log.Printf("Starting waf-blocker on %s (threshold=%.2f, inference=%s, backend=%s, report=%s)",
-		listenAddr, blockThreshold, inferenceURL, backendURL, reportURL)
+	log.Printf("Starting waf-blocker on %s (threshold=%.2f, eval-miss=%s, backend=%s, report=%s)",
+		listenAddr, blockThreshold, blocker.evalMissURL, backendURL, reportURL)
 
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Server error: %v", err)

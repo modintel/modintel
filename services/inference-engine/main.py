@@ -46,11 +46,46 @@ _recent_latencies: list = []
 _prediction_buckets: Dict[int, int] = {}
 _prediction_bucket_lock = threading.Lock()
 _sqli_patterns = re.compile(
-    r"(?:'|\bunion\b|\bselect\b|\binsert\b|\bdrop\b|\bexec\b|--|;)",
+    r"(?:"
+    r"(?<!\w)(?:UNION\s+(?:ALL\s+)?SELECT)"  # UNION SELECT
+    r"|(?<!\w)(?:SELECT\s+(?:TOP\s+\d+\s+)?.*?\s+FROM)"  # SELECT ... FROM
+    r"|(?<!\w)(?:INSERT\s+INTO)"  # INSERT INTO
+    r"|(?<!\w)(?:DROP\s+(?:TABLE|DATABASE|INDEX|VIEW|PROCEDURE))"  # DROP
+    r"|(?<!\w)(?:ALTER\s+(?:TABLE|DATABASE|INDEX))"  # ALTER
+    r"|(?<!\w)(?:CREATE\s+(?:TABLE|DATABASE|INDEX|VIEW))"  # CREATE
+    r"|(?<!\w)(?:EXEC\s+(?:xp_|sp_))"  # stored procedures
+    r"|(?<!\w)(?:DECLARE\s+@)"  # variable declaration
+    r"|(?<!\w)(?:WAITFOR\s+DELAY)"  # time-based
+    r"|(?<!\w)(?:SLEEP\s*\()"  # time-based
+    r"|(?<!\w)(?:BENCHMARK\s*\()"  # time-based
+    r"|(?<!\w)(?:pg_sleep\s*\()"  # pg time-based
+    r"|(?<!\w)(?:INTO\s+(?:OUT|DUMP)FILE)"  # file write
+    r"|information_schema"  # schema discovery
+    r"|@@version"  # version probe
+    r"|['\"]\s*(?:OR|AND|UNION)\s*['\"]"  # ' OR ' / " AND "
+    r"|\d+\s*['\"]\s*(?:OR|AND|UNION)"  # 1' OR
+    r"|['\"]\s*(?:--|#)"  # ' -- / ' #
+    r"|;\s*(?:DROP|DELETE|INSERT|UPDATE|EXEC|CREATE|ALTER|TRUNCATE|EXECUTE)"  # stacked
+    r")",
     re.IGNORECASE,
 )
 _xss_patterns = re.compile(
-    r"(?:<script|javascript:|onerror\s*=|onload\s*=|alert\s*\(|document\.cookie)",
+    r"(?:"
+    r"<script[^>]*src\s*="  # <script src=
+    r"|(?:javascript|data|vbscript)\s*:"  # javascript: / data: / vbscript:
+    r"|onerror\s*="  # onerror=
+    r"|onload\s*="  # onload=
+    r"|onfocus\s*="  # onfocus=
+    r"|onblur\s*="  # onblur=
+    r"|onclick\s*="  # onclick=
+    r"|onmouseover\s*="  # onmouseover=
+    r"|onsubmit\s*="  # onsubmit=
+    r"|alert\s*\("  # alert(
+    r"|eval\s*\("  # eval(
+    r"|innerHTML\s*="  # innerHTML=
+    r"|outerHTML\s*="  # outerHTML=
+    r"|document\.write\s*\("  # document.write(
+    r")",
     re.IGNORECASE,
 )
 _traversal_patterns = re.compile(
@@ -99,6 +134,26 @@ _EVENT_HANDLERS = [
 ]
 
 
+def _keywords_in_proximity(
+    text: str, keywords: list, threshold: int = 3, window: int = 100
+) -> bool:
+    text_lower = text.lower()
+    positions = []
+    for kw in keywords:
+        start = 0
+        while True:
+            idx = text_lower.find(kw, start)
+            if idx == -1:
+                break
+            positions.append(idx)
+            start = idx + len(kw)
+    positions.sort()
+    for i in range(len(positions) - threshold + 1):
+        if positions[i + threshold - 1] - positions[i] <= window:
+            return True
+    return False
+
+
 def _miss_heuristic_score(event: dict) -> float:
     score = 0.0
     uri = (event.get("uri") or "").lower()
@@ -123,7 +178,7 @@ def _miss_heuristic_score(event: dict) -> float:
         score += 0.10
     if _nosql_patterns.search(content):
         score += 0.20
-    if _ssti_patterns.search(content):
+    if _ssti_patterns.search(uri):
         score += 0.25
     if _log4j_patterns.search(content):
         score += 0.35
@@ -133,14 +188,29 @@ def _miss_heuristic_score(event: dict) -> float:
         score += 0.15
     if not ua or ua == "-" or len(ua) < 10:
         score += 0.10
-    if sum(1 for kw in _SQL_KEYWORDS if kw in content) >= 2:
+    if _keywords_in_proximity(content, _SQL_KEYWORDS, threshold=4, window=60):
         score += 0.20
-    if sum(1 for tag in _XSS_TAGS if tag in content) >= 1:
+    if sum(1 for tag in _XSS_TAGS if tag in uri) >= 1:
         score += 0.15
-    if sum(1 for h in _EVENT_HANDLERS if h in content) >= 1:
+    if sum(1 for h in _EVENT_HANDLERS if h in uri) >= 1:
         score += 0.15
 
     return min(score, 0.98)
+
+
+def _apply_heuristic_boost(
+    prob_raw: float,
+    heuristic_boost: float,
+    multiplier: float = 0.15,
+    ceiling: float = 0.95,
+) -> float:
+    boost = heuristic_boost * multiplier
+    prob = prob_raw + boost * (1.0 - prob_raw)
+    return round(min(prob, ceiling), 6)
+
+
+def _heuristic_ci_width(heuristic_boost: float) -> float:
+    return round(0.05 + heuristic_boost * 0.25, 4)
 
 
 def _record_prediction(ts: float, count: int = 1) -> None:
@@ -407,6 +477,28 @@ class AdvisoryResponse(BaseModel):
     priority_reasoning: str = ""
     conformal_prediction_set: List[str] = []
     advisory_only: bool = True
+
+
+class MissEvalRequest(BaseModel):
+    method: str = Field(..., description="HTTP method")
+    uri: str = Field(..., description="Request URI")
+    headers: Optional[Any] = Field(default=None)
+    body: Optional[str] = Field(default=None)
+    rate_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    rep_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    model_config = {"extra": "allow"}
+
+
+class EvalResponse(BaseModel):
+    ml_score: float
+    rate_score: float
+    rep_score: float
+    composite: float
+    decision: str
+    advised_priority: str
+    priority_reasoning: str
+    breakdown: Dict[str, float]
+    model_version: str
 
 
 def _validate_input(event: CorazaAuditEvent) -> Optional[str]:
@@ -713,20 +805,27 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
                     None, {_model_state["miss_onnx_input_name"]: X_onnx}
                 )
                 prob = float(out[1][0][1])
-                attack_probability = round(max(0.0, min(1.0, prob)), 6)
+                prob_raw = round(max(0.0, min(1.0, prob)), 6)
             else:
                 miss_calibrator = _model_state["miss_calibrator"]
-                prob_raw = miss_calibrator.predict_proba(features)[0][1]
-                attack_probability = float(round(max(0.0, min(1.0, prob_raw)), 6))
+                prob_raw = float(
+                    round(
+                        max(
+                            0.0, min(1.0, miss_calibrator.predict_proba(features)[0][1])
+                        ),
+                        6,
+                    )
+                )
 
             heuristic_boost = _miss_heuristic_score(request_dict)
-            attack_probability = round(
-                min(attack_probability + heuristic_boost * 0.15, 0.99), 6
+            attack_probability = _apply_heuristic_boost(
+                prob_raw, heuristic_boost, multiplier=0.15
             )
 
+            ci_width = _heuristic_ci_width(heuristic_boost)
             entropy, h_norm = _compute_entropy(attack_probability)
             confidence_score = round((1.0 - h_norm) * 100.0, 2)
-            band, reasoning = _assign_priority(attack_probability, 0.0, h_norm)
+            band, reasoning = _assign_priority(attack_probability, ci_width, h_norm)
 
             elapsed_ms = (time.perf_counter() - t_start) * 1000.0
             _prediction_count += 1
@@ -791,14 +890,16 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
         }
         feature_vector = extractor.transform(record)
         prob_raw = calibrator.predict_proba(feature_vector)[0][1]
-        attack_probability = float(round(prob_raw, 6))
+        prob_raw = float(round(prob_raw, 6))
         heuristic_boost = _miss_heuristic_score(request_dict)
-        attack_probability = round(
-            min(attack_probability + heuristic_boost * 0.3, 0.99), 6
+        attack_probability = _apply_heuristic_boost(
+            prob_raw, heuristic_boost, multiplier=0.15
         )
+
+        ci_width = _heuristic_ci_width(heuristic_boost)
         entropy, h_norm = _compute_entropy(attack_probability)
         confidence_score = round((1.0 - h_norm) * 100.0, 2)
-        band, reasoning = _assign_priority(attack_probability, 0.0, h_norm)
+        band, reasoning = _assign_priority(attack_probability, ci_width, h_norm)
         elapsed_ms = (time.perf_counter() - t_start) * 1000.0
         _prediction_count += 1
         _total_latency_ms += elapsed_ms
@@ -825,6 +926,130 @@ async def predict_miss(event: CorazaAuditEvent) -> JSONResponse:
             status_code=500,
             content={"ai_status": "unavailable", "error": "Internal server error"},
         )
+
+
+_COMPOSITE_ML_WEIGHT = float(os.getenv("COMPOSITE_ML_WEIGHT", "0.50"))
+_COMPOSITE_RATE_WEIGHT = float(os.getenv("COMPOSITE_RATE_WEIGHT", "0.25"))
+_COMPOSITE_REP_WEIGHT = float(os.getenv("COMPOSITE_REP_WEIGHT", "0.25"))
+
+
+@app.post("/eval-miss")
+async def eval_miss(req: MissEvalRequest) -> JSONResponse:
+    logger.info(f"[/eval-miss] evaluating {req.method} {req.uri}")
+    global _prediction_count, _total_latency_ms, _recent_latencies
+
+    t_start = time.perf_counter()
+
+    request_dict = {
+        "method": req.method,
+        "uri": req.uri,
+        "headers": req.headers or {},
+        "body": req.body or "",
+    }
+
+    heuristic_boost = _miss_heuristic_score(request_dict)
+
+    ml_score = 0.0
+    ml_ok = False
+
+    if _model_state.get("miss_model_loaded"):
+        try:
+            miss_extractor = _model_state["miss_feature_extractor"]
+            features = miss_extractor.transform(request_dict)
+            X_onnx = np.asarray(features, dtype=np.float32)
+            miss_onnx = _model_state.get("miss_onnx_session")
+            if miss_onnx is not None:
+                out = miss_onnx.run(
+                    None, {_model_state["miss_onnx_input_name"]: X_onnx}
+                )
+                prob = float(out[1][0][1])
+                prob_raw = round(max(0.0, min(1.0, prob)), 6)
+            else:
+                miss_calibrator = _model_state["miss_calibrator"]
+                prob_raw = float(
+                    round(
+                        max(
+                            0.0, min(1.0, miss_calibrator.predict_proba(features)[0][1])
+                        ),
+                        6,
+                    )
+                )
+            ml_score = _apply_heuristic_boost(
+                prob_raw, heuristic_boost, multiplier=0.15
+            )
+            ml_ok = True
+        except Exception:
+            pass
+
+    if not ml_ok and _model_state["loaded"]:
+        try:
+            extractor = _model_state["feature_extractor"]
+            calibrator = _model_state["calibrator"]
+            record = {
+                "method": req.method,
+                "uri": req.uri,
+                "headers": req.headers or {},
+                "body": req.body or "",
+                "fired_rule_ids": [],
+                "rule_severities": {},
+                "rule_messages": {},
+                "anomaly_score": 0.0,
+                "inbound_threshold": 0.0,
+            }
+            prob_raw = float(
+                round(calibrator.predict_proba(extractor.transform(record))[0][1], 6)
+            )
+            ml_score = _apply_heuristic_boost(
+                prob_raw, heuristic_boost, multiplier=0.15
+            )
+            ml_ok = True
+        except Exception:
+            pass
+
+    rate_score = max(0.0, min(1.0, req.rate_score))
+    rep_score = max(0.0, min(1.0, req.rep_score))
+
+    ml_contrib = ml_score * _COMPOSITE_ML_WEIGHT
+    rate_contrib = rate_score * _COMPOSITE_RATE_WEIGHT
+    rep_contrib = rep_score * _COMPOSITE_REP_WEIGHT
+    composite = round(ml_contrib + rate_contrib + rep_contrib, 4)
+
+    if composite >= 0.85:
+        decision = "block"
+    elif composite >= 0.50:
+        decision = "monitor"
+    else:
+        decision = "allow"
+
+    ci_width = _heuristic_ci_width(heuristic_boost)
+    entropy, h_norm = _compute_entropy(ml_score)
+    band, reasoning = _assign_priority(ml_score, ci_width, h_norm)
+
+    elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+    _prediction_count += 1
+    _total_latency_ms += elapsed_ms
+    _recent_latencies.append(elapsed_ms)
+    _record_prediction(time.time())
+    if len(_recent_latencies) > 1000:
+        _recent_latencies = _recent_latencies[-1000:]
+
+    return JSONResponse(
+        content={
+            "ml_score": round(ml_score, 4),
+            "rate_score": rate_score,
+            "rep_score": rep_score,
+            "composite": composite,
+            "decision": decision,
+            "advised_priority": band,
+            "priority_reasoning": reasoning,
+            "breakdown": {
+                "ml_contribution": round(ml_contrib, 4),
+                "rate_contribution": round(rate_contrib, 4),
+                "rep_contribution": round(rep_contrib, 4),
+            },
+            "model_version": _model_state.get("model_version", "unknown"),
+        }
+    )
 
 
 @app.get("/health")

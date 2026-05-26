@@ -60,7 +60,7 @@ func (pf *Prefilter) Evaluate(method, uri, body string, headers map[string]strin
 	text := method + " " + uri + " " + body
 	for k, v := range headers {
 		lowerKey := strings.ToLower(k)
-		if lowerKey != "user-agent" && lowerKey != "cookie" {
+		if lowerKey != "user-agent" && lowerKey != "cookie" && !strings.HasPrefix(lowerKey, "accept") && lowerKey != "sec-fetch-site" && lowerKey != "sec-fetch-mode" && lowerKey != "sec-fetch-dest" {
 			text += " " + v
 		}
 	}

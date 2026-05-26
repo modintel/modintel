@@ -133,6 +133,8 @@ func isInternalIP(ip string) bool {
 	return false
 }
 
+var _ = strings.HasPrefix // keep strings import
+
 func cleanupBodyCache() {
 	bodyCacheMu.Lock()
 	defer bodyCacheMu.Unlock()
