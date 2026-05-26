@@ -4,10 +4,6 @@ WORKDIR /app
 
 # Copy requirements first
 COPY services/training-api/requirements.txt .
-<<<<<<< HEAD
-=======
-RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir --no-deps xgboost>=2.0.0
->>>>>>> b1d3942 (fix: training-api dockerfile missing audit_client module)
 
 # Install system build tools
 RUN apt-get update && apt-get install -y gcc g++ libffi-dev

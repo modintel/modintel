@@ -1,11 +1,6 @@
 fastapi>=0.109.0
-<<<<<<< HEAD
 uvicorn[standard]>=0.27.0
 pymongo>=4.6.3
-=======
-uvicorn>=0.27.0
-pymongo>=4.6.0
->>>>>>> b1d3942 (fix: training-api dockerfile missing audit_client module)
 pydantic>=2.5.0
 python-multipart>=0.0.6
 numpy>=1.26.0
