@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import re
 import socket
@@ -16,13 +17,18 @@ from pydantic import BaseModel
 from pymongo import MongoClient
 from bson import ObjectId
 
+log = logging.getLogger(__name__)
+
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongodb:27017")
 DATABASE_NAME = os.getenv("MONGO_DB_NAME", "modintel")
 TRAIN_SCRIPT = os.getenv("TRAIN_SCRIPT", "/app/ml-pipeline/train_model.py")
-MISS_TRAIN_SCRIPT = os.getenv("MISS_TRAIN_SCRIPT", "/app/ml-pipeline/train_miss_from_review.py")
+MISS_TRAIN_SCRIPT = os.getenv(
+    "MISS_TRAIN_SCRIPT", "/app/ml-pipeline/train_miss_from_review.py"
+)
 MODELS_DIR = os.getenv("MODELS_DIR", "/app/models")
 COMPOSE_PROJECT = os.getenv("COMPOSE_PROJECT_NAME", "joab")
 DATA_DIR = os.getenv("ML_PIPELINE_DATA_DIR", "/app/data")
+
 
 class TrainingJob:
     def __init__(self, version: str, dataset: str, model_type: str):
@@ -250,10 +256,14 @@ def _save_training_result(job: TrainingJob, metrics: dict):
         "svm": "SVM",
     }
 
-    collection.update_many({"active": True}, {"$set": {"active": False}})
+    collection.update_many(
+        {"active": True, "model_family": {"$ne": "miss"}},
+        {"$set": {"active": False}},
+    )
     doc = {
         "version": job.version,
         "model_type": model_types.get(job.model_type, job.model_type),
+        "model_family": "layer1",
         "dataset": job.dataset,
         "precision": round(metrics.get("precision", 0.90) * 100, 1),
         "recall": round(metrics.get("recall", 0.88) * 100, 1),
@@ -294,7 +304,18 @@ async def start_training(req: TrainingRequest):
     t.start()
 
     from audit_client import log_audit
-    asyncio.create_task(log_audit("training_start", "started", {"version": new_version, "dataset": req.dataset, "model_type": req.model_type}))
+
+    asyncio.create_task(
+        log_audit(
+            "training_start",
+            "started",
+            {
+                "version": new_version,
+                "dataset": req.dataset,
+                "model_type": req.model_type,
+            },
+        )
+    )
 
     return {
         "status": "started",
@@ -320,11 +341,19 @@ async def activate_model(version: str):
             detail=f"Model directory not found: v{version.lstrip('v')}",
         )
 
-    collection.update_many({"active": True}, {"$set": {"active": False}})
+    collection.update_many(
+        {"active": True, "model_family": {"$ne": "miss"}},
+        {"$set": {"active": False}},
+    )
     collection.update_one({"version": version}, {"$set": {"active": True}})
 
     from audit_client import log_audit
-    asyncio.create_task(log_audit("model_activate", "success", {"version": version, "model_path": model_path}))
+
+    asyncio.create_task(
+        log_audit(
+            "model_activate", "success", {"version": version, "model_path": model_path}
+        )
+    )
 
     try:
         _restart_inference_engine(version)
@@ -435,10 +464,14 @@ def _run_balance_job(dataset_name: str, job_id: str):
     try:
         import pandas as pd
     except ImportError:
-        _update_balance_job(dataset_name, job_id, {
-            "status": "error",
-            "message": "pandas not available",
-        })
+        _update_balance_job(
+            dataset_name,
+            job_id,
+            {
+                "status": "error",
+                "message": "pandas not available",
+            },
+        )
         return
 
     try:
@@ -447,20 +480,28 @@ def _run_balance_job(dataset_name: str, job_id: str):
         dataset = db["datasets"].find_one({"name": dataset_name})
         existing_attack_pct = (dataset or {}).get("attack_pct", 0)
         if existing_attack_pct >= 60:
-            _update_balance_job(dataset_name, job_id, {
-                "status": "error",
-                "message": "dataset already at or above 60% attacks",
-                "attack_pct": existing_attack_pct,
-                "samples": (dataset or {}).get("samples", 0),
-            })
+            _update_balance_job(
+                dataset_name,
+                job_id,
+                {
+                    "status": "error",
+                    "message": "dataset already at or above 60% attacks",
+                    "attack_pct": existing_attack_pct,
+                    "samples": (dataset or {}).get("samples", 0),
+                },
+            )
             return
 
         parquet_path = os.path.join(DATA_DIR, "processed", f"{dataset_name}.parquet")
         if not os.path.isfile(parquet_path):
-            _update_balance_job(dataset_name, job_id, {
-                "status": "error",
-                "message": "dataset not found",
-            })
+            _update_balance_job(
+                dataset_name,
+                job_id,
+                {
+                    "status": "error",
+                    "message": "dataset not found",
+                },
+            )
             return
 
         df = pd.read_parquet(parquet_path)
@@ -469,18 +510,26 @@ def _run_balance_job(dataset_name: str, job_id: str):
 
         benign_needed = int(attack_count / 0.6 - attack_count)
         if benign_needed <= 0:
-            _update_balance_job(dataset_name, job_id, {
-                "status": "error",
-                "message": "dataset already at or above 60% attacks",
-                "attack_pct": existing_attack_pct,
-                "samples": (dataset or {}).get("samples", 0),
-            })
+            _update_balance_job(
+                dataset_name,
+                job_id,
+                {
+                    "status": "error",
+                    "message": "dataset already at or above 60% attacks",
+                    "attack_pct": existing_attack_pct,
+                    "samples": (dataset or {}).get("samples", 0),
+                },
+            )
             return
 
-        _update_balance_job(dataset_name, job_id, {
-            "needed": benign_needed,
-            "attack_count": attack_count,
-        })
+        _update_balance_job(
+            dataset_name,
+            job_id,
+            {
+                "needed": benign_needed,
+                "attack_count": attack_count,
+            },
+        )
 
         cursor_coll = db["cut_cursor"]
         cursor_id = f"last_balance_{dataset_name}"
@@ -490,10 +539,14 @@ def _run_balance_job(dataset_name: str, job_id: str):
 
         caddy_log = "/var/log/caddy/waf-access.json"
         if not os.path.isfile(caddy_log):
-            _update_balance_job(dataset_name, job_id, {
-                "status": "error",
-                "message": "caddy access log not found",
-            })
+            _update_balance_job(
+                dataset_name,
+                job_id,
+                {
+                    "status": "error",
+                    "message": "caddy access log not found",
+                },
+            )
             return
 
         benign_rows = []
@@ -507,16 +560,22 @@ def _run_balance_job(dataset_name: str, job_id: str):
             if ts > max_ts:
                 max_ts = ts
             req = entry.get("request", {})
-            benign_rows.append({
-                "timestamp": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts else datetime.now(timezone.utc).isoformat(),
-                "method": req.get("method", "GET"),
-                "uri": req.get("uri", "/"),
-                "headers": req.get("headers", {}),
-                "body": entry.get("request_body", "") or entry.get("captured_body", "") or "",
-                "source": "benign",
-                "human_label": "benign",
-                "ai_score": 0.0,
-            })
+            benign_rows.append(
+                {
+                    "timestamp": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+                    if ts
+                    else datetime.now(timezone.utc).isoformat(),
+                    "method": req.get("method", "GET"),
+                    "uri": req.get("uri", "/"),
+                    "headers": req.get("headers", {}),
+                    "body": entry.get("request_body", "")
+                    or entry.get("captured_body", "")
+                    or "",
+                    "source": "benign",
+                    "human_label": "benign",
+                    "ai_score": 0.0,
+                }
+            )
             _update_balance_job(dataset_name, job_id, {"collected": len(benign_rows)})
             return True
 
@@ -541,18 +600,26 @@ def _run_balance_job(dataset_name: str, job_id: str):
         _collect_from_log()
 
         if len(benign_rows) < benign_needed:
-            _update_balance_job(dataset_name, job_id, {
-                "status": "collecting",
-                "message": "waiting for benign traffic",
-            })
+            _update_balance_job(
+                dataset_name,
+                job_id,
+                {
+                    "status": "collecting",
+                    "message": "waiting for benign traffic",
+                },
+            )
 
             try:
-                last_size = os.path.getsize(caddy_log) if os.path.isfile(caddy_log) else 0
+                last_size = (
+                    os.path.getsize(caddy_log) if os.path.isfile(caddy_log) else 0
+                )
                 with open(caddy_log, "r", encoding="utf-8", errors="ignore") as f:
                     if last_size > 0:
                         f.seek(last_size)
                     start = time.time()
-                    while len(benign_rows) < benign_needed and (time.time() - start) < 60:
+                    while (
+                        len(benign_rows) < benign_needed and (time.time() - start) < 60
+                    ):
                         line = f.readline()
                         if not line:
                             time.sleep(0.5)
@@ -569,10 +636,14 @@ def _run_balance_job(dataset_name: str, job_id: str):
 
         actual_benign = len(benign_rows)
         if actual_benign == 0:
-            _update_balance_job(dataset_name, job_id, {
-                "status": "error",
-                "message": "no benign traffic available",
-            })
+            _update_balance_job(
+                dataset_name,
+                job_id,
+                {
+                    "status": "error",
+                    "message": "no benign traffic available",
+                },
+            )
             return
 
         actual_attack_pct = round((attack_count / (attack_count + actual_benign)) * 100)
@@ -591,37 +662,51 @@ def _run_balance_job(dataset_name: str, job_id: str):
 
         db["datasets"].update_one(
             {"name": dataset_name},
-            {"$set": {
-                "samples": total,
-                "attack_pct": actual_attack_pct,
-                "true_positives": attack_count,
-                "false_positives": 0,
-                "type": "Balanced",
-                "balanced_at": datetime.now(timezone.utc).isoformat(),
-            }}
+            {
+                "$set": {
+                    "samples": total,
+                    "attack_pct": actual_attack_pct,
+                    "true_positives": attack_count,
+                    "false_positives": 0,
+                    "type": "Balanced",
+                    "balanced_at": datetime.now(timezone.utc).isoformat(),
+                }
+            },
         )
 
         if actual_benign >= benign_needed:
-            _update_balance_job(dataset_name, job_id, {
-                "status": "done",
-                "benign_count": actual_benign,
-                "attack_pct": actual_attack_pct,
-                "samples": total,
-                "message": "balanced",
-            })
+            _update_balance_job(
+                dataset_name,
+                job_id,
+                {
+                    "status": "done",
+                    "benign_count": actual_benign,
+                    "attack_pct": actual_attack_pct,
+                    "samples": total,
+                    "message": "balanced",
+                },
+            )
         else:
-            _update_balance_job(dataset_name, job_id, {
-                "status": "partial",
-                "benign_count": actual_benign,
-                "attack_pct": actual_attack_pct,
-                "samples": total,
-                "message": f"collected {actual_benign}/{benign_needed} benign samples",
-            })
+            _update_balance_job(
+                dataset_name,
+                job_id,
+                {
+                    "status": "partial",
+                    "benign_count": actual_benign,
+                    "attack_pct": actual_attack_pct,
+                    "samples": total,
+                    "message": f"collected {actual_benign}/{benign_needed} benign samples",
+                },
+            )
     except Exception:
-        _update_balance_job(dataset_name, job_id, {
-            "status": "error",
-            "message": "internal error during balancing",
-        })
+        _update_balance_job(
+            dataset_name,
+            job_id,
+            {
+                "status": "error",
+                "message": "internal error during balancing",
+            },
+        )
 
 
 @app.get("/api/training/datasets/cut-cursor")
@@ -660,7 +745,9 @@ async def cut_reviewed_dataset(body: dict = Body({})):
             dataset_name = f"reviewed_export_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
 
         datasets_coll = db["datasets"]
-        existing_count = datasets_coll.count_documents({"name": {"$regex": f"^{re.escape(dataset_name)}"}})
+        existing_count = datasets_coll.count_documents(
+            {"name": {"$regex": f"^{re.escape(dataset_name)}"}}
+        )
         if existing_count > 0:
             dataset_name = f"{dataset_name}_{existing_count + 1}"
 
@@ -676,23 +763,41 @@ async def cut_reviewed_dataset(body: dict = Body({})):
         cur = collection.find(
             query,
             {
-                "timestamp": 1, "method": 1, "uri": 1, "source": 1,
-                "ai_score": 1, "ai_probability": 1, "triggered_rules": 1,
-                "anomaly_score": 1, "human_label": 1, "alert_key": 1, "_id": 0,
+                "timestamp": 1,
+                "method": 1,
+                "uri": 1,
+                "source": 1,
+                "ai_score": 1,
+                "ai_probability": 1,
+                "triggered_rules": 1,
+                "anomaly_score": 1,
+                "human_label": 1,
+                "alert_key": 1,
+                "_id": 0,
             },
         ).limit(50000)
 
         rows = list(cur)
         if not rows:
-            raise HTTPException(status_code=400, detail="No new reviewed alerts to export")
+            raise HTTPException(
+                status_code=400, detail="No new reviewed alerts to export"
+            )
 
         df = pd.DataFrame(rows)
         os.makedirs(os.path.join(DATA_DIR, "processed"), exist_ok=True)
         parquet_path = os.path.join(DATA_DIR, "processed", f"{dataset_name}.parquet")
         df.to_parquet(parquet_path, index=False)
 
-        tp_count = df[df["human_label"] == "true_positive"].shape[0] if "human_label" in df.columns else 0
-        fp_count = df[df["human_label"] == "false_positive"].shape[0] if "human_label" in df.columns else 0
+        tp_count = (
+            df[df["human_label"] == "true_positive"].shape[0]
+            if "human_label" in df.columns
+            else 0
+        )
+        fp_count = (
+            df[df["human_label"] == "false_positive"].shape[0]
+            if "human_label" in df.columns
+            else 0
+        )
         total = len(df)
         attack_pct = round((tp_count / total) * 100) if total > 0 else 0
 
@@ -756,7 +861,9 @@ async def balance_dataset(dataset_name: str):
                 "message": "starting",
             }
 
-        t = threading.Thread(target=_run_balance_job, args=(dataset_name, job_id), daemon=True)
+        t = threading.Thread(
+            target=_run_balance_job, args=(dataset_name, job_id), daemon=True
+        )
         t.start()
 
         return {
@@ -832,6 +939,7 @@ async def delete_model(version: str):
     model_path = os.path.join(MODELS_DIR, f"v{version.lstrip('v')}")
     if os.path.isdir(model_path):
         import shutil
+
         shutil.rmtree(model_path, ignore_errors=True)
 
     return {"status": "deleted", "version": version}
@@ -926,8 +1034,18 @@ def _save_miss_training_result(job: TrainingJob, metrics: dict):
     version_str = metrics.get("version_str", f"miss_v{job.version}")
     version_num = version_str
 
+    model_dir = os.path.join(MODELS_DIR, version_num)
+    if not os.path.isdir(model_dir):
+        log.error(
+            "Miss model directory %s does not exist after training — aborting DB save",
+            model_dir,
+        )
+        job.status = "failed"
+        job.error = f"Model directory {model_dir} not found on disk after training"
+        return
+
     collection.update_many(
-        {"version": {"$regex": "^miss_v"}},
+        {"model_family": "miss", "active": True},
         {"$set": {"active": False}},
     )
 
@@ -935,6 +1053,7 @@ def _save_miss_training_result(job: TrainingJob, metrics: dict):
     doc = {
         "version": version_num,
         "model_type": "Miss Model",
+        "model_family": "miss",
         "dataset": "reviewed_alerts",
         "precision": round(metrics.get("precision", 0.90) * 100, 1),
         "recall": round(metrics.get("recall", 0.88) * 100, 1),
@@ -944,7 +1063,6 @@ def _save_miss_training_result(job: TrainingJob, metrics: dict):
         "composite_score": round(metrics.get("composite_score", 0), 4),
         "trained_at": datetime.now(timezone.utc).isoformat(),
         "active": True,
-        "model_family": "miss",
         "samples": full.get("samples", 0),
         "attacks": full.get("attacks", 0),
         "benign": full.get("benign", 0),
@@ -961,8 +1079,13 @@ def _symlink_miss_active(version_str: str):
         if os.path.islink(link_path) or os.path.exists(link_path):
             os.remove(link_path)
         os.symlink(target_path, link_path, target_is_directory=True)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(
+            "Failed to create miss_active symlink %s -> %s: %s",
+            link_path,
+            target_path,
+            e,
+        )
 
 
 @app.post("/api/training/miss/start")
@@ -970,7 +1093,9 @@ async def start_miss_training(req: MissTrainingRequest):
     global miss_training_active, miss_current_job_id, miss_current_job
 
     if miss_training_active:
-        raise HTTPException(status_code=409, detail="Miss model training already in progress")
+        raise HTTPException(
+            status_code=409, detail="Miss model training already in progress"
+        )
 
     job = TrainingJob(
         version="miss_v0",
@@ -1012,7 +1137,9 @@ async def get_miss_training_status():
 @app.post("/api/training/miss/{version}/activate")
 async def activate_miss_model(version: str):
     if not re.match(r"^miss_v\d+$", version):
-        raise HTTPException(status_code=400, detail="Invalid version format (expected miss_v{N})")
+        raise HTTPException(
+            status_code=400, detail="Invalid version format (expected miss_v{N})"
+        )
 
     collection = get_db()["training_history"]
     record = collection.find_one({"version": version})
@@ -1021,7 +1148,9 @@ async def activate_miss_model(version: str):
 
     model_path = os.path.join(MODELS_DIR, version)
     if not os.path.isdir(model_path):
-        raise HTTPException(status_code=404, detail=f"Model directory not found: {model_path}")
+        raise HTTPException(
+            status_code=404, detail=f"Model directory not found: {model_path}"
+        )
 
     collection.update_many(
         {"model_family": "miss"},

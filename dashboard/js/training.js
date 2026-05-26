@@ -104,14 +104,14 @@ function updateActiveStatus() {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
             <div class="metric" style="padding:6px;">
                 <div class="metric-label">Layer 1</div>
-                <div class="metric-value" style="font-size:0.75rem;">${layer1 ? layer1.version : '—'}</div>
+                <div class="metric-value" style="font-size:0.9rem;">${layer1 ? layer1.version : '—'}</div>
                 <div style="font-size:0.65rem;color:var(--fg-muted);margin-top:6px;">
                     ${layer1 ? `P:${fmt(layer1.precision)} | R:${fmt(layer1.recall)} | F1:${fmt(layer1.f1_score)}` : 'No active model'}
                 </div>
             </div>
             <div class="metric" style="padding:6px;">
                 <div class="metric-label">Layer 2</div>
-                <div class="metric-value" style="font-size:0.75rem;">${layer2 ? layer2.version : '—'}</div>
+                <div class="metric-value" style="font-size:0.9rem;">${layer2 ? layer2.version : '—'}</div>
                 <div style="font-size:0.65rem;color:var(--fg-muted);margin-top:6px;">
                     ${layer2 ? `P:${fmt(layer2.precision)} | R:${fmt(layer2.recall)} | F1:${fmt(layer2.f1_score)}` : 'No active model'}
                 </div>
@@ -136,7 +136,7 @@ function renderHistory(items) {
     }
     tbody.innerHTML = items.map(item => {
         const isMiss = (item.model_family === 'miss');
-        const composite = isMiss && item.composite_score != null ? item.composite_score.toFixed(4) : '—';
+        const composite = isMiss && item.composite_score != null ? (item.composite_score * 100).toFixed(2) + '%' : '—';
         return `
         <tr>
             <td style="white-space: nowrap;"><input type="checkbox" class="training-checkbox" data-version="${item.version}" style="margin-right: 8px;" ${item.active || isLayer1 ? 'disabled' : ''}>${item.version}</td>
@@ -312,7 +312,7 @@ function updateEvalMetrics(item) {
         return;
     }
 
-    const composite = isMiss && item.composite_score != null ? item.composite_score.toFixed(4) : '—';
+    const composite = isMiss && item.composite_score != null ? (item.composite_score * 100).toFixed(2) + '%' : '—';
     const samples = isMiss && item.samples ? item.samples.toLocaleString() : '—';
     const attBen = isMiss && item.attacks != null && item.benign != null
         ? `${item.attacks.toLocaleString()} / ${item.benign.toLocaleString()}`
@@ -506,11 +506,20 @@ document.getElementById('select-all-training').addEventListener('change', functi
 
 document.getElementById('delete-selected-training-btn').addEventListener('click', deleteSelectedTraining);
 
+function updateTrainingSections() {
+    const view = getCurrentView();
+    const l1section = document.getElementById('layer1-training-section');
+    const l2section = document.getElementById('miss-training-section');
+    if (l1section) l1section.style.display = view === 'layer1' ? '' : 'none';
+    if (l2section) l2section.style.display = view === 'layer2' ? '' : 'none';
+}
+
 function initViewToggle() {
     document.querySelectorAll('.panel-right-header .view-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.panel-right-header .view-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            updateTrainingSections();
             loadTrainingHistory();
         });
     });
@@ -519,6 +528,7 @@ initViewToggle();
 
 (async () => {
     await requireAuth();
+    updateTrainingSections();
     await loadDatasets();
     await loadTrainingStatus();
     await loadMissTrainingStatus();
