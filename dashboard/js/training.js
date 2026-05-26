@@ -507,11 +507,7 @@ document.getElementById('select-all-training').addEventListener('change', functi
 document.getElementById('delete-selected-training-btn').addEventListener('click', deleteSelectedTraining);
 
 function updateTrainingSections() {
-    const view = getCurrentView();
-    const l1section = document.getElementById('layer1-training-section');
-    const l2section = document.getElementById('miss-training-section');
-    if (l1section) l1section.style.display = view === 'layer1' ? '' : 'none';
-    if (l2section) l2section.style.display = view === 'layer2' ? '' : 'none';
+    // Both sections always visible — Layer 1 model is final, only Layer 2 (miss) training is active
 }
 
 function initViewToggle() {

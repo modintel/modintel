@@ -39,8 +39,8 @@
             <p>Train and evaluate ML models for hybrid WAF detection.</p>
 
             <div class="section" id="layer1-training-section">
-                <h3>Train New Model</h3>
-                <p>Select a dataset and train a new model version.</p>
+                <h3>Train on Reviewed Data</h3>
+                <p>Train a Layer 2 miss-detection model on reviewed alerts from the review queue.</p>
 
                 <div class="form-group">
                     <label>Training Dataset</label>
@@ -49,12 +49,6 @@
                     </select>
                 </div>
 
-                <button class="btn btn-primary" id="train-model-btn" type="button">Start Training</button>
-            </div>
-
-            <div class="section" id="miss-training-section" style="display:none;">
-                <h3>Train on Reviewed Data</h3>
-                <p>Train a Layer 2 miss-detection model on reviewed alerts from the review queue.</p>
                 <button class="btn btn-primary" id="miss-train-btn" type="button">Start Miss Training</button>
             </div>
 

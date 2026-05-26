@@ -14,6 +14,7 @@ type SignaturePattern struct {
 	Severity    string   `json:"severity"`
 	Patterns    []string `json:"patterns"`
 	Description string   `json:"description"`
+	Enabled     *bool    `json:"enabled"`
 }
 
 type Prefilter struct {
@@ -38,6 +39,9 @@ func Load(path string) (*Prefilter, error) {
 	}
 
 	for _, p := range patterns {
+		if p.Enabled != nil && !*p.Enabled {
+			continue
+		}
 		var regs []*regexp.Regexp
 		for _, pat := range p.Patterns {
 			if r, err := regexp.Compile(pat); err == nil {
@@ -60,7 +64,7 @@ func (pf *Prefilter) Evaluate(method, uri, body string, headers map[string]strin
 	text := method + " " + uri + " " + body
 	for k, v := range headers {
 		lowerKey := strings.ToLower(k)
-		if lowerKey != "user-agent" && lowerKey != "cookie" && !strings.HasPrefix(lowerKey, "accept") && lowerKey != "sec-fetch-site" && lowerKey != "sec-fetch-mode" && lowerKey != "sec-fetch-dest" {
+		if lowerKey != "user-agent" && lowerKey != "cookie" && !strings.HasPrefix(lowerKey, "accept") && lowerKey != "sec-fetch-site" && lowerKey != "sec-fetch-mode" && lowerKey != "sec-fetch-dest" && !strings.HasPrefix(lowerKey, "x-forwarded") && lowerKey != "x-real-ip" {
 			text += " " + v
 		}
 	}

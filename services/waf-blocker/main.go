@@ -125,7 +125,7 @@ type evalMissResponse struct {
 	Composite   float64           `json:"composite"`
 	Decision    string            `json:"decision"`
 	Breakdown   map[string]float64 `json:"breakdown"`
-	ModelVersion string           `json:"model_version"`
+	ModelVersion interface{}      `json:"model_version"`
 }
 
 type trafficBucket struct {

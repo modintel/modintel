@@ -111,6 +111,14 @@ $attacks = @(
     @{ Name = "Layer2: XSS unicode escape"; URI = "/rest/products/search?q=<script>alert(/xss/)</script>"; Method = "GET" }
 )
 
+$script:requestCounter = 0
+
+function New-UniqueIP {
+    $script:requestCounter++
+    $n = 100 + $script:requestCounter
+    return "10.0.0.$n"
+}
+
 function Invoke-Attack {
     param($atk)
 
@@ -131,8 +139,13 @@ function Invoke-Attack {
             $webParams.Method = "GET"
         }
 
+        $ip = New-UniqueIP
         if ($atk.Headers) {
-            $webParams.Headers = $atk.Headers
+            $merged = @{} + $atk.Headers
+            $merged["X-Forwarded-For"] = $ip
+            $webParams.Headers = $merged
+        } else {
+            $webParams.Headers = @{ "X-Forwarded-For" = $ip }
         }
 
         if ($atk.Body) {
@@ -167,7 +180,15 @@ function Invoke-Benign {
     $fullUri = $target + $req.URI
 
     try {
-        $resp = Invoke-WebRequest -Uri $fullUri -Method GET -UseBasicParsing -ErrorAction Stop -TimeoutSec 5
+        $webParams = @{
+            Uri = $fullUri
+            UseBasicParsing = $true
+            ErrorAction = "Stop"
+            TimeoutSec = 5
+        }
+        $webParams.Headers = @{ "X-Forwarded-For" = (New-UniqueIP) }
+
+        $resp = Invoke-WebRequest @webParams
         $statusCode = $resp.StatusCode
     }
     catch {
