@@ -36,7 +36,7 @@ services:
       - ./proxy-waf/Caddyfile:/config/caddy/Caddyfile
       - ./proxy-waf/coraza.conf:/opt/coraza/config.d/user.conf
       - ./proxy-waf/custom_rules.conf:/opt/coraza/config.d/custom.conf
-      - ./proxy-waf/crs-setup.conf:/opt/corazo/config/crs-setup.conf
+      - ./proxy-waf/crs-setup.conf:/opt/coraza/config/crs-setup.conf
       - ./proxy-waf/overrides:/opt/coraza/overrides
       - modintel_waf-logs:/var/log/coraza
       - modintel_caddy_logs:/var/log/caddy
