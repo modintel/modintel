@@ -3,5 +3,5 @@
   "blocking_paranoia": 3,
   "anomaly_inbound": 5,
   "rule_engine": "On",
-  "layer2_block_threshold": 0.92
+  "layer2_block_threshold": 0.93
 }

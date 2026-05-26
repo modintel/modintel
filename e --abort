@@ -1,0 +1,270 @@
+45fff74 (origin/Testing-framework, Testing-framework) some ml-pipline unit tests
+2047c9d feat: consolidate docker packages, fix miss detection priority, update readme
+e43b49c chore: add yamllint config, fix docker.yml line endings
+b30a8c2 docs: update readme with current architecture and service map
+fe4d55c fix: add id-token write permission for docker build attestations
+f0908b1 fix: adjust miss detection priority confidence threshold
+bb6f568 refactor: clean up training UI and dataset sources page
+d53ad17 fix: training-api dockerfile missing audit_client module
+471e037 refactor: remove dead GetDatasetSources route and handler
+2921dc9 chore: fix python lint and format issues
+9a39221 fix: remove redundant top-level permissions from docker workflow
+b7b6e05 feat: clear storage drops alerts collection, sticky headers, dataset restore
+40beb58 chore: update dashboard screenshot
+772e56a fix: skip joblib fallback when onnx available and reduce attack suite delay
+cdb071a fix: use rule_enable/rule_disable audit actions for toggle operations
+7b526e0 chore: limit mongodb wiredtiger cache to 1gb
+e35b633 chore: ignore generated onnx model files
+5de3b93 feat: onnx inference path with isotonic calibration and perf tuning
+a886b85 fix: sse hub channel overflow protection and rate limiting
+adf12fe fix: deduplicate coraza/ml_miss alerts with async miss processing
+0e62ed6 feat: waf config overrides and attack suite tuning
+d3b4cd9 chore: update waf config and managed overrides
+d678e3b chore: make custom rules conf writable by review api
+43ea6b8 chore: fix go formatting
+aa05e66 feat: add signature field to waful and auto-regenerate custom rules conf
+288c420 fix: prevent dataset rebalance when already balanced
+d1c7d00 feat: custom rule signature editing with crs read-only view
+6f1ae76 feat: gate audit trail and invite section behind admin role
+f1b8e59 fix: load live metrics for monitor legend
+01a60cb fix: hide scrollbar in fp rules section
+ad9ccfa fix: use innerhtml in modal to allow html content
+381fd00 fix: use stringstolower for case-insensitive regex matching
+0229d10 style: update Layer-2 threshold default to 94% and add Show All users button
+d2a13b7 fix: dashboard UI fixes and proxy routing improvements
+b17850f feat: review API sort order, CRS rule grouping, and regex enabled filtering
+0b6b272 feat: dataset balance with partial status, stale cursor fix, and animation persistence
+c6d71c9 feat: dynamic Layer-2 block threshold with startup sync
+9d3dc29 chore: remove unused root go.mod
+379cb2d chore: remove unused dev/ and pkg/ directories
+9e31837 chore: remove standalone comments from auth-service and dashboard JS files
+302a6c1 chore: remove root-level doc markdown files
+fa68937 chore(docker): add MailPit service and AUTH_APP_BASE_URL for email testing
+c0fccc4 fix(dashboard): modal rebuild fix, 2FA accent color, SMTP settings UI, signin tweaks
+a4bd2b6 fix(auth): add name validation, atomic invite claim, and SMTP retry
+8309244 fix(security): implement codec-based taint breaking for CodeQL
+519bde4 fix: resolve CodeQL security vulnerabilities in auth-service
+1c802ed fix(security): resolve CodeQL high/critical findings in auth-service
+fa3e6c3 fix(security): use bson.D and quoted-printable to resolve CodeQL findings
+cb0b9bb fix(security): remediate CodeQL findings - NoSQL injection and email header injection
+5c5aa67 feat(auth): TOTP-based two-factor authentication
+6b7d2bb feat(auth): SMTP email config and password reset flow
+9cdeddc feat(auth): token-based invite system
+e0edcb0 feat(auth): first-admin registration and setup page
+f0ff445 chore: remove todo.md
+39a2084 feat(api): add Layer-2 block threshold endpoint, waf-blocker runtime threshold, fix log-collector false positives
+8fcdeca chore(waf): update CRS setup and WAF config defaults
+631eb54 feat(dashboard): add URI truncation, error rate tooltip, reports and training updates, remove review comments
+b279410 feat(datasets): add Process column with animated button, fix training history display
+d227e9e feat(settings): add Layer-1 confirmation modal, Layer-2 block threshold control, default paranoia 4
+f94b3d6 fix(api): add input validation to rule endpoints
+b2699d4 chore(docker): add signatures volume to review-api
+92bfb8f fix(dashboard): update rules page markup
+ec7d820 fix(dashboard): sanitize rule page inputs
+2efb8da fix(dashboard): escape rule details html
+4315ede fix(dashboard): sanitize modal inputs
+57efa0a chore: remove vscode settings
+e63884f rule management system done
+3e96180 feat(services): add waf-blocker service
+645e872 chore(docker): update docker-compose configuration
+073b6f0 fix(inference-engine): correct prediction response field name
+97f0151 chore(review-api): update API handlers and database utilities
+d9633dc feat(log-collector): add WAF traffic tracking endpoint
+7879dc1 feat(dashboard): improve monitor page - latency display and UI fixes
+79fd87e chore(waf): update WAF configuration - CRS and custom rules
+c2358b6 fix(services): address golangci-lint issues - error handling and unused funcs
+333ea17 docs: add ml-blocking documentation
+a7a8c08 chore(auth-service): refactor and improve auth handlers
+5b484a1 chore(scripts): update attack simulation suite
+779b484 chore(waf): update WAF configuration files
+89e272b feat(dashboard): update UI components - settings and training pages
+c767d26 chore: update todo.md
+62eeaa0 fix: remove trailing newline in review-api handler
+09feada fix: remove unused code in auth-service handler
+16ce89f style: update reports.css
+d278e8b fix: remove trailing blank line in audit-logs.html
+5f595cf docs: update readme with current info
+7a6e158 chore: update .gitignore
+b0bbe75 fix: ui improvements on rules and report page
+ca5200f fix: linter fixes and misc cleanup
+236944d chore: clean up CSS dead code and duplicate style blocks
+335a46f chore: clean up HTML - remove BOM characters and trailing blank lines
+5dd1153 chore: remove dead JS code and unused functions
+9d9e78a feat: add audit logging to auth, log-collector and training services
+53eca2d feat: add audit logs page with pagination
+6febbca feat: complete backend fixes and UI enhancements
+31cf53d feat: enhance review interface with headers column, improved layout and functionality
+1b828b7 style: additional formatting fixes
+fd074cf feat: update dashboard and services
+f75e14a fix: update datasets page functionality
+a907f6a feat: update datasets page layout
+5f8a5d7 style: update datasets page styles
+7ca104b fix: update settings page functionality
+83dfefc fix: update reports page functionality
+1a58820 fix: update monitor page functionality
+637188b fix: update dashboard index functionality
+f86e489 feat: update settings page layout
+159038c feat: update monitor page layout
+cbe375f style: update settings page styles
+4f76bc1 style: update reports page styles
+5e0136b style: update monitor page styles
+e98f81a style: update main dashboard styles
+c297fc7 fix: update sse hub broadcasting logic
+6b36a28 fix: update sse handler metrics and error handling
+633f99b fix: update request tracking and stats calculation
+022f236 fix: update metrics aggregation timing and error handling
+2447db2 fix: make boot.js await requireauth
+aa8f2ae fix: remove duplicate auth functions and fix async requireauth
+bd47cd7 style(sse_handler): fix gofmt alignment and formatting
+0e63f1f style(handler): fix gofmt alignment and formatting
+a9989ba feat(waf-config): add initial waf paranoia config json
+5fc6ac0 fix(training-api): use fastapi body for dataset cut, remove duplicate key
+cb839dc fix(review-api): use correct requests per minute in health broadcast
+bf2da3f refactor(sse_handler): parallelize health checks and fix requests per minute metric
+504a3f6 chore(review-api): add docker-cli and docker-compose to alpine image
+5a707dd fix(log-collector): set status to generated on miss detector alerts
+ea47d48 style(coraza.conf): remove blank line, add audit log relevant status filter
+8e3e3a7 feat(docker-compose): add coraza rule engine env, relax paranoia defaults, mount project rw for review-api
+ba8756a feat(training.html): use dynamic dataset dropdown instead of hardcoded options
+f8adda2 feat(settings.html): add waf paranoia controls, replace notifications section
+1a393d5 style(review.html): reorder body column before ai score in review table
+f567d07 feat(reports.html): redesign reports page with pie chart, fp table, trend chart, and geo distribution
+336eb1f style(monitor.html): reorder auth-service above log-collector in service list
+96923ce feat(training.js): load datasets dynamically from api
+d649265 feat(settings.js): add waf paranoia controls and preset management
+46d0354 feat(review.js): persist filter state in localstorage, reorder columns, add status column
+362704c feat(index.js): persist graph range, view, and priority filters in localstorage
+4b06496 style(datasets.html): add column widths to table header
+14edaa7 style(settings.css): add paranoia controls styling
+79af5a5 style(reports.css): redesign reports layout with pie chart, fp table, and geo distribution
+c0514e1 style(handler.go): remove doc comment
+30029ff style(reports.js): remove comment
+001f364 style(.gitignore): remove comments
+84632ab chore: update gitignore, fix dashboard spacing, remove stale volume mount
+10ec7a8 style: remove data-table th overrides for consistent sticky table headers
+185aab1 feat: add invite users form with role selector to settings
+29514f4 feat: add request body viewer and undo review button to review page
+5d934c9 feat: add invite user endpoint and fix cookie security attributes
+3c7b237 feat: add training-api route, custom dataset naming, delete button, and review CSS tweaks
+9ab3027 style: fix gofmt alignment in struct fields
+47581da feat: add undo review with confirmation modal, fix cookie security flags
+255b7f5 Fix monitor graph bucketing, inference engine pandas dep, SSE heartbeat and auth refresh
+d6a8cf1 fix: resolve go-lint errors and correct memory_total_mb reporting
+34974a1 fix: remove unused model var and format main.py
+6d25f16 style: adjust monitor chart spacing
+9f73c9a fix: remove shap from requirements.txt
+01c5f32 feat: update training api for cookie auth
+bd0c8d9 feat: update handlers for sse and cookie auth
+e55dfa2 feat: add api key auth to training page
+2db8315 feat: add sse script and api key auth to datasets
+07e7f89 feat: add sse script and connection indicator to settings
+1f15437 feat: add sse script and connection indicator to monitor
+5aa2eb0 feat: add sse script and connection indicator to index
+18208fe style: update settings css for active states
+7e690ff style: update main css for sse connection indicator
+122db73 fix: bump inference memory to 1gb and add replica set
+096cff6 fix: disable shap explainer and add batch predict endpoint
+2507abf feat: add async ai enrichment with worker pool and backfill
+de59943 feat: add api key auth and credentials to training
+475ed1a feat: add api key auth and credentials to datasets
+61855e5 feat: replace manual logout with window logout in settings
+d40dc72 feat: replace manual logout with window logout in review
+161a6a3 feat: replace polling with sse listeners in monitor
+67fc638 feat: replace polling with sse listeners in index
+e8f51db feat: remove token storage from signin response
+f4a5031 feat: remove localstorage token usage in auth
+12d383b feat: add cookie-first auth fallback to middleware
+841b057 feat: add cookiesecure env var to auth config
+638742e feat: migrate auth to httponly cookie-based sessions
+dbf9866 fix: add flush_interval for sse streaming support
+a9b280e feat: add mongodb change stream watcher and sse hub init
+88f6597 feat: add sse client class with auto-reconnect
+f461ad9 feat: add sse http handler with cookie auth
+25b1f37 feat: add sse hub for real-time event broadcast
+e027968 docs: update todo with completed items
+2a5e25d docs: update readme with current project status
+fd7cc01 build: add pandas to training-api dependencies
+f9d9fa7 feat: add real training pipeline dataset export and docker activation
+d9f47c0 feat: add miss detector heuristics for sqli xss traversal cmdi ua
+ed5ff3b fix: mount data models and docker sock for training-api
+c5fd9e0 feat: add hyperparameters ui and active badge to training page
+45141a3 feat: add modal and export button to review page
+831ea47 feat: add attack distribution chart to reports page
+71febe8 feat: add modal script to datasets page
+115f8c9 feat: add real api training start deploy and hyperparameters
+91f2b0a feat: add export dataset and showmodal to review page
+21d3c63 feat: add real api integration for datasets page
+22c2023 fix: add token refresh lock and proactive expiry check
+f044257 style: add training page toggle and badge styles
+46c97cb fix: remove outline none blocking global focus style
+8c40e7c style: add review page stat and filter styles
+71bd43e style: add input focus styles and button hover cleanup
+d2f1827 readme file for test commands
+18aba2e test commands
+46e5c76 system tests
+6210f0f go integration tests
+1525352 remaining unit tests and some integration tests
+dc31f90 inference-engine tests
+e44acd2 health-aggregator test
+ad25063 ml-pipeline tests
+c8ef36d review-api tests
+73d5d0f other auth-service tests
+781202f audit_log_test
+a839418 security_haeaders_test
+1e12b21 unit test for auth_rate_limit.go
+66ec148 Testing setup
+f736878 Testing
+b3c5152 feat: add training progress polling and live deploy support
+7960c31 feat: mount data models and docker sock for training-api
+649c075 feat: add dataset fallback and docker socket activation to training-api
+b77ae44 feat: copy ml-pipeline into training-api container
+8b29bff feat: add pandas to training-api dependencies
+466cabe feat: wire training-api to run real ml-pipeline training
+18e8a5b chore: update gitignore
+1251413 feat: add training api service to docker compose
+8763152 feat: add training api dockerfile
+090aead feat: add training api python dependencies
+0ca4632 feat: add training api fastapi service with training endpoints
+04a3a55 feat: integrate datasets js with real api calls
+2e7f9dd feat: update active badge to orange accent color
+c518d43 feat: update training page with real status and history
+6597483 feat: integrate training js with real api calls
+87ce079 feat: add review endpoints human_label filter datasets and fix ml_miss_count
+a3851ef feat: add reviewed fields to alert document
+3c78938 feat: add review and training api caddy routes
+ece37e2 feat: add review button navigation to review page
+8bbde6f feat: add review css with icon styling and filter rows
+a347dcd feat: add review js with event delegation stats cursor pagination
+04a9e98 feat: add review page with alert queue and tp/fp actions
+23a34bd feat: dynamic chart labels with proper range support
+4458e2b fix: remove dead code from monitor.js
+20e8e74 feat: remove review and lock button handlers (js)
+feffb91 feat: remove review and lock buttons from monitor dashboard (html)
+c014cc8 refactor: remove prometheus code, restore json metrics endpoint
+d60dae5 feat: add sparkline bars and memory bar styles
+b86789a fix: add bar containers for workers, database, memory, storage sections
+9fe2ec9 fix: add automatic access token refresh on 401
+39cadfe fix: time-series graphs with correct field extraction and bars
+6ca1bca fix: export metrics fields and fix collection queries
+ecba00d fix: add metrics aggregation worker with delta tracking
+f3fb81b chore: fix python formatting
+b2c778b fix: sync log refresh to catch ai updates
+b2e69a0 fix: remove duplicate search key assignment
+a2758c1 feat: add layer 2 attack payloads
+60e0660 fix: revert monitor layout, 5 services
+3fa0027 fix: remove null stats elements
+d29ddcc fix: sync log refresh to catch ai updates
+57ad623 fix: add service-row styles for compact grid
+c563370 fix: compact service status grid layout
+061dc06 chore: add ml.md to gitignore
+f01dc27 fix: remove trailing whitespace in custom rules
+873aa62 fix: update coraza audit log parts
+d841220 fix: add body capture logging to caddyfile
+f2857a5 fix: extract request_body from caddy logs
+86c782b fix: add body caching for coraza alert enrichment
+196dac5 fix: use correct onnx model inputs and apply sigmoid
+e478f28 feat(ui): update layer 2 terminology and remove padding
+f9c0f19 Fix compilation error: add missing corazaCount definition in GetStats()
+46dc933 Update monitor page to use coraza_count for Layer 1 stat
+87aa757 Improve false positive handling and dashboard filtering
+04154f9 fix(rules): prevent 403 from logging out users and show permission denied modal

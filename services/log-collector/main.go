@@ -133,6 +133,11 @@ func isInternalIP(ip string) bool {
 	return false
 }
 
+<<<<<<< HEAD
+=======
+var _ = strings.HasPrefix // keep strings import
+
+>>>>>>> origin/modintel-base
 func cleanupBodyCache() {
 	bodyCacheMu.Lock()
 	defer bodyCacheMu.Unlock()

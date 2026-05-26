@@ -1527,6 +1527,9 @@ func GetLogs(c *gin.Context) {
 	defer cancel()
 
 	filter := cursorFilter
+	if ak := strings.TrimSpace(c.Query("alert_key")); ak != "" {
+		filter["alert_key"] = ak
+	}
 	if source := strings.TrimSpace(c.Query("source")); source != "" {
 		filter["source"] = source
 	}
@@ -1545,12 +1548,22 @@ func GetLogs(c *gin.Context) {
 	if c.Query("exclude_score_0") == "true" {
 		filter["anomaly_score"] = bson.M{"$ne": 0}
 	}
+	if minScoreStr := strings.TrimSpace(c.Query("min_score")); minScoreStr != "" {
+		if minScore, err := strconv.ParseFloat(minScoreStr, 64); err == nil {
+			orFilter := bson.A{
+				bson.M{"http_status": 403},
+				bson.M{"ai_score": bson.M{"$gte": minScore}},
+			}
+			filter["$or"] = orFilter
+		}
+	}
 
 	opts := options.Find().
 		SetSort(bson.D{{Key: "_id", Value: -1}}).
 		SetLimit(int64(params.Limit + 1)).
 		SetProjection(bson.M{
 			"_id":                    1,
+			"alert_key":              1,
 			"timestamp":              1,
 			"client_ip":              1,
 			"uri":                    1,
@@ -1566,6 +1579,8 @@ func GetLogs(c *gin.Context) {
 			"ai_confidence_interval": 1,
 			"status":                 1,
 			"source":                 1,
+			"http_status":            1,
+			"ml_score":               1,
 		})
 	cursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
@@ -1592,6 +1607,7 @@ func GetLogs(c *gin.Context) {
 	}
 
 	type AlertResponse struct {
+		AlertKey             string                 `json:"alert_key"`
 		Timestamp            string                 `json:"timestamp"`
 		ClientIP             string                 `json:"client_ip"`
 		URI                  string                 `json:"uri"`
@@ -1606,27 +1622,27 @@ func GetLogs(c *gin.Context) {
 		AIEntropy            *float64               `json:"ai_entropy"`
 		AIConfidenceInterval *map[string]float64    `json:"ai_confidence_interval"`
 		Source               string                 `json:"source"`
+		HTTPStatus           *int                   `json:"http_status"`
+		MLScore              *float64               `json:"ml_score"`
 	}
 
 	alerts := make([]AlertResponse, 0, len(results))
 	for _, r := range results {
 		alert := AlertResponse{
+			AlertKey:       r["alert_key"].(string),
 			Timestamp:      r["timestamp"].(string),
 			ClientIP:       r["client_ip"].(string),
 			URI:            r["uri"].(string),
 			TriggeredRules: []string{},
 		}
-
 		if score, ok := r["anomaly_score"].(float64); ok {
 			alert.AnomalyScore = score
 		}
-
 		if rules, ok := r["triggered_rules"].(bson.A); ok {
 			for _, r := range rules {
 				alert.TriggeredRules = append(alert.TriggeredRules, r.(string))
 			}
 		}
-
 		if status, ok := r["ai_status"].(string); ok {
 			alert.AIStatus = status
 		}
@@ -1663,7 +1679,16 @@ func GetLogs(c *gin.Context) {
 		if src, ok := r["source"].(string); ok {
 			alert.Source = src
 		}
-
+		if hs, ok := r["http_status"].(int64); ok {
+			hsInt := int(hs)
+			alert.HTTPStatus = &hsInt
+		} else if hs, ok := r["http_status"].(int32); ok {
+			hsInt := int(hs)
+			alert.HTTPStatus = &hsInt
+		}
+		if ms, ok := r["ml_score"].(float64); ok {
+			alert.MLScore = &ms
+		}
 		alerts = append(alerts, alert)
 	}
 

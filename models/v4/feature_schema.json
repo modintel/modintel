@@ -1,0 +1,224 @@
+{
+  "version": "1.0.0",
+  "integrity_hash": "47f98d0ddbf80e95efe7e50f4be3473ecdcab1277ce53183e39bc709b83f21a7",
+  "features": {
+    "num_sqli_rules": {
+      "type": "float64",
+      "group": "rule",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "num_xss_rules": {
+      "type": "float64",
+      "group": "rule",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "num_lfi_rules": {
+      "type": "float64",
+      "group": "rule",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "num_rce_rules": {
+      "type": "float64",
+      "group": "rule",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "severity_weighted_sum": {
+      "type": "float64",
+      "group": "rule",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "total_rule_count": {
+      "type": "float64",
+      "group": "rule",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "anomaly_score": {
+      "type": "float64",
+      "group": "anomaly_score",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "anomaly_score_normalized": {
+      "type": "float64",
+      "group": "anomaly_score",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "is_above_threshold": {
+      "type": "float64",
+      "group": "anomaly_score",
+      "range": {
+        "min": 0,
+        "max": 1
+      }
+    },
+    "method_int": {
+      "type": "float64",
+      "group": "request_structure",
+      "range": {
+        "min": -1,
+        "max": 6
+      }
+    },
+    "uri_length": {
+      "type": "float64",
+      "group": "request_structure",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "uri_depth": {
+      "type": "float64",
+      "group": "request_structure",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "query_param_count": {
+      "type": "float64",
+      "group": "request_structure",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "body_length": {
+      "type": "float64",
+      "group": "request_structure",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "has_body": {
+      "type": "float64",
+      "group": "request_structure",
+      "range": {
+        "min": 0,
+        "max": 1
+      }
+    },
+    "content_type_int": {
+      "type": "float64",
+      "group": "request_structure",
+      "range": {
+        "min": -2,
+        "max": 4
+      }
+    },
+    "header_count": {
+      "type": "float64",
+      "group": "request_structure",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "special_char_ratio": {
+      "type": "float64",
+      "group": "payload_statistical",
+      "range": {
+        "min": 0.0,
+        "max": 1.0
+      }
+    },
+    "shannon_entropy": {
+      "type": "float64",
+      "group": "payload_statistical",
+      "range": {
+        "min": 0.0,
+        "max": null
+      }
+    },
+    "max_param_value_length": {
+      "type": "float64",
+      "group": "payload_statistical",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "has_encoding_artifacts": {
+      "type": "float64",
+      "group": "payload_statistical",
+      "range": {
+        "min": 0,
+        "max": 1
+      }
+    },
+    "non_printable_count": {
+      "type": "float64",
+      "group": "payload_statistical",
+      "range": {
+        "min": 0,
+        "max": null
+      }
+    }
+  },
+  "rule_binary_indicator_pattern": {
+    "description": "Dynamic binary indicator features named rule_{rule_id} for each CRS rule ID seen during training. Each has type float64, group rule, range {min: 0, max: 1}.",
+    "type": "float64",
+    "group": "rule",
+    "range": {
+      "min": 0,
+      "max": 1
+    }
+  },
+  "method_encoding": {
+    "GET": 0,
+    "POST": 1,
+    "PUT": 2,
+    "DELETE": 3,
+    "PATCH": 4,
+    "HEAD": 5,
+    "OPTIONS": 6,
+    "unknown": -1
+  },
+  "content_type_encoding": {
+    "application/json": 0,
+    "application/x-www-form-urlencoded": 1,
+    "multipart/form-data": 2,
+    "text/plain": 3,
+    "text/html": 4,
+    "unknown": -1,
+    "absent": -2
+  },
+  "severity_weights": {
+    "CRITICAL": 3,
+    "WARNING": 2,
+    "NOTICE": 1
+  },
+  "special_characters": [
+    "%",
+    "'",
+    "\"",
+    "<",
+    ">",
+    "{",
+    "}"
+  ]
+}
