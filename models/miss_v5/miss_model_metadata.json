@@ -1,0 +1,161 @@
+{
+  "model_version": 5,
+  "model_type": "miss_model",
+  "model_name": "gradient_boosting_miss",
+  "composite_score": 0.9702752469142941,
+  "metrics": {
+    "accuracy": 0.9556574923547401,
+    "precision": 0.930921052631579,
+    "recall": 0.9973568281938326,
+    "f1": 0.9629944704381115,
+    "auroc": 0.987374353456312,
+    "pr_auc": 0.9877353665311244,
+    "fpr": 0.10157194679564692,
+    "fnr": 0.0026431718061674008,
+    "confusion_matrix": {
+      "tp": 1132,
+      "fp": 84,
+      "tn": 743,
+      "fn": 3
+    }
+  },
+  "all_candidates": [
+    {
+      "name": "gradient_boosting_miss",
+      "metrics": {
+        "accuracy": 0.9556574923547401,
+        "precision": 0.930921052631579,
+        "recall": 0.9973568281938326,
+        "f1": 0.9629944704381115,
+        "auroc": 0.987374353456312,
+        "pr_auc": 0.9877353665311244,
+        "fpr": 0.10157194679564692,
+        "fnr": 0.0026431718061674008,
+        "confusion_matrix": {
+          "tp": 1132,
+          "fp": 84,
+          "tn": 743,
+          "fn": 3
+        }
+      },
+      "composite_score": 0.9702752469142941,
+      "best_params": null
+    },
+    {
+      "name": "lightgbm_miss",
+      "metrics": {
+        "accuracy": 0.9556574923547401,
+        "precision": 0.930921052631579,
+        "recall": 0.9973568281938326,
+        "f1": 0.9629944704381115,
+        "auroc": 0.9872912549472911,
+        "pr_auc": 0.987677496547495,
+        "fpr": 0.10157194679564692,
+        "fnr": 0.0026431718061674008,
+        "confusion_matrix": {
+          "tp": 1132,
+          "fp": 84,
+          "tn": 743,
+          "fn": 3
+        }
+      },
+      "composite_score": 0.97025862721249,
+      "best_params": null
+    },
+    {
+      "name": "xgboost_miss",
+      "metrics": {
+        "accuracy": 0.9551478083588175,
+        "precision": 0.9308641975308642,
+        "recall": 0.9964757709251101,
+        "f1": 0.9625531914893617,
+        "auroc": 0.9872821993405387,
+        "pr_auc": 0.987517488217437,
+        "fpr": 0.10157194679564692,
+        "fnr": 0.003524229074889868,
+        "confusion_matrix": {
+          "tp": 1131,
+          "fp": 84,
+          "tn": 743,
+          "fn": 4
+        }
+      },
+      "composite_score": 0.9698651976745598,
+      "best_params": null
+    },
+    {
+      "name": "random_forest_miss",
+      "metrics": {
+        "accuracy": 0.95361875637105,
+        "precision": 0.9278688524590164,
+        "recall": 0.9973568281938326,
+        "f1": 0.9613588110403397,
+        "auroc": 0.9864213840163214,
+        "pr_auc": 0.9866160110432028,
+        "fpr": 0.10640870616686819,
+        "fnr": 0.0026431718061674008,
+        "confusion_matrix": {
+          "tp": 1132,
+          "fp": 88,
+          "tn": 739,
+          "fn": 3
+        }
+      },
+      "composite_score": 0.9689236440648615,
+      "best_params": null
+    },
+    {
+      "name": "logistic_l1_miss",
+      "metrics": {
+        "accuracy": 0.8567787971457697,
+        "precision": 0.9330628803245437,
+        "recall": 0.8105726872246696,
+        "f1": 0.8675153229608675,
+        "auroc": 0.9079300481012522,
+        "pr_auc": 0.9047532829122101,
+        "fpr": 0.07980652962515115,
+        "fnr": 0.1894273127753304,
+        "confusion_matrix": {
+          "tp": 920,
+          "fp": 66,
+          "tn": 761,
+          "fn": 215
+        }
+      },
+      "composite_score": 0.875332612690378,
+      "best_params": null
+    }
+  ],
+  "training_config": {
+    "random_state": 42,
+    "calibration_method": "isotonic",
+    "source": "parquet",
+    "total_samples": 13079,
+    "attack_count": 7565,
+    "benign_count": 5514,
+    "feature_dim": 57,
+    "composite_weights": {
+      "recall": 0.35,
+      "precision": 0.3,
+      "f1": 0.15,
+      "auroc": 0.2
+    },
+    "candidates_trained": [
+      "gradient_boosting_miss",
+      "lightgbm_miss",
+      "xgboost_miss",
+      "random_forest_miss",
+      "logistic_l1_miss"
+    ],
+    "optuna_enabled": false,
+    "optuna_trials": 0
+  },
+  "regex_signatures_sha256": "7426c9324b515d11fd46ed8a04805f18d588c8bb95b3399bc27f03709958c3af",
+  "trained_at": "2026-05-26T11:50:23.357689+00:00",
+  "composite_weights": {
+    "recall": 0.35,
+    "precision": 0.3,
+    "f1": 0.15,
+    "auroc": 0.2
+  }
+}
