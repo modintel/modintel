@@ -82,6 +82,8 @@ async function updateLogs(append = false) {
             url += '&priority=' + activePriorities.map(p => p.toUpperCase()).join(',');
         }
 
+        url += '&min_score=0.85';
+
         const res = await apiFetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -98,6 +100,10 @@ async function updateLogs(append = false) {
         }
 
         data.data.forEach((alert, i) => {
+            const score = (alert.ai_score !== null && alert.ai_score !== undefined) ? alert.ai_score : alert.ml_score;
+            const isBlocked = alert.http_status === 403;
+            if (!isBlocked && (score === null || score === undefined || score < 0.85)) return;
+
             const row = document.createElement('tr');
             if (alert.alert_key) row.dataset.alertKey = alert.alert_key;
             let ts = alert.timestamp || '-';
@@ -130,8 +136,9 @@ async function updateLogs(append = false) {
                 ? `<span class="ai-score">*${(scoreValue * 100).toFixed(1)}%</span>`
                 : `<span class="anomaly-badge">${alert.anomaly_score}</span>`;
 
+            const blockedDot = isBlocked ? '<span class="blocked-dot" title="Blocked by Layer 2 WAF"></span>' : '';
             row.innerHTML = `
-                <td style="color:var(--fg-muted);">${new Date(ts).toLocaleTimeString()}</td>
+                <td style="color:var(--fg-muted);">${new Date(ts).toLocaleTimeString()} ${blockedDot}</td>
                 <td>${alert.client_ip}</td>
                 <td class="uri-cell" data-tooltip="${alert.uri}"><span>${alert.uri}</span></td>
                 <td style="text-align: center;">${scoreDisplay}</td>
@@ -199,7 +206,20 @@ function startSSE() {
             prependAlertRow(alert);
         },
         onAlertUpdate: function (update) {
-            updateAlertRow(update);
+            const rowExists = update.alert_key && document.querySelector('#logs-body tr[data-alert-key="' + update.alert_key.replace(/"/g, '') + '"]');
+            if (rowExists) {
+                updateAlertRow(update);
+                return;
+            }
+            const score = update.ai_score;
+            const isBlocked = update.http_status === 403;
+            if (isBlocked || (score !== null && score !== undefined && score >= 0.85)) {
+                apiFetch(`${API_BASE}/logs?limit=1&alert_key=${encodeURIComponent(update.alert_key)}&min_score=0.85`).then(r => r.ok && r.json()).then(data => {
+                    if (data && data.data && data.data.length > 0) {
+                        prependAlertRow(data.data[0]);
+                    }
+                }).catch(() => {});
+            }
         },
         onStats: function (stats) {
             updateStatCards(stats);
@@ -266,6 +286,10 @@ function prependAlertRow(alert) {
     const tbody = document.getElementById('logs-body');
     if (alert.alert_key && tbody.querySelector('tr[data-alert-key="' + alert.alert_key.replace(/"/g, '') + '"]')) return;
 
+    const isBlocked = alert.http_status === 403;
+    const score = (alert.ai_score !== null && alert.ai_score !== undefined) ? alert.ai_score : alert.ml_score;
+    if (!isBlocked && (score === null || score === undefined || score < 0.85)) return;
+
     let ts = alert.timestamp || '-';
     if (ts.includes('/')) {
         ts = ts.split('/').join('-').replace(' ', 'T') + 'Z';
@@ -295,7 +319,8 @@ function prependAlertRow(alert) {
 
     const row = document.createElement('tr');
     if (alert.alert_key) row.dataset.alertKey = alert.alert_key;
-    row.innerHTML = '<td style="color:var(--fg-muted);">' + tsFormatted + '</td>' +
+    const blockedDot = isBlocked ? '<span class="blocked-dot" title="Blocked by Layer 2 WAF"></span>' : '';
+    row.innerHTML = '<td style="color:var(--fg-muted);">' + tsFormatted + ' ' + blockedDot + '</td>' +
         '<td>' + alert.client_ip + '</td>' +
         '<td class="uri-cell" data-tooltip="' + alert.uri + '"><span>' + alert.uri + '</span></td>' +
         '<td style="text-align: center;">' + scoreDisplay + '</td>' +
@@ -342,6 +367,8 @@ async function updateLogsNewOnly() {
             url += '&priority=' + activePriorities.map(p => p.toUpperCase()).join(',');
         }
 
+        url += '&min_score=0.85';
+
         const res = await apiFetch(url);
         if (!res.ok) return;
         const data = await res.json();
@@ -351,6 +378,10 @@ async function updateLogsNewOnly() {
 
         data.data.reverse().forEach((alert) => {
             if (alert.alert_key && tbody.querySelector('tr[data-alert-key="' + alert.alert_key.replace(/"/g, '') + '"]')) return;
+
+            const isBlocked = alert.http_status === 403;
+            const score = (alert.ai_score !== null && alert.ai_score !== undefined) ? alert.ai_score : alert.ml_score;
+            if (!isBlocked && (score === null || score === undefined || score < 0.85)) return;
 
             const ts = alert.timestamp || '-';
             if (ts.includes('/')) {
@@ -374,8 +405,9 @@ async function updateLogsNewOnly() {
 
             const row = document.createElement('tr');
             if (alert.alert_key) row.dataset.alertKey = alert.alert_key;
+            const blockedDot = isBlocked ? '<span class="blocked-dot" title="Blocked by Layer 2 WAF"></span>' : '';
             row.innerHTML = `
-                <td style="color:var(--fg-muted);">${tsFormatted}</td>
+                <td style="color:var(--fg-muted);">${tsFormatted} ${blockedDot}</td>
                 <td>${alert.client_ip}</td>
                 <td class="uri-cell" data-tooltip="${alert.uri}"><span>${alert.uri}</span></td>
                 <td style="text-align: center;">${scoreDisplay}</td>
